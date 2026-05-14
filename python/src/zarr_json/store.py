@@ -50,7 +50,11 @@ class ZarrJsonStore(Store):
     def with_read_only(self, read_only: bool = False) -> "ZarrJsonStore":
         """Return a new ZarrJsonStore over the same backing with the given read_only flag."""
         new_store = ZarrJsonStore(self._backing, read_only=read_only)
-        # Share the same document dict so reads on the new store see current state.
+        # Reassign to the caller's live document rather than the freshly-loaded
+        # copy produced by __init__.  This keeps both stores sharing the exact
+        # same dict object by identity (required by __eq__ / __hash__) and
+        # ensures that any in-memory mutations made since the last persist() are
+        # immediately visible on the new store without an extra backing.load().
         new_store._document = self._document
         return new_store
 
@@ -99,11 +103,13 @@ class ZarrJsonStore(Store):
         return results
 
     async def set(self, key: str, value: Buffer) -> None:
+        self._check_writable()
         async with self._lock:
             self._document[key] = encode_value(key, value.to_bytes())
             self._backing.persist(self._document)
 
     async def delete(self, key: str) -> None:
+        self._check_writable()
         async with self._lock:
             self._document.pop(key, None)
             self._backing.persist(self._document)

@@ -166,3 +166,26 @@ async def test_get_with_zero_suffix_byte_request_returns_empty():
     store = ZarrJsonStore(MemoryBacking({"a/c/0": "AAECAwQFBgc="}))
     result = await store.get("a/c/0", PROTOTYPE, SuffixByteRequest(0))
     assert result.to_bytes() == b""
+
+
+async def test_read_only_store_rejects_set():
+    store = ZarrJsonStore(MemoryBacking({}), read_only=True)
+    with pytest.raises(ValueError):
+        await store.set("a/c/0", buf(b"\x00"))
+
+
+async def test_read_only_store_rejects_delete():
+    store = ZarrJsonStore(MemoryBacking({"a/c/0": "AA=="}), read_only=True)
+    with pytest.raises(ValueError):
+        await store.delete("a/c/0")
+
+
+async def test_with_read_only_returns_enforcing_store_sharing_document():
+    backing = MemoryBacking({"a/c/0": "AA=="})
+    store = ZarrJsonStore(backing)
+    ro = store.with_read_only(True)
+    # shares the same document by identity
+    assert ro._document is store._document
+    # and actually enforces read-only
+    with pytest.raises(ValueError):
+        await ro.set("a/c/1", buf(b"\x01"))
