@@ -41,11 +41,18 @@ class ZarrJsonStore(Store):
     operations call backing.persist().
     """
 
-    def __init__(self, backing: Backing) -> None:
-        super().__init__(read_only=False)
+    def __init__(self, backing: Backing, *, read_only: bool = False) -> None:
+        super().__init__(read_only=read_only)
         self._backing = backing
         self._document = backing.load()
         self._lock = asyncio.Lock()
+
+    def with_read_only(self, read_only: bool = False) -> "ZarrJsonStore":
+        """Return a new ZarrJsonStore over the same backing with the given read_only flag."""
+        new_store = ZarrJsonStore(self._backing, read_only=read_only)
+        # Share the same document dict so reads on the new store see current state.
+        new_store._document = self._document
+        return new_store
 
     @property
     def supports_writes(self) -> bool:
