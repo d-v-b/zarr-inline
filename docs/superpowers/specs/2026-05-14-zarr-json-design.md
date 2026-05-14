@@ -222,9 +222,11 @@ concern.
 **Cross-implementation conformance:**
 
 - A shared set of zarr-json document fixtures (valid and invalid, exercising both
-  validity rules) is committed to the repository. Each implementation runs every
-  fixture through its validator and must produce the matching verdict, ensuring
-  the three implementations agree on what the spec means.
+  validity rules) lives in the `examples/` directory at the repository root.
+  Each implementation runs every fixture through its validator and must produce
+  the matching verdict, ensuring the three implementations agree on what the spec
+  means. `examples/` is the single source of example data for all three
+  implementations.
 
 ## Out of Scope
 
