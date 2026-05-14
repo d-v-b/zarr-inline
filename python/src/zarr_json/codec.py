@@ -1,18 +1,15 @@
 """Pure functions for classifying keys and encoding/decoding values."""
 
+import base64
+import json
+from typing import Any
+
 METADATA_SUFFIX = "zarr.json"
 
 
 def is_metadata_key(key: str) -> bool:
     """Return True if the key names a Zarr v3 metadata document."""
     return key.endswith(METADATA_SUFFIX)
-
-
-import base64
-import json
-from typing import Any
-
-JsonValue = dict[str, Any]
 
 
 def decode_value(key: str, value: Any) -> bytes:

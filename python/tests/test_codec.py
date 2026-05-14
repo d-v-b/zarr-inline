@@ -1,4 +1,8 @@
-from zarr_json.codec import is_metadata_key
+import json
+
+import pytest
+
+from zarr_json.codec import decode_value, encode_value, is_metadata_key
 
 
 def test_root_zarr_json_is_metadata_key():
@@ -17,15 +21,9 @@ def test_key_containing_but_not_ending_zarr_json_is_not_metadata():
     assert is_metadata_key("zarr.json/c/0") is False
 
 
-import pytest
-
-from zarr_json.codec import decode_value, encode_value
-
-
 def test_decode_metadata_value_serializes_object_to_json_bytes():
     out = decode_value("zarr.json", {"zarr_format": 3, "node_type": "group"})
     assert isinstance(out, bytes)
-    import json
     assert json.loads(out) == {"zarr_format": 3, "node_type": "group"}
 
 
