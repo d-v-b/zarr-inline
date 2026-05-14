@@ -22,6 +22,21 @@ human-inspectable document.
 
 ## The Specification
 
+### Intuition: a store transformation
+
+zarr-json is best understood as a transformation of any Zarr v3 store — a
+key → byte-string map — into a JSON object. The keys carry over unchanged. Each
+value branches on its content: a value whose bytes are UTF-8-encoded JSON is
+written as that JSON directly; any other value is written as a base64-encoded
+string. The inverse transformation reads a JSON-object value back as
+UTF-8-encoded JSON bytes and a string value back as base64-decoded bytes.
+
+For a real Zarr v3 store this branch coincides exactly with the key name: the
+values that are JSON are precisely the `zarr.json` metadata documents, and
+nothing else. The normative rule below is therefore stated in terms of the key
+name — it makes the branch unambiguous and round-trips exact, while the
+transformation above explains *why* the rule has the shape it does.
+
 ### Document shape
 
 A zarr-json document is a single JSON object. Its keys are Zarr v3 store keys
@@ -33,8 +48,8 @@ A zarr-json document is a single JSON object. Its keys are Zarr v3 store keys
 
 ### The metadata / bytes distinction
 
-The fundamental rule: **metadata is JSON, everything else is base64-encoded
-bytes.**
+The normative rule, keyed off the key name: **metadata is JSON, everything else
+is base64-encoded bytes.**
 
 - A key that ends with `zarr.json` is a *metadata key*. Its value MUST be a JSON
   object. The names of metadata documents are defined by this spec; for Zarr v3
