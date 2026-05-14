@@ -26,7 +26,9 @@ def _apply_byte_range(data: bytes, byte_range: ByteRequest | None) -> bytes:
     if isinstance(byte_range, OffsetByteRequest):
         return data[byte_range.offset :]
     if isinstance(byte_range, SuffixByteRequest):
-        return data[-byte_range.suffix :]
+        # Index arithmetic, not negative slicing: data[-0:] would wrongly
+        # return the whole object instead of empty bytes.
+        return data[max(0, len(data) - byte_range.suffix) :]
     raise ValueError(f"unsupported byte range: {byte_range!r}")
 
 
@@ -34,7 +36,9 @@ class ZarrJsonStore(Store):
     """A Zarr v3 store whose entire contents live in one JSON object.
 
     Construct from a Backing (memory / file / string). All operations are
-    serialized by an asyncio.Lock. Mutating operations call backing.persist().
+    serialized by an asyncio.Lock. The lock serializes operations within a
+    single event loop; a store is not safe to share across threads. Mutating
+    operations call backing.persist().
     """
 
     def __init__(self, backing: Backing) -> None:

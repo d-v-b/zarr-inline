@@ -102,8 +102,10 @@ async def test_list_dir_yields_immediate_children_only():
     assert children == ["b", "c", "zarr.json"]
 
 
-async def test_concurrent_sets_are_serialized_by_lock():
-    # 50 concurrent writes to distinct keys; all must land.
+async def test_concurrent_sets_all_land():
+    # 50 concurrent writes to distinct keys; all must land. (Distinct keys
+    # would survive even without a lock — this checks completeness, not
+    # serialization; see test_concurrent_mutations_keep_document_consistent.)
     store = ZarrJsonStore(MemoryBacking({}))
     await asyncio.gather(
         *(store.set(f"a/c/{i}", buf(bytes([i]))) for i in range(50))
@@ -112,8 +114,55 @@ async def test_concurrent_sets_are_serialized_by_lock():
     assert keys == sorted(f"a/c/{i}" for i in range(50))
 
 
+async def test_concurrent_mutations_keep_document_consistent():
+    # Contention on the SAME key: interleaved set/delete. Whatever the final
+    # state, the lock must guarantee the document is internally consistent —
+    # the key is either present with a well-formed base64 value or absent,
+    # never a half-written entry — and every operation completes without error.
+    store = ZarrJsonStore(MemoryBacking({}))
+
+    async def setter():
+        for _ in range(50):
+            await store.set("a/c/0", buf(b"\x01\x02\x03"))
+
+    async def deleter():
+        for _ in range(50):
+            await store.delete("a/c/0")
+
+    await asyncio.gather(setter(), deleter(), setter(), deleter())
+
+    # Document is in a consistent state: key absent, or present and decodable.
+    if await store.exists("a/c/0"):
+        result = await store.get("a/c/0", PROTOTYPE)
+        assert result.to_bytes() == b"\x01\x02\x03"
+
+
 async def test_store_capability_flags():
     store = ZarrJsonStore(MemoryBacking({}))
     assert store.supports_writes is True
     assert store.supports_deletes is True
     assert store.supports_listing is True
+
+
+async def test_get_with_offset_byte_request():
+    from zarr.abc.store import OffsetByteRequest
+
+    store = ZarrJsonStore(MemoryBacking({"a/c/0": "AAECAwQFBgc="}))
+    result = await store.get("a/c/0", PROTOTYPE, OffsetByteRequest(5))
+    assert result.to_bytes() == bytes([5, 6, 7])
+
+
+async def test_get_with_suffix_byte_request():
+    from zarr.abc.store import SuffixByteRequest
+
+    store = ZarrJsonStore(MemoryBacking({"a/c/0": "AAECAwQFBgc="}))
+    result = await store.get("a/c/0", PROTOTYPE, SuffixByteRequest(3))
+    assert result.to_bytes() == bytes([5, 6, 7])
+
+
+async def test_get_with_zero_suffix_byte_request_returns_empty():
+    from zarr.abc.store import SuffixByteRequest
+
+    store = ZarrJsonStore(MemoryBacking({"a/c/0": "AAECAwQFBgc="}))
+    result = await store.get("a/c/0", PROTOTYPE, SuffixByteRequest(0))
+    assert result.to_bytes() == b""
