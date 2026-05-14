@@ -52,25 +52,29 @@ base64 is required — not raw JSON number arrays — because chunk data is the
 output of the Zarr codec pipeline (compression, filters), which produces opaque
 bytes.
 
-### Consistency rules
+### Validity
 
 Validity of the content *inside* each `zarr.json` defers entirely to the Zarr v3
 specification. zarr-json does not restate Zarr v3.
 
-Beyond the per-value type rule above, a valid zarr-json document MUST also
-satisfy these structural consistency rules — enough to confirm the document is a
-coherent hierarchy, without re-deriving Zarr v3:
+A zarr-json document is valid if it matches the semantics of a **store** as
+defined by the Zarr v3 spec — that is, a key → byte-string map — once encoded
+per this document. Concretely, two rules:
 
-1. **Root metadata present** — the document contains a root `zarr.json` key.
-2. **Well-formed keys** — every key is a well-formed Zarr v3 store path.
-3. **No orphan chunks** — every byte key sits under some node; the array prefix
-   of every chunk key has a corresponding `zarr.json` metadata key.
-4. **Chunk keys belong to arrays** — a chunk key's owning `zarr.json` describes
-   an array node, not a group node.
+1. **Well-formed keys** — every key is a well-formed Zarr v3 store key.
+2. **Per-value type rule** — every metadata key (`*zarr.json`) has a JSON object
+   value; every byte key has a base64-string value (stated above).
 
-These rules are checked by the validator (see below). They describe a
-*complete* document; a store under construction may be transiently inconsistent,
-so individual `get`/`set` operations are not blocked by them.
+That is the whole of validity. zarr-json deliberately does **not** check
+hierarchy coherence — it does not require a root `zarr.json`, does not forbid
+orphan chunks, and does not check that chunk keys belong to array nodes. A Zarr
+v3 store is a valid store while empty or partially populated, and a document
+under construction is therefore valid throughout.
+
+This is a deliberate trade. zarr-json makes no promises about hierarchy
+integrity. The format's premise is that these documents are small and cheap to
+inspect: a consumer who needs integrity can simply look. The validator's job is
+only to confirm "this is a well-formed Zarr v3 store, encoded as JSON."
 
 ### Round-trip guarantee
 
@@ -139,8 +143,9 @@ Each language uses its native mechanism:
 
 #### Validator
 
-Checks the structural consistency rules. Runs on load with configurable
-strictness, and is available as a standalone call.
+Checks the two validity rules — well-formed keys, and the per-value type rule.
+Runs on load with configurable strictness, and is available as a standalone
+call.
 
 ## Data Flow
 
@@ -185,26 +190,26 @@ concern.
 - **`get` on a missing key** — the host library's not-found convention
   (`None` / `undefined` / `Ok(None)`).
 - **Invalid base64 in a byte value on `get`** — error.
-- **Consistency-rule violations** (orphan chunk, missing root, etc.) — reported
-  by the validator; they do not block individual `get`/`set`, since a store
-  under construction is transiently inconsistent.
+- **Validity violations** (malformed key, value-type mismatch) — reported by the
+  validator on load per its strictness setting; they do not block individual
+  `get`/`set` operations.
 
 ## Testing
 
 **Per implementation:**
 
 - Unit tests — key classification, encode/decode (metadata ↔ bytes, base64),
-  lock behavior, each backing (memory, file, string), and the validator (one
-  test per consistency rule, with a valid and an invalid case each).
+  lock behavior, each backing (memory, file, string), and the validator (each
+  validity rule, with a valid and an invalid case).
 - Integration test — drive the store through the host Zarr library: create a
   group and an array, write chunks, read them back, list the hierarchy.
 
 **Cross-implementation conformance:**
 
-- A shared set of zarr-json document fixtures (valid and invalid) is committed to
-  the repository. Each implementation runs every fixture through its validator
-  and must produce the matching verdict, ensuring the three implementations agree
-  on what the spec means.
+- A shared set of zarr-json document fixtures (valid and invalid, exercising both
+  validity rules) is committed to the repository. Each implementation runs every
+  fixture through its validator and must produce the matching verdict, ensuring
+  the three implementations agree on what the spec means.
 
 ## Out of Scope
 
@@ -212,5 +217,7 @@ concern.
 - High performance — explicitly a non-goal.
 - Restating or re-validating the Zarr v3 spec's rules for the content inside
   `zarr.json` documents.
+- Hierarchy integrity — zarr-json validates store semantics only, not whether
+  the document forms a coherent hierarchy.
 - Store adapters or features beyond conforming to each host library's store
   interface.
