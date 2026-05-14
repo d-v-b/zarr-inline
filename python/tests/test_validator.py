@@ -63,3 +63,19 @@ def test_all_manifest_fixtures_get_expected_verdict(examples_dir, manifest):
             assert any(e.rule == expected["rule"] for e in errors), (
                 f"{rel_path} should fail rule {expected['rule']}"
             )
+
+
+def test_trailing_slash_key_reports_r1():
+    errors = validate({"a/zarr.json/": {}})
+    assert any(e.rule == "R1" for e in errors)
+
+
+def test_standalone_dotdot_key_reports_r1():
+    errors = validate({"..": {}})
+    assert any(e.rule == "R1" for e in errors)
+
+
+def test_multiple_bad_keys_accumulate_issues():
+    errors = validate({"/leading": "x", "trailing/": "y"})
+    assert len(errors) == 2
+    assert all(e.rule == "R1" for e in errors)
