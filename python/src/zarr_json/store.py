@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import warnings
 from collections.abc import AsyncIterator, Iterable
 
 from zarr.abc.store import (
@@ -16,6 +17,7 @@ from zarr.core.buffer import Buffer, BufferPrototype
 
 from zarr_json.backing import Backing
 from zarr_json.codec import decode_value, encode_value
+from zarr_json.validator import Strictness, validate
 
 
 def _apply_byte_range(data: bytes, byte_range: ByteRequest | None) -> bytes:
@@ -41,10 +43,24 @@ class ZarrJsonStore(Store):
     operations call backing.persist().
     """
 
-    def __init__(self, backing: Backing, *, read_only: bool = False) -> None:
+    def __init__(
+        self,
+        backing: Backing,
+        *,
+        read_only: bool = False,
+        strictness: Strictness = Strictness.LENIENT,
+    ) -> None:
         super().__init__(read_only=read_only)
         self._backing = backing
         self._document = backing.load()
+        if strictness is Strictness.STRICT:
+            validate(self._document, strictness=Strictness.STRICT)
+        else:
+            for issue in validate(self._document):
+                warnings.warn(
+                    f"zarr-json validation [{issue.rule}] {issue.key}: {issue.message}",
+                    stacklevel=2,
+                )
         self._lock = asyncio.Lock()
 
     def with_read_only(self, read_only: bool = False) -> "ZarrJsonStore":

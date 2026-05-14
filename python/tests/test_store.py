@@ -189,3 +189,42 @@ async def test_with_read_only_returns_enforcing_store_sharing_document():
     # and actually enforces read-only
     with pytest.raises(ValueError):
         await ro.set("a/c/1", buf(b"\x01"))
+
+
+async def test_strict_mode_rejects_invalid_document_on_construction():
+    from zarr_json.validator import Strictness, ValidationError
+
+    # metadata key mapping to a non-object value violates R2
+    with pytest.raises(ValidationError):
+        ZarrJsonStore(MemoryBacking({"zarr.json": "not an object"}), strictness=Strictness.STRICT)
+
+
+async def test_strict_mode_accepts_valid_document_on_construction():
+    from zarr_json.validator import Strictness
+
+    # construction must succeed without raising
+    store = ZarrJsonStore(
+        MemoryBacking({"zarr.json": {"node_type": "group"}}), strictness=Strictness.STRICT
+    )
+    assert await store.exists("zarr.json") is True
+
+
+async def test_lenient_mode_warns_on_invalid_document_but_constructs():
+    import warnings as _warnings
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        store = ZarrJsonStore(MemoryBacking({"zarr.json": "not an object"}))
+    # construction succeeded
+    assert store is not None
+    # at least one validation warning was surfaced
+    assert any("zarr-json validation" in str(w.message) for w in caught)
+
+
+async def test_lenient_mode_no_warning_on_valid_document():
+    import warnings as _warnings
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        ZarrJsonStore(MemoryBacking({"zarr.json": {"node_type": "group"}}))
+    assert not any("zarr-json validation" in str(w.message) for w in caught)
