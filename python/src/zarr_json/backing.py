@@ -15,6 +15,12 @@ Document = dict[str, Any]
 
 @runtime_checkable
 class Backing(Protocol):
+    """Where a zarr-json document lives and how it persists.
+
+    The store calls ``load()`` exactly once to obtain the document, mutates
+    that document in place, then calls ``persist()`` after each mutation.
+    """
+
     def load(self) -> Document: ...
     def persist(self, document: Document) -> None: ...
 
@@ -40,6 +46,7 @@ class StringBacking:
         self._text = text
 
     def load(self) -> Document:
+        """Parse and return the document. Call once; see the Backing contract."""
         return json.loads(self._text)
 
     def persist(self, document: Document) -> None:
@@ -56,9 +63,12 @@ class FileBacking:
         self._path = Path(path)
 
     def load(self) -> Document:
+        """Read and return the document; a missing file yields a new empty
+        document (detached — the store must call persist() to write it)."""
         if not self._path.exists():
             return {}
         return json.loads(self._path.read_text())
 
     def persist(self, document: Document) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(json.dumps(document))

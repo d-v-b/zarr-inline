@@ -1,6 +1,6 @@
 import json
 
-from zarr_json.backing import FileBacking, MemoryBacking, StringBacking
+from zarr_json.backing import Backing, FileBacking, MemoryBacking, StringBacking
 
 
 def test_memory_backing_load_returns_initial_object():
@@ -37,3 +37,21 @@ def test_file_backing_round_trips_through_disk(tmp_path):
 def test_file_backing_load_missing_file_returns_empty_document(tmp_path):
     backing = FileBacking(tmp_path / "does_not_exist.json")
     assert backing.load() == {}
+
+
+def test_all_backings_satisfy_backing_protocol():
+    assert isinstance(MemoryBacking({}), Backing)
+    assert isinstance(StringBacking("{}"), Backing)
+    assert isinstance(FileBacking("unused.json"), Backing)
+
+
+def test_string_backing_dumps_initial_state_before_persist():
+    backing = StringBacking('{"zarr.json": {"node_type": "group"}}')
+    assert json.loads(backing.dumps()) == {"zarr.json": {"node_type": "group"}}
+
+
+def test_file_backing_persist_creates_missing_parent_directories(tmp_path):
+    path = tmp_path / "nested" / "deeper" / "doc.json"
+    backing = FileBacking(path)
+    backing.persist({"a/c/0": "AAA="})
+    assert json.loads(path.read_text()) == {"a/c/0": "AAA="}
