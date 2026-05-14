@@ -1,0 +1,9 @@
+{
+  "valid/empty.json": { "valid": true, "rule": null },
+  "valid/group_only.json": { "valid": true, "rule": null },
+  "valid/group_with_array_and_chunk.json": { "valid": true, "rule": null },
+  "invalid/metadata_key_not_object.json": { "valid": false, "rule": "R2" },
+  "invalid/byte_key_not_string.json": { "valid": false, "rule": "R2" },
+  "invalid/leading_slash_key.json": { "valid": false, "rule": "R1" },
+  "invalid/empty_segment_key.json": { "valid": false, "rule": "R1" }
+}
