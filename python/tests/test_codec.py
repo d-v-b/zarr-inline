@@ -54,3 +54,15 @@ def test_round_trip_metadata():
 def test_round_trip_bytes():
     data = bytes([9, 8, 7, 0, 255, 1])
     assert decode_value("a/c/0", encode_value("a/c/0", data)) == data
+
+
+def test_public_api_is_importable_from_package_root():
+    import zarr_json
+
+    assert hasattr(zarr_json, "ZarrJsonStore")
+    assert hasattr(zarr_json, "MemoryBacking")
+    assert hasattr(zarr_json, "FileBacking")
+    assert hasattr(zarr_json, "StringBacking")
+    assert hasattr(zarr_json, "validate")
+    assert hasattr(zarr_json, "Strictness")
+    assert hasattr(zarr_json, "ValidationError")
