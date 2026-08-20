@@ -27,12 +27,15 @@ def is_metadata_key(key: str) -> bool:
 
 
 def canonical_dumps(value: Any) -> str:
-    """Serialize a JSON value in the canonical form used for inline arrays.
+    """Serialize a JSON value in the canonical zarr-json form.
 
-    No whitespace; NaN/Infinity tokens are rejected (they are not JSON; the
-    fill_value convention represents them as strings like "NaN").
+    No whitespace; non-ASCII characters unescaped (UTF-8); object member
+    order preserved; NaN/Infinity tokens rejected (they are not JSON; the
+    fill_value convention represents them as strings like "NaN"). This form
+    is shared by all zarr-json implementations so that decoded bytes agree
+    across languages.
     """
-    return json.dumps(value, separators=(",", ":"), allow_nan=False)
+    return json.dumps(value, separators=(",", ":"), allow_nan=False, ensure_ascii=False)
 
 
 def decode_value(key: str, value: Any) -> bytes:
@@ -45,7 +48,7 @@ def decode_value(key: str, value: Any) -> bytes:
     if is_metadata_key(key):
         if not isinstance(value, dict):
             raise ValueError(f"metadata key {key!r} must map to a JSON object")
-        return json.dumps(value).encode("utf-8")
+        return canonical_dumps(value).encode("utf-8")
     if isinstance(value, list):
         return canonical_dumps(value).encode("utf-8")
     if not isinstance(value, str):
