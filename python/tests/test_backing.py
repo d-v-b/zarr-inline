@@ -55,3 +55,12 @@ def test_file_backing_persist_creates_missing_parent_directories(tmp_path):
     backing = FileBacking(path)
     backing.persist({"a/c/0": "AAA="})
     assert json.loads(path.read_text()) == {"a/c/0": "AAA="}
+
+
+def test_string_backing_rejects_nan_token_document():
+    import pytest
+
+    from zarr_json.backing import StringBacking
+
+    with pytest.raises(ValueError, match="not a JSON token"):
+        StringBacking('{"a/c/0": [NaN]}').load()

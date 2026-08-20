@@ -21,6 +21,26 @@ from typing import Any
 METADATA_SUFFIX = "zarr.json"
 
 
+def _reject_constant(token: str) -> Any:
+    raise ValueError(f"invalid JSON: {token} is not a JSON token")
+
+
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError(f"invalid JSON: number {text} overflows float64")
+    return value
+
+
+def strict_loads(text: str | bytes) -> Any:
+    """Parse JSON, rejecting what Python's json module is lenient about but
+    other implementations are not: bare NaN/Infinity tokens (JavaScript's
+    JSON.parse and Rust's serde_json reject them) and number literals that
+    overflow float64 to infinity, like 1e999 (serde_json rejects them).
+    """
+    return json.loads(text, parse_constant=_reject_constant, parse_float=_finite_float)
+
+
 def is_metadata_key(key: str) -> bool:
     """Return True if the key names a Zarr v3 metadata document."""
     return key == METADATA_SUFFIX or key.endswith("/" + METADATA_SUFFIX)
@@ -64,7 +84,7 @@ def encode_value(key: str, data: bytes) -> Any:
     serialization of one (lossless by construction); otherwise base64-encode.
     """
     if is_metadata_key(key):
-        parsed = json.loads(data)
+        parsed = strict_loads(data)
         if not isinstance(parsed, dict):
             raise ValueError(f"metadata key {key!r} requires a JSON object value")
         return parsed
@@ -77,7 +97,7 @@ def encode_value(key: str, data: bytes) -> Any:
 def _try_inline_array(data: bytes) -> list[Any] | None:
     """Return the parsed JSON array if inlining `data` is lossless, else None."""
     try:
-        parsed = json.loads(data)
+        parsed = strict_loads(data)
         if isinstance(parsed, list) and canonical_dumps(parsed).encode("utf-8") == data:
             return parsed
     except ValueError:

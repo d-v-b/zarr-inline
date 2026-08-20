@@ -103,3 +103,17 @@ def test_decode_byte_value_serializes_inline_array_canonically():
 def test_round_trip_inline_array():
     value = [[0, 1], [2, 3]]
     assert encode_value("a/c/0/0", decode_value("a/c/0/0", value)) == value
+
+
+def test_strict_loads_rejects_bare_nan_token():
+    from zarr_json.codec import strict_loads
+
+    with pytest.raises(ValueError, match="not a JSON token"):
+        strict_loads('{"a/c/0": [NaN]}')
+
+
+def test_strict_loads_rejects_float_overflow_literal():
+    from zarr_json.codec import strict_loads
+
+    with pytest.raises(ValueError, match="overflows float64"):
+        strict_loads('{"a/c/0": [1e999]}')

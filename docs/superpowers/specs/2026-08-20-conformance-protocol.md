@@ -59,13 +59,40 @@ per key.
 {
   "issues": [{"rule": "R1", "key": "..."}],
   "decoded": {"<key>": "<base64 of decode_value(key, value)>"},
-  "reencoded": {"<key>": <encode_value(key, decoded bytes)>}
+  "reencoded": {"<key>": <encode_value(key, decoded bytes)>},
+  "errors": ["<key>"]
 }
 ```
 
 - `issues`: all validator issues, sorted by `(key, rule)`.
-- `decoded` / `reencoded`: every key with no issue, any order (compared
-  structurally).
+- `decoded` / `reencoded`: every issue-free key that decodes, any order
+  (compared structurally).
+- `errors`: keys that passed validation but failed decode_value (e.g. a
+  byte key whose string is not valid base64), sorted. A decode failure on
+  one key must not abort the report.
+
+## Document constraints (portable input space)
+
+Behavior outside these bounds is implementation-defined; the property test
+does not generate such documents, and portable documents must not contain:
+
+- **Non-finite number literals**, including overflow like `1e999`
+  (Python and Rust reject the document; JavaScript's JSON.parse silently
+  produces Infinity).
+- **Integers outside ±(2^53 − 1)** (JavaScript loses precision silently;
+  serde_json falls back to lossy float64 outside `[i64::MIN, u64::MAX]`).
+- **The integer literal `-0`** (Python parses it as int 0, serde_json as
+  float −0.0, JavaScript cannot distinguish it from −0.0).
+- **Floats with magnitude >= 2^53** (in JavaScript they are
+  indistinguishable from unsafe integers, so the TypeScript
+  implementation rejects them loudly where Python/Rust serialize them
+  with differing exponent text).
+- **Nesting deeper than 100 levels** (serde_json's recursion limit is 128;
+  CPython's is higher but finite).
+- **Lone surrogates** in any string (serde_json rejects the document;
+  Python parses but cannot UTF-8-encode; JS TextEncoder silently replaces
+  with U+FFFD).
+- **A UTF-8 BOM** (Python strips it; serde_json rejects it).
 
 ## Invocations
 

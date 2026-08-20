@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from zarr_json.codec import strict_loads
+
 Document = dict[str, Any]
 
 
@@ -47,10 +49,10 @@ class StringBacking:
 
     def load(self) -> Document:
         """Parse and return the document. Call once; see the Backing contract."""
-        return json.loads(self._text)
+        return strict_loads(self._text)
 
     def persist(self, document: Document) -> None:
-        self._text = json.dumps(document)
+        self._text = json.dumps(document, ensure_ascii=False, allow_nan=False)
 
     def dumps(self) -> str:
         return self._text
@@ -67,8 +69,10 @@ class FileBacking:
         document (detached — the store must call persist() to write it)."""
         if not self._path.exists():
             return {}
-        return json.loads(self._path.read_text())
+        return strict_loads(self._path.read_text())
 
     def persist(self, document: Document) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(document))
+        self._path.write_text(
+            json.dumps(document, ensure_ascii=False, allow_nan=False, indent=2)
+        )

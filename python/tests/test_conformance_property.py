@@ -123,11 +123,18 @@ VALID_ENTRY = st.one_of(
     st.tuples(DATA_KEY, BYTE_VALUE),
 )
 
+# Strings that may or may not be valid base64 — every implementation must
+# agree on which ones decode and which land in the report's "errors" list.
+DUBIOUS_TEXT = st.text(
+    alphabet=st.sampled_from(list("AbZ09+/=!. \n_-")), max_size=12
+)
+
 BAD_KEY = st.sampled_from(["/x", "x/", "a//b", "a/./b", "..", "a/../b", ""])
 BAD_ENTRY = st.one_of(
     st.tuples(BAD_KEY, st.one_of(METADATA_VALUE, BYTE_VALUE)),
     st.tuples(METADATA_KEY, st.one_of(st.lists(JSON_VALUE, max_size=2), SAFE_SCALAR)),
     st.tuples(DATA_KEY, st.one_of(SAFE_INT, st.booleans(), st.none(), METADATA_VALUE)),
+    st.tuples(DATA_KEY, DUBIOUS_TEXT),
 )
 
 VALID_DOCUMENT = st.lists(VALID_ENTRY, max_size=5).map(dict)
