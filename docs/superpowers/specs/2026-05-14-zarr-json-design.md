@@ -2,6 +2,8 @@
 
 **Date:** 2026-05-14
 **Status:** Approved design — ready for implementation planning
+**Amended:** 2026-08-20 — byte keys may also hold inline JSON arrays; see
+the amendment at the end of this document.
 
 ## Summary
 
@@ -238,3 +240,28 @@ concern.
   the document forms a coherent hierarchy.
 - Store adapters or features beyond conforming to each host library's store
   interface.
+
+## Amendment (2026-08-20): inline JSON array values
+
+Adopted after the value-typing and codec explorations
+(`2026-08-20-value-typing-design-space.md`, `2026-08-20-json-array-codec.md`).
+
+The per-value type rule is extended: a **byte key** may hold either a base64
+string (opaque bytes, as before) **or a JSON array** — the inline
+representation of chunk data produced by the `json` array->bytes codec. The
+value types remain structurally unambiguous: object = metadata, string =
+bytes, array = inline data values.
+
+The `json` codec encodes a chunk as canonical JSON (no whitespace, no
+NaN/Infinity tokens), applying the Zarr v3 `fill_value` scalar serialization
+elementwise, nested by shape in C order. Stores inline a byte value as an
+array only when the bytes are exactly the canonical serialization of a JSON
+array, which makes inlining lossless by construction; all other bytes remain
+base64. The `is_metadata_key` rule is also tightened to whole-segment
+matching (`zarr.json` or `*/zarr.json`), fixing misclassification of keys
+like `xyzarr.json`.
+
+The paragraph above stating that base64 is *required* for chunk data is
+superseded accordingly: base64 remains the representation for opaque codec
+output, and arrays whose codec chain terminates in `json` are represented as
+JSON arrays.
