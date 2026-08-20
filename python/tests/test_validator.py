@@ -79,3 +79,13 @@ def test_multiple_bad_keys_accumulate_issues():
     errors = validate({"/leading": "x", "trailing/": "y"})
     assert len(errors) == 2
     assert all(e.rule == "R1" for e in errors)
+
+
+def test_byte_key_with_inline_json_array_is_valid():
+    assert validate({"a/c/0": [[0, 1], [2, 3]]}) == []
+
+
+def test_byte_key_with_number_value_reports_r2():
+    errors = validate({"a/c/0": 123})
+    assert len(errors) == 1
+    assert errors[0].rule == "R2"

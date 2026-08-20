@@ -3,7 +3,7 @@
 R1 — well-formed keys: every key is a non-empty string with no leading or
      trailing "/", no empty segments, and no "." or ".." segments.
 R2 — per-value type: metadata keys map to a JSON object (dict); byte keys
-     map to a base64 string (str).
+     map to a base64 string (str) or an inline JSON array (list).
 """
 
 from __future__ import annotations
@@ -55,8 +55,10 @@ def _check_value_type(key: str, value: Any) -> ValidationIssue | None:
         if not isinstance(value, dict):
             return ValidationIssue("R2", key, "metadata key must map to a JSON object")
     else:
-        if not isinstance(value, str):
-            return ValidationIssue("R2", key, "byte key must map to a base64 string")
+        if not isinstance(value, (str, list)):
+            return ValidationIssue(
+                "R2", key, "byte key must map to a base64 string or JSON array"
+            )
     return None
 
 

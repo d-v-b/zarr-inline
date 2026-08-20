@@ -66,3 +66,40 @@ def test_public_api_is_importable_from_package_root():
     assert hasattr(zarr_json, "validate")
     assert hasattr(zarr_json, "Strictness")
     assert hasattr(zarr_json, "ValidationError")
+
+
+def test_key_ending_in_zarr_json_without_separator_is_not_metadata():
+    assert is_metadata_key("xyzarr.json") is False
+    assert is_metadata_key("a/notzarr.json") is False
+
+
+def test_encode_byte_value_inlines_canonical_json_array():
+    data = b'[[0,1,2,3],[4,5,6,7]]'
+    assert encode_value("a/c/0/0", data) == [[0, 1, 2, 3], [4, 5, 6, 7]]
+
+
+def test_encode_byte_value_keeps_non_canonical_json_array_as_base64():
+    # Valid JSON array, but not in canonical form (whitespace) — inlining
+    # would not round-trip byte-exactly, so it must stay base64.
+    data = b"[1, 2, 3]"
+    out = encode_value("a/c/0", data)
+    assert isinstance(out, str)
+    assert decode_value("a/c/0", out) == data
+
+
+def test_encode_byte_value_keeps_nan_token_array_as_base64():
+    # json.loads accepts bare NaN tokens, but they are not JSON; canonical
+    # re-serialization refuses them, so the bytes must stay base64.
+    data = b"[NaN]"
+    out = encode_value("a/c/0", data)
+    assert isinstance(out, str)
+    assert decode_value("a/c/0", out) == data
+
+
+def test_decode_byte_value_serializes_inline_array_canonically():
+    assert decode_value("a/c/0", [1.5, "NaN", -0.0]) == b'[1.5,"NaN",-0.0]'
+
+
+def test_round_trip_inline_array():
+    value = [[0, 1], [2, 3]]
+    assert encode_value("a/c/0/0", decode_value("a/c/0/0", value)) == value
