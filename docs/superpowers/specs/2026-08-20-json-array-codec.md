@@ -139,6 +139,14 @@ for standard non-finite, hex string only when bit-payload preservation is
 requested) and pin decimal formatting to shortest-round-trip. Decode accepts
 all legal forms; encode is canonical.
 
+**Composition constraint (from the adversarial review):** the `json`
+codec should be the *only* codec in a portable chain. Combining it with
+an array->array codec like `transpose` is implementation-defined:
+zarr-python and zarrs nest the chunk JSON by the codec-resolved
+(permuted) shape, while zarrita does not expose resolved metadata to
+codecs, so transpose+json documents are not portable (cross-reads fail
+loudly on shape mismatch).
+
 **Other spec points:** nested arrays in C order (readable, matches shape)
 vs flat + reshape (simpler parsers) — nested favors the display goal;
 no partial decoding (whole-chunk only); combining with sharding is legal
