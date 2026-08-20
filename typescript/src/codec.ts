@@ -36,10 +36,9 @@ export function isMetadataKey(key: string): boolean {
  * - non-finite numbers are an error (JSON.stringify would silently emit
  *   `null` — the fill_value convention represents them as strings like
  *   "NaN" instead);
- * - unsafe integers (integral values beyond ±(2^53 − 1)) are an error —
- *   JavaScript has already lost the original digits, so emitting the rounded
- *   value would be silent corruption (such documents are declared
- *   non-portable by the conformance protocol);
+ * - bigint values serialize as exact integer digits (strictParse produces
+ *   them for integer literals outside the float64-safe range, so integers
+ *   of any size round-trip losslessly, like Python's arbitrary ints);
  * - strings that are not well-formed UTF-16 (lone surrogates) are an error,
  *   matching Python's UTF-8 encode failure, instead of being escaped into
  *   bytes no other implementation can produce.
@@ -96,13 +95,6 @@ function writeCanonicalNumber(value: number, parts: string[]): void {
 				'use the fill_value string convention ("NaN", "Infinity", "-Infinity")',
 		);
 	}
-	if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
-		throw new Error(
-			`canonical JSON cannot represent the unsafe integer ${value}: ` +
-				"integral values beyond \u00b1(2^53 \u2212 1) have already lost " +
-				"precision in JavaScript, so serializing would silently corrupt them",
-		);
-	}
 	// RFC 8785 numbers are ES Number::toString, which is exactly String(v);
 	// note String(-0) === "0" — the sign of negative zero is not preserved
 	// (Python and Rust emit "0" for -0.0 as well).
@@ -128,6 +120,10 @@ function writeCanonical(value: unknown, parts: string[]): void {
 			return;
 		case "number":
 			writeCanonicalNumber(value, parts);
+			return;
+		case "bigint":
+			// Exact integer digits, any size (RFC 8785 integers-as-digits).
+			parts.push(value.toString());
 			return;
 		case "string":
 			writeCanonicalString(value, parts);
@@ -221,15 +217,58 @@ export function assertNumbersFinite(value: unknown): void {
 	}
 }
 
+const INTEGER_LITERAL_RE = /^-?\d+$/;
+
+type ReviverContext = { source?: string };
+
+// JSON.parse reviver source-text access (Node >= 21 / V8's rawJSON
+// proposal). Without it, integer literals beyond 2^53 are silently rounded
+// before user code can see them, so lossless integers are impossible.
+const HAS_REVIVER_SOURCE: boolean = (() => {
+	let seen = false;
+	JSON.parse("0", (_key: string, value: unknown, context?: ReviverContext) => {
+		seen = typeof context?.source === "string";
+		return value;
+	});
+	return seen;
+})();
+
 /**
- * Parse JSON like Python's strict_loads: reject number literals that
- * overflow float64 (JSON.parse silently produces Infinity for e.g. 1e400,
- * where Python and Rust reject the document).
+ * Parse JSON like Python's strict_loads, losslessly.
+ *
+ * - Integer literals (no ".", "e", "E") outside the float64-safe range parse
+ *   as bigint, using the reviver's source-text access (Node >= 21), so
+ *   integers of any size survive exactly — JSON.parse alone would silently
+ *   round them to the nearest double.
+ * - Number literals that overflow float64 (e.g. 1e400) are rejected, like
+ *   Python's strict_loads and Rust's serde_json.
  */
 export function strictParse(text: string): unknown {
-	const parsed: unknown = JSON.parse(text);
-	assertNumbersFinite(parsed);
-	return parsed;
+	if (!HAS_REVIVER_SOURCE) {
+		throw new Error(
+			"zarr-json requires JSON.parse reviver source access (Node >= 21) " +
+				"to parse integers losslessly",
+		);
+	}
+	return JSON.parse(
+		text,
+		(_key: string, value: unknown, context?: ReviverContext) => {
+			if (typeof value === "number") {
+				const source = context?.source;
+				if (
+					source !== undefined &&
+					!Number.isSafeInteger(value) &&
+					INTEGER_LITERAL_RE.test(source)
+				) {
+					return BigInt(source);
+				}
+				if (!Number.isFinite(value)) {
+					throw new Error("number literal overflows float64 (e.g. 1e400)");
+				}
+			}
+			return value;
+		},
+	);
 }
 
 const BASE64_RE =
@@ -319,9 +358,11 @@ export function encodeValue(key: string, data: Uint8Array): unknown {
 /** Return the parsed JSON array if inlining `data` is lossless, else undefined. */
 function tryInlineArray(data: Uint8Array): unknown[] | undefined {
 	try {
-		// JSON.parse rejects NaN/Infinity tokens (they are not JSON), so bytes
-		// like "[NaN]" fall through to base64 here, matching canonical form.
-		const parsed: unknown = JSON.parse(UTF8_DECODER.decode(data));
+		// strictParse rejects NaN/Infinity tokens and float64 overflow, and
+		// parses big integer literals as bigint — so bytes like
+		// "[9007199254740993]" inline losslessly instead of falling back to
+		// base64, while "[NaN]" and "[1e400]" fall through to base64.
+		const parsed: unknown = strictParse(UTF8_DECODER.decode(data));
 		if (!Array.isArray(parsed)) {
 			return undefined;
 		}

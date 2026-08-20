@@ -10,6 +10,14 @@ inline JSON arrays of decoded values.
 
 See the spec: `../docs/superpowers/specs/2026-05-14-zarr-json-design.md`.
 
+## Requirements
+
+Node >= 21: the implementation parses integer literals losslessly (integers
+beyond 2^53 become `BigInt`) via `JSON.parse` reviver source-text access, so
+int64/uint64 data and big metadata integers survive exactly, matching the
+Python and Rust implementations. `strictParse` throws a clear error on older
+Node versions.
+
 ## Install / build
 
 ```bash
@@ -74,14 +82,11 @@ await zarr.set(legible, null, {
 ```
 
 Supported dtypes: int8/16/32, uint8/16/32, float32/64, bool, and
-int64/uint64 (as BigInt). int64/uint64 values beyond
-`Number.MAX_SAFE_INTEGER` throw on encode — the known int64-in-JS
-limitation, inherited from the `fill_value` convention (plain `JSON.parse`
-cannot round-trip integers beyond 2^53 either). Decoding is strict, like
-zarr-python's `from_json_scalar`: out-of-range or non-integer values for
-int dtypes, non-safe integers for int64/uint64 (a peer's
-`9007199254740993` has already been rounded by `JSON.parse`, so it errors
-loudly instead of silently corrupting), and non-boolean bool values all
+int64/uint64 (as BigInt) across their full ranges — values beyond 2^53
+serialize as exact integer digits and parse back losslessly via
+`strictParse` (Node >= 21). Decoding is strict, like zarr-python's
+`from_json_scalar`: out-of-range or non-integer values for int dtypes,
+dtype-range violations for int64/uint64, and non-boolean bool values all
 throw; floats accept numbers plus the `"NaN"`/`"Infinity"`/`"-Infinity"`
 strings.
 
@@ -134,17 +139,16 @@ valid base64) land in `"errors"`; documents containing number literals
 that overflow float64 (like `1e400`) are rejected outright, matching
 Python and Rust.
 
-The canonical serializer is hand-rolled rather than `JSON.stringify`: it
-emits `-0.0` for negative zero (matching Python and Rust) and throws on
-non-finite numbers, on integral values beyond ±(2^53 − 1) (their digits
-are already lost to float64 rounding), and on lone surrogates (which have
-no UTF-8 encoding) — all cases the conformance protocol's document
-constraints declare non-portable.
+The canonical serializer is hand-rolled rather than `JSON.stringify`:
+numbers follow RFC 8785 (ES `Number::toString`, so negative zero prints
+`0`), bigint values print as exact digits, and it throws on non-finite
+numbers and on lone surrogates (which have no UTF-8 encoding) — cases the
+conformance protocol's document constraints declare non-portable.
 
-Known cross-language caveats (documented in the protocol): JavaScript
-number formatting differs from Python for integral-valued floats (`1.0`
-serializes as `1`), and JavaScript objects reorder integer-like member
-names. The cross-implementation property test avoids these values.
+Known cross-language caveats (documented in the protocol): integers
+outside `[i64::MIN, u64::MAX]` are lossy in the Rust implementation
+(serde_json), and JavaScript objects reorder integer-like member names.
+The cross-implementation property test avoids these values.
 
 ## Crosscheck harness
 

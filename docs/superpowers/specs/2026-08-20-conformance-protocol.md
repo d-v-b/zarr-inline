@@ -82,11 +82,9 @@ does not generate such documents, and portable documents must not contain:
 - **Non-finite number literals**, including overflow like `1e999`
   (Python and Rust reject the document; JavaScript's JSON.parse silently
   produces Infinity).
-- **Numbers with magnitude ≥ 2^53** (JavaScript cannot distinguish a
-  parse-rounded integer from a float there, so its canonicalizer rejects
-  integral-magnitude values ≥ 2^53 loudly while Python/Rust serialize
-  exact integer digits or ES float text; serde_json additionally falls
-  back to lossy float64 outside `[i64::MIN, u64::MAX]`).
+- **Integers outside `[i64::MIN, u64::MAX]`** (serde_json falls back to
+  lossy float64 there; Python and TypeScript are exact at any size —
+  Python natively, TypeScript via BigInt).
 - **Nesting deeper than 100 levels** (serde_json's recursion limit is 128;
   CPython's is higher but finite).
 - **Lone surrogates** in any string (serde_json rejects the document;

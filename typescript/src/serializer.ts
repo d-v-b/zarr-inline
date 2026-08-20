@@ -10,7 +10,7 @@
  * int64/uint64 caveat: JS represents these as BigInt. Values within
  * Number.MAX_SAFE_INTEGER are emitted as JSON numbers; larger values throw —
  * the known int64-in-JS limitation, inherited from the fill_value convention
- * (plain JSON.parse cannot round-trip integers beyond 2^53 either).
+ * Integers beyond 2^53 round-trip losslessly as bigint via strictParse.
  *
  * Register with zarrita via `registerJsonCodec()`, then create arrays with
  * `codecs: [{ name: "json", configuration: {} }]`.
@@ -18,7 +18,7 @@
 
 import { BoolArray, registry } from "zarrita";
 import type { Chunk, CodecMetadata, DataType, TypedArray } from "zarrita";
-import { canonicalStringify } from "./codec.js";
+import { canonicalStringify, strictParse } from "./codec.js";
 
 type ChunkMeta = {
 	dataType: DataType;
@@ -50,15 +50,14 @@ function isBigintType(dataType: string): boolean {
 /** Serialize one element per the Zarr v3 fill_value scalar convention. */
 export function toJsonScalar(value: unknown, dataType: string): unknown {
 	if (typeof value === "bigint") {
+		// Safe values serialize as plain numbers (matching the other
+		// implementations' output for small ints); larger values stay bigint
+		// and canonicalStringify emits their exact digits.
 		if (
 			value > BigInt(Number.MAX_SAFE_INTEGER) ||
 			value < -BigInt(Number.MAX_SAFE_INTEGER)
 		) {
-			throw new Error(
-				`json codec: ${dataType} value ${value} exceeds Number.MAX_SAFE_INTEGER ` +
-					"and cannot be represented exactly in a JavaScript JSON document " +
-					"(known int64-in-JS limitation, inherited from the fill_value convention)",
-			);
+			return value;
 		}
 		return Number(value);
 	}
@@ -89,9 +88,10 @@ const INT_RANGES: Record<string, [number, number]> = {
  * Parse one element per the Zarr v3 fill_value scalar convention.
  *
  * Strict, like zarr-python's from_json_scalar: coercing silently would be
- * corruption. int64/uint64 values must be safe integers (JSON.parse has
- * already rounded 9007199254740993 to ...992 — BigInt of that rounded double
- * must be a loud error, not a wrong answer); other int dtypes reject
+ * corruption. int64/uint64 accept bigint (strictParse yields it for integer
+ * literals beyond 2^53) or safe-integer numbers, range-checked against the
+ * dtype bounds; a plain number that is integral but unsafe is rejected (it
+ * can only mean a lossy parse upstream). Other int dtypes reject
  * non-integers and out-of-range values; floats accept numbers plus the
  * "NaN"/"Infinity"/"-Infinity" strings; bool requires a JSON boolean.
  */
@@ -106,17 +106,27 @@ export function fromJsonScalar(value: unknown, dataType: string): unknown {
 		throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
 	}
 	if (isBigintType(dataType)) {
-		if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+		let big: bigint;
+		if (typeof value === "bigint") {
+			big = value;
+		} else if (typeof value === "number" && Number.isSafeInteger(value)) {
+			big = BigInt(value);
+		} else {
 			throw new Error(
-				`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}: ` +
-					"must be an integer within ±(2^53 − 1) " +
-					"(larger values lose precision in JSON.parse)",
+				`json codec: invalid ${dataType} scalar ${String(value)}: ` +
+					"must be an integer (bigint or float64-safe number)",
 			);
 		}
-		if (dataType === "uint64" && value < 0) {
-			throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
+		const [lo, hi] =
+			dataType === "int64"
+				? [-(2n ** 63n), 2n ** 63n - 1n]
+				: [0n, 2n ** 64n - 1n];
+		if (big < lo || big > hi) {
+			throw new Error(
+				`json codec: ${dataType} scalar ${big} is out of range [${lo}, ${hi}]`,
+			);
 		}
-		return BigInt(value);
+		return big;
 	}
 	if (dataType === "bool") {
 		if (typeof value !== "boolean") {
@@ -283,7 +293,8 @@ export class JsonSerializer {
 	}
 
 	decode(bytes: Uint8Array): Chunk<DataType> {
-		const nested: unknown = JSON.parse(UTF8_DECODER.decode(bytes));
+		// strictParse: big int64/uint64 chunk elements arrive as bigint.
+		const nested: unknown = strictParse(UTF8_DECODER.decode(bytes));
 		const flat = flatten(nested, this.#shape);
 		const scalars = flat.map((v) => fromJsonScalar(v, this.#dataType));
 		return {

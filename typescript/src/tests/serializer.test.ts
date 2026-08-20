@@ -136,19 +136,25 @@ test("bool chunks appear as true/false and round-trip", async () => {
 	assert.deepEqual(Array.from(out.data as zarr.BoolArray), [true, false]);
 });
 
-test("encode throws for int64 values beyond Number.MAX_SAFE_INTEGER", () => {
+test("encode emits exact digits for int64 values beyond 2^53", () => {
 	const codec = JsonSerializer.fromConfig(
 		{},
-		{ dataType: "int64", shape: [1], codecs: [], fillValue: null },
+		{ dataType: "int64", shape: [3], codecs: [], fillValue: null },
 	);
-	assert.throws(
-		() =>
-			codec.encode({
-				data: BigInt64Array.from([2n ** 60n + 1n]),
-				shape: [1],
-				stride: [1],
-			}),
-		/MAX_SAFE_INTEGER/,
+	const bytes = codec.encode({
+		data: BigInt64Array.from([-(2n ** 63n), 2n ** 63n - 1n, 5n]),
+		shape: [3],
+		stride: [1],
+	});
+	assert.equal(
+		new TextDecoder().decode(bytes),
+		"[-9223372036854775808,9223372036854775807,5]",
+	);
+	// and it round-trips exactly through decode
+	const back = codec.decode(bytes);
+	assert.deepEqual(
+		[...(back.data as BigInt64Array)],
+		[-(2n ** 63n), 2n ** 63n - 1n, 5n],
 	);
 });
 
@@ -195,17 +201,27 @@ test("fromJsonScalar accepts in-range scalars per dtype", () => {
 	assert.equal(fromJsonScalar(true, "bool"), true);
 });
 
-test("fromJsonScalar rejects unsafe int64 values", () => {
-	// JSON.parse of a peer's 9007199254740993 has already rounded to
-	// ...992 (2^53, not a safe integer): BigInt of that would be silent
-	// corruption, so it must throw instead.
+test("fromJsonScalar accepts bigint and safe numbers for int64/uint64", () => {
+	// strictParse yields bigint for integer literals beyond 2^53; both forms
+	// are exact.
+	assert.equal(fromJsonScalar(9007199254740993n, "int64"), 9007199254740993n);
+	assert.equal(fromJsonScalar(2n ** 64n - 1n, "uint64"), 2n ** 64n - 1n);
+	assert.equal(fromJsonScalar(7, "int64"), 7n);
+});
+
+test("fromJsonScalar rejects unsafe plain numbers for int64", () => {
+	// A plain number that is integral but unsafe can only mean a lossy parse
+	// upstream (strictParse would have produced a bigint).
 	assert.throws(() => fromJsonScalar(2 ** 53, "int64"), /invalid int64/);
 	assert.throws(() => fromJsonScalar(1.5, "int64"), /invalid int64/);
 	assert.throws(() => fromJsonScalar("7", "int64"), /invalid int64/);
 });
 
-test("fromJsonScalar rejects negative uint64 values", () => {
-	assert.throws(() => fromJsonScalar(-1, "uint64"), /invalid uint64/);
+test("fromJsonScalar rejects out-of-range int64/uint64 values", () => {
+	assert.throws(() => fromJsonScalar(-1, "uint64"), /out of range/);
+	assert.throws(() => fromJsonScalar(2n ** 64n, "uint64"), /out of range/);
+	assert.throws(() => fromJsonScalar(2n ** 63n, "int64"), /out of range/);
+	assert.throws(() => fromJsonScalar(-(2n ** 63n) - 1n, "int64"), /out of range/);
 });
 
 test("fromJsonScalar rejects out-of-range int scalars", () => {
@@ -232,10 +248,12 @@ test("decode surfaces strict scalar errors", () => {
 		{},
 		{ dataType: "int64", shape: [1], codecs: [], fillValue: null },
 	);
-	// A peer writing 9007199254740993 parses as the rounded double 2^53;
-	// decoding must be a loud error, not 9007199254740992n.
+	// A peer's 9007199254740993 now parses losslessly as bigint; a
+	// fractional element is still a loud error.
+	const ok = codec.decode(new TextEncoder().encode("[9007199254740993]"));
+	assert.deepEqual([...(ok.data as BigInt64Array)], [9007199254740993n]);
 	assert.throws(
-		() => codec.decode(new TextEncoder().encode("[9007199254740993]")),
+		() => codec.decode(new TextEncoder().encode("[1.5]")),
 		/invalid int64/,
 	);
 });

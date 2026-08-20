@@ -115,7 +115,7 @@ machinery (`ZDType.to_json_scalar` / `from_json_scalar`):
 | dtype case | fill_value-convention JSON | verified |
 |---|---|---|
 | ints ≤ 2^53 | number | exact |
-| int64/uint64 beyond 2^53 | number (arbitrary-precision grammar) | exact in Python; **JS parsers lose precision** — but this is already `fill_value`'s problem in every JS Zarr implementation; the codec inherits the wart *and its eventual fix* in one place |
+| int64/uint64 beyond 2^53 | number (arbitrary-precision grammar) | exact in Python, Rust, and TypeScript (TS parses integer literals losslessly as BigInt via reviver source access, Node >= 21) |
 | finite floats | number, RFC 8785 / ES `Number::toString` text (`1.0` -> `1`; **negative-zero sign not preserved**: `-0.0` -> `0`; bit-exact -0.0 would need the hex-string escape) | exact modulo -0.0 sign |
 | NaN / ±Inf | strings `"NaN"`, `"Infinity"`, `"-Infinity"` | exact; end-to-end in the spike — document shows `[1.5,"NaN","Infinity",-0.0]`, zarr reads back nan/inf |
 | NaN payloads / signaling bits | v3 spec *allows* bit-exact hex strings (`"0x7ff8000000000001"`), but zarr-python's scalar API collapses to `"NaN"` | implementation gap, not a spec gap |

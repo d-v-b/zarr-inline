@@ -19,8 +19,8 @@ REPO = Path(__file__).resolve().parents[2]
 
 # The portable payload: every dtype all three host libraries support, edge
 # chunks (shape not divisible by chunks), a nested group path, non-finite
-# floats, and int64 at the float64-safe boundary (the documented portable
-# range; see the crosscheck protocol).
+# floats, and int64 across its full range including values JavaScript can
+# only carry as BigInt (see the crosscheck protocol).
 PAYLOAD = {
     "arrays": [
         {"path": "b", "dtype": "bool", "shape": [3], "chunks": [2],
@@ -30,7 +30,8 @@ PAYLOAD = {
         {"path": "f64", "dtype": "float64", "shape": [5], "chunks": [2],
          "data": [0.5, "NaN", "Infinity", "-Infinity", -2.75]},
         {"path": "grp/i64", "dtype": "int64", "shape": [2, 2], "chunks": [1, 2],
-         "data": [[1099511627776, -5], [0, 9007199254740991]]},
+         "data": [[-9223372036854775808, 9223372036854775807],
+                  [9007199254740993, -5]]},
         {"path": "i32", "dtype": "int32", "shape": [3], "chunks": [2],
          "data": [-2147483648, 0, 2147483647]},
         {"path": "u8", "dtype": "uint8", "shape": [2, 4], "chunks": [2, 4],

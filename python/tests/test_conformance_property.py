@@ -12,8 +12,8 @@ magnitude range. The generated value space still avoids the residual
 divergences documented in
 docs/superpowers/specs/2026-08-20-conformance-protocol.md:
 
-- numbers with magnitude >= 2^53 (JS cannot distinguish rounded integers
-  from floats there);
+- integers outside [i64::MIN, u64::MAX] (serde_json parses them as lossy
+  float64; Python and TypeScript are exact at any size);
 - integer-like JSON object member names (JS objects reorder them).
 """
 
@@ -92,7 +92,7 @@ SEGMENT = st.from_regex(r"[a-z0-9][a-z0-9._-]{0,5}", fullmatch=True).filter(
 )
 OBJ_KEY = st.from_regex(r"[a-z_][a-z0-9_]{0,6}", fullmatch=True)
 
-SAFE_INT = st.integers(min_value=-(2**53) + 1, max_value=2**53 - 1)
+SAFE_INT = st.integers(min_value=-(2**63), max_value=2**64 - 1)
 SAFE_FLOAT = st.floats(
     min_value=-(2.0**53 - 1), max_value=2.0**53 - 1, allow_nan=False
 )

@@ -37,8 +37,9 @@ A JSON object:
   (`"NaN"` / `"Infinity"` / `"-Infinity"` strings for non-finite floats),
   nested by `shape` in C order.
 - Constraints on portable payloads (the documented cross-language limits):
-  int64 values within +/-(2^53-1); no `-0.0`; floats exactly representable
-  in the target dtype.
+  no `-0.0` (its sign is not preserved by RFC 8785 canonical numbers);
+  floats exactly representable in the target dtype. int64/uint64 values
+  are portable across their full ranges.
 
 ## Harness modes
 

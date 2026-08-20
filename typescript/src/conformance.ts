@@ -21,7 +21,7 @@
 import { pathToFileURL } from "node:url";
 
 import {
-	assertNumbersFinite,
+	strictParse,
 	base64Encode,
 	canonicalStringify,
 	compareCodePoints,
@@ -82,11 +82,9 @@ async function main(): Promise<number> {
 	const text = await readStdin();
 	let document: unknown;
 	try {
-		document = JSON.parse(text);
-		// Only overflow like 1e400 can produce a non-finite number here
-		// (JSON.parse rejects NaN/Infinity tokens); Python and Rust reject
-		// such documents at parse time, so this harness must too.
-		assertNumbersFinite(document);
+		// strictParse: rejects float64 overflow (1e400) like Python and Rust,
+		// and parses big integer literals losslessly as bigint.
+		document = strictParse(text);
 	} catch (err) {
 		process.stderr.write(`invalid JSON input: ${String(err)}\n`);
 		return 1;

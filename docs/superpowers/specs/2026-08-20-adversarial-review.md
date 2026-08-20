@@ -29,9 +29,10 @@ reproduction against the running code.
    canonical form (ES `Number::toString` in all three implementations;
    member order still preserved, unlike full JCS). This closes the
    integral-float, exponent-style, and -0 divergences (at the cost of
-   the -0.0 sign, which JCS serializes as `0`). Residual constraint:
-   numbers with magnitude >= 2^53. TS errors loudly on unsafe integers
-   instead of corrupting silently.
+   the -0.0 sign, which JCS serializes as `0`). TypeScript then adopted
+   lossless BigInt parsing (JSON.parse reviver source access, Node >=
+   21), eliminating the >= 2^53 integer corruption class; the residual
+   constraint is integers outside [i64::MIN, u64::MAX] (serde_json).
 3. **Lone surrogates are a three-way split** (serde_json rejects the
    document; Python parses but cannot UTF-8-encode; JS would happily
    escape them into bytes no other implementation can produce).

@@ -7,6 +7,7 @@ import {
 	decodeValue,
 	encodeValue,
 	isMetadataKey,
+	strictParse,
 } from "../codec.js";
 
 const UTF8 = new TextEncoder();
@@ -181,12 +182,43 @@ test("canonicalStringify emits 0 for negative zero per RFC 8785", () => {
 	assert.equal(canonicalStringify({ a: -0 }), '{"a":0}');
 });
 
-test("canonicalStringify rejects unsafe integers", () => {
-	// The original digits are already lost to float64 rounding; emitting the
-	// rounded value would be silent corruption.
-	assert.throws(() => canonicalStringify(2 ** 53), /unsafe integer/);
-	assert.throws(() => canonicalStringify([-(2 ** 53) - 2]), /unsafe integer/);
-	assert.throws(() => canonicalStringify({ a: 9007199254740994 }), /unsafe integer/);
+test("strictParse carries big integer literals as exact bigint", () => {
+	assert.equal(strictParse("9007199254740993"), 9007199254740993n);
+	assert.deepEqual(strictParse("[18446744073709551615, -9223372036854775808]"), [
+		2n ** 64n - 1n,
+		-(2n ** 63n),
+	]);
+	// safe integers and float notation stay plain numbers
+	assert.equal(strictParse("9007199254740991"), 9007199254740991);
+	assert.equal(strictParse("1.5"), 1.5);
+	assert.equal(strictParse("1e300"), 1e300);
+	assert.throws(() => strictParse("[1e400]"), /overflows float64/);
+});
+
+test("canonicalStringify emits exact digits for bigint", () => {
+	assert.equal(canonicalStringify(9007199254740993n), "9007199254740993");
+	assert.equal(
+		canonicalStringify([2n ** 64n - 1n, {a: -(2n ** 63n)}]),
+		'[18446744073709551615,{"a":-9223372036854775808}]',
+	);
+	// round-trip: strictParse(canonicalStringify(x)) is identity for big ints
+	assert.deepEqual(strictParse(canonicalStringify([2n ** 63n])), [2n ** 63n]);
+});
+
+test("encodeValue inlines big-integer arrays losslessly", () => {
+	// Previously fell back to base64 (JSON.parse would have rounded).
+	const bytes = new TextEncoder().encode("[9007199254740993]");
+	assert.deepEqual(encodeValue("a/c/0", bytes), [9007199254740993n]);
+});
+
+test("canonicalStringify formats numbers as ES ToString floats", () => {
+	// A number is always semantically a float (strictParse carries exact
+	// integers as bigint), so integral doubles serialize via ES ToString —
+	// matching Python's serialization of the same float64 value.
+	assert.equal(canonicalStringify(2 ** 53), "9007199254740992");
+	assert.equal(canonicalStringify(1e300), "1e+300");
+	assert.equal(canonicalStringify(1e21), "1e+21");
+	assert.equal(canonicalStringify(1e20), "100000000000000000000");
 });
 
 test("canonicalStringify rejects lone surrogates", () => {
