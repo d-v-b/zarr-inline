@@ -291,9 +291,15 @@ mod tests {
         let elements: Vec<u8> = values.iter().flat_map(|v| v.to_ne_bytes()).collect();
         let chunk_shape = shape(&[5]);
         let text = encode_to_string(&codec, elements.clone(), &chunk_shape, &dt);
-        assert_eq!(text, r#"[1.5,"NaN","Infinity","-Infinity",-0.0]"#);
+        // ES number formatting (RFC 8785): -0.0 prints "0", losing its sign.
+        assert_eq!(text, r#"[1.5,"NaN","Infinity","-Infinity",0]"#);
 
-        // Decode reproduces the exact bit patterns.
+        // Decode reproduces the bit patterns, except -0.0 which comes back
+        // as +0.0 (canonical numbers do not preserve the sign of zero).
+        let expected: Vec<u8> = [1.5f64, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0]
+            .iter()
+            .flat_map(|v| v.to_ne_bytes())
+            .collect();
         let decoded = codec
             .decode(
                 Cow::Owned(text.into_bytes()),
@@ -303,7 +309,7 @@ mod tests {
                 &CodecOptions::default(),
             )
             .unwrap();
-        assert_eq!(decoded.into_fixed().unwrap().into_owned(), elements);
+        assert_eq!(decoded.into_fixed().unwrap().into_owned(), expected);
     }
 
     #[test]

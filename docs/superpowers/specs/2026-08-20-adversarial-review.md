@@ -25,9 +25,13 @@ reproduction against the running code.
    int 0 (Python), float −0.0 (serde_json), and an unrepresentable
    distinction in JS; exponent text differs (`1e-07` vs `1e-7`); JS cannot
    distinguish `1.0` from `1`.
-   *Disposition:* documented constraints; TS now errors loudly on unsafe
-   integers instead of corrupting silently; RFC 8785 (JCS) number
-   formatting remains the candidate long-term fix.
+   *Disposition:* RFC 8785 (JCS) number formatting ADOPTED as the
+   canonical form (ES `Number::toString` in all three implementations;
+   member order still preserved, unlike full JCS). This closes the
+   integral-float, exponent-style, and -0 divergences (at the cost of
+   the -0.0 sign, which JCS serializes as `0`). Residual constraint:
+   numbers with magnitude >= 2^53. TS errors loudly on unsafe integers
+   instead of corrupting silently.
 3. **Lone surrogates are a three-way split** (serde_json rejects the
    document; Python parses but cannot UTF-8-encode; JS would happily
    escape them into bytes no other implementation can produce).
@@ -56,11 +60,13 @@ reproduction against the running code.
    metadata to codecs. *Disposition:* documented composition
    constraint — portable chains use `json` alone; cross-reads of
    transpose+json fail loudly, not silently.
-8. **Stores accept keys their own validator rejects** (`""`, `"a/./b"`,
+8. **[RESOLVED] Stores accept keys their own validator rejects** (`""`, `"a/./b"`,
    `".."` pass zarrs/zarr-python key checks but are R1-invalid), so a
    store round-trip can produce a document that fails strict reload.
-   Real Zarr libraries never emit such keys. *Disposition:* known gap in
-   both stores, parity; revisit if it ever bites.
+   Real Zarr libraries never emit such keys. *Disposition:* fixed —
+   `set` now rejects R1-malformed keys in all three stores, per the
+   Zarr v3 store-key grammar, so a store built through the API always
+   produces a valid document.
 
 ## Implementation findings (fixed in place)
 

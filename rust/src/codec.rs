@@ -54,19 +54,118 @@ pub fn is_metadata_key(key: &str) -> bool {
     key == METADATA_SUFFIX || key.ends_with("/zarr.json")
 }
 
+/// Format a finite float per ECMAScript `Number::toString`, as required by
+/// RFC 8785 (JCS) section 3.2.2.3. This is what makes canonical number text
+/// identical across Python, JavaScript, and Rust: integral floats print
+/// without a decimal point (`1.0` -> `"1"`), negative zero prints `"0"`, and
+/// exponents are unpadded (`"1e-7"`, not `"1e-07"`), switching to exponential
+/// form only outside [1e-6, 1e21).
+///
+/// # Panics
+/// Panics if `value` is NaN or infinite: canonical JSON cannot represent
+/// non-finite numbers (and `serde_json::Number` can never hold one).
+#[must_use]
+pub fn es_number_str(value: f64) -> String {
+    assert!(
+        value.is_finite(),
+        "canonical JSON cannot represent non-finite numbers"
+    );
+    if value == 0.0 {
+        // Covers -0.0 too: ES ToString prints negative zero as "0".
+        return "0".to_string();
+    }
+    if value < 0.0 {
+        return format!("-{}", es_number_str(-value));
+    }
+
+    // Shortest round-trip digits from ryu (e.g. "1.5", "1e300", "5e-324"),
+    // re-expressed as significant digits d1..dk and an exponent n with
+    // value = 0.d1..dk * 10^n.
+    let mut buffer = ryu::Buffer::new();
+    let shortest = buffer.format_finite(value);
+    let (mantissa, exp_part) = match shortest.split_once(['e', 'E']) {
+        Some((mantissa, exp)) => (mantissa, exp.parse::<i32>().expect("ryu exponent")),
+        None => (shortest, 0),
+    };
+    let (int_part, frac_part) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let mut exp = exp_part - i32::try_from(frac_part.len()).expect("ryu digit count");
+    let mut digits: Vec<u8> = int_part.bytes().chain(frac_part.bytes()).collect();
+    while digits.last() == Some(&b'0') {
+        digits.pop();
+        exp += 1;
+    }
+    let leading_zeros = digits.iter().take_while(|&&d| d == b'0').count();
+    digits.drain(..leading_zeros);
+    let digits = String::from_utf8(digits).expect("ASCII digits");
+    let k = i32::try_from(digits.len()).expect("ryu digit count");
+    let n = exp + k;
+
+    // ECMA-262 Number::toString(10) for a positive finite value.
+    if k <= n && n <= 21 {
+        return format!("{digits}{}", "0".repeat((n - k) as usize));
+    }
+    if 0 < n && n <= 21 {
+        let (int_digits, frac_digits) = digits.split_at(n as usize);
+        return format!("{int_digits}.{frac_digits}");
+    }
+    if -6 < n && n <= 0 {
+        return format!("0.{}{digits}", "0".repeat((-n) as usize));
+    }
+    let mantissa = if digits.len() > 1 {
+        format!("{}.{}", &digits[..1], &digits[1..])
+    } else {
+        digits
+    };
+    let e = n - 1;
+    format!("{mantissa}e{}{}", if e >= 0 { '+' } else { '-' }, e.abs())
+}
+
+/// serde_json `Formatter` for the canonical zarr-json form: compact output
+/// with floats formatted per ECMAScript `Number::toString` ([`es_number_str`]).
+/// Integers keep serde_json's exact digit output (itoa), which is identical
+/// to the ES float form for every safe integer.
+struct CanonicalFormatter;
+
+impl serde_json::ser::Formatter for CanonicalFormatter {
+    fn write_f64<W>(&mut self, writer: &mut W, value: f64) -> std::io::Result<()>
+    where
+        W: ?Sized + std::io::Write,
+    {
+        // Unreachable through serde_json::Value (Number is always finite),
+        // but fail loudly rather than panicking if reached another way.
+        if !value.is_finite() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "canonical JSON cannot represent non-finite numbers",
+            ));
+        }
+        writer.write_all(es_number_str(value).as_bytes())
+    }
+}
+
 /// Serialize a JSON value in the canonical zarr-json form.
 ///
-/// `serde_json`'s compact serialization is already canonical: no whitespace
-/// (`,` / `:` separators), non-ASCII characters unescaped (UTF-8 output), and
-/// object member order preserved as given (the `preserve_order` feature is
-/// enabled, so `serde_json::Map` is order-preserving). NaN / Infinity tokens
-/// cannot occur: `serde_json::Number` can never hold a non-finite value
-/// (`Number::from_f64` returns `None` for them), so rejection of non-finite
-/// numbers is inherent — the fill_value convention represents them as strings
-/// like `"NaN"` instead. This form is shared by all zarr-json implementations
-/// so that decoded bytes agree across languages.
+/// No whitespace (`,` / `:` separators); non-ASCII characters unescaped
+/// (UTF-8 output); object member order preserved as given (member names are
+/// NOT sorted — this deliberately departs from full RFC 8785; the
+/// `preserve_order` feature makes `serde_json::Map` order-preserving).
+/// Numbers per RFC 8785 (JCS) section 3.2.2.3: floats via ECMAScript
+/// `Number::toString` ([`es_number_str`]), integers as exact digits.
+/// NaN / Infinity tokens cannot occur: `serde_json::Number` can never hold a
+/// non-finite value (`Number::from_f64` returns `None` for them), so
+/// rejection of non-finite numbers is inherent — the fill_value convention
+/// represents them as strings like `"NaN"` instead. This form is shared by
+/// all zarr-json implementations so that decoded bytes agree byte-for-byte
+/// across languages.
 pub fn canonical_to_string(value: &Value) -> String {
-    serde_json::to_string(value).expect("JSON value serialization cannot fail")
+    use serde::Serialize as _;
+
+    let mut out = Vec::new();
+    let mut serializer = serde_json::Serializer::with_formatter(&mut out, CanonicalFormatter);
+    value
+        .serialize(&mut serializer)
+        .expect("JSON value serialization cannot fail");
+    String::from_utf8(out).expect("canonical JSON is UTF-8")
 }
 
 /// Convert a stored zarr-json value into the bytes Zarr expects.
@@ -161,6 +260,52 @@ mod tests {
         // Object member order is preserved, not sorted.
         let v: Value = serde_json::from_str(r#"{"b":1,"a":2}"#).unwrap();
         assert_eq!(canonical_to_string(&v), r#"{"b":1,"a":2}"#);
+        // Floats use ECMAScript Number::toString (RFC 8785): integral floats
+        // lose the decimal point, -0.0 loses its sign, exponents are unpadded.
+        assert_eq!(
+            canonical_to_string(&json!([1.0, -0.0, 1e-7, 100.0, -2.75])),
+            "[1,0,1e-7,100,-2.75]"
+        );
+        // Integers keep exact digit output, identical to the ES float form
+        // for every safe integer.
+        assert_eq!(
+            canonical_to_string(&json!([0, -5, 9007199254740991i64])),
+            "[0,-5,9007199254740991]"
+        );
+    }
+
+    #[test]
+    fn es_number_str_mandatory_vectors() {
+        for (value, expected) in [
+            (0.0, "0"),
+            (-0.0, "0"),
+            (1.0, "1"),
+            (-1.0, "-1"),
+            (1.5, "1.5"),
+            (100.0, "100"),
+            (0.1, "0.1"),
+            (1e16, "10000000000000000"),
+            (1e20, "100000000000000000000"),
+            (1e21, "1e+21"),
+            (1e-6, "0.000001"),
+            (1e-7, "1e-7"),
+            (1.5e-7, "1.5e-7"),
+            (5e-324, "5e-324"),
+            (1.7976931348623157e308, "1.7976931348623157e+308"),
+            (3.141592653589793, "3.141592653589793"),
+            (0.10000000149011612, "0.10000000149011612"),
+            (1e300, "1e+300"),
+            (-2.75, "-2.75"),
+            (123.456, "123.456"),
+        ] {
+            assert_eq!(es_number_str(value), expected, "value: {value:e}");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite")]
+    fn es_number_str_rejects_non_finite() {
+        let _ = es_number_str(f64::NAN);
     }
 
     #[test]
@@ -210,9 +355,14 @@ mod tests {
         // Canonical JSON array bytes are inlined losslessly.
         assert_eq!(encode_value("x/c/0", b"[1,2]").unwrap(), json!([1, 2]));
         assert_eq!(
-            encode_value("x/c/0", b"[[1.5,\"NaN\"],[-0.0,3]]").unwrap(),
-            serde_json::from_str::<Value>("[[1.5,\"NaN\"],[-0.0,3]]").unwrap()
+            encode_value("x/c/0", b"[[1.5,\"NaN\"],[0.5,3]]").unwrap(),
+            serde_json::from_str::<Value>("[[1.5,\"NaN\"],[0.5,3]]").unwrap()
         );
+        // "-0.0" is not canonical number text (ES ToString prints "0"), so
+        // bytes containing it are stored as base64, not inlined.
+        let v = encode_value("x/c/0", b"[-0.0]").unwrap();
+        assert!(v.is_string());
+        assert_eq!(decode_value("x/c/0", &v).unwrap(), b"[-0.0]".to_vec());
         // Opaque bytes -> padded standard base64.
         assert_eq!(encode_value("x/c/0", &[0, 1, 2]).unwrap(), json!("AAEC"));
     }

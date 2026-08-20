@@ -12,8 +12,10 @@ pub mod serializer;
 #[cfg(feature = "zarrs")]
 pub mod store;
 
-pub use codec::{canonical_to_string, decode_value, encode_value, is_metadata_key, ZarrJsonError};
-pub use validator::{validate, ValidationError, ValidationIssue};
+pub use codec::{
+    canonical_to_string, decode_value, encode_value, es_number_str, is_metadata_key, ZarrJsonError,
+};
+pub use validator::{check_key, validate, ValidationError, ValidationIssue};
 
 #[cfg(feature = "zarrs")]
 pub use serializer::JsonCodec;

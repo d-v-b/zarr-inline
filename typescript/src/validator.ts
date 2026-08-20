@@ -29,6 +29,11 @@ export class ValidationError extends Error {
 	}
 }
 
+/** Public form of the R1 well-formed-key check (Zarr v3 store keys). */
+export function checkKey(key: string): ValidationIssue | undefined {
+	return checkKeyWellFormed(key);
+}
+
 function checkKeyWellFormed(key: string): ValidationIssue | undefined {
 	if (typeof key !== "string" || key === "") {
 		return { rule: "R1", key: String(key), message: "key must be a non-empty string" };

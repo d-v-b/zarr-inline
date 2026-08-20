@@ -18,7 +18,7 @@ use zarrs::storage::{
 };
 
 use crate::codec::{canonical_to_string, decode_value, encode_value};
-use crate::validator::{validate, ValidationError, ValidationIssue};
+use crate::validator::{check_key, validate, ValidationError, ValidationIssue};
 
 /// A zarr-json document: one JSON object holding a whole Zarr hierarchy.
 ///
@@ -92,6 +92,22 @@ impl ZarrJsonStore {
         }
     }
 
+    /// Reject writes to keys that fail the validator's R1 rule.
+    ///
+    /// zarrs's `StoreKey` is laxer than R1 (it accepts `a/./b` and `..`), so
+    /// writable methods re-validate the key string themselves before
+    /// mutating: a set through zarrs must never make the document invalid.
+    fn check_write_key(key: &StoreKey) -> Result<(), StorageError> {
+        match check_key(key.as_str()) {
+            None => Ok(()),
+            Some(issue) => Err(StorageError::Other(format!(
+                "invalid store key {:?}: {}",
+                key.as_str(),
+                issue.message
+            ))),
+        }
+    }
+
     fn sorted_keys(&self) -> Vec<String> {
         let document = self.document.read().unwrap();
         let mut keys: Vec<String> = document.keys().cloned().collect();
@@ -150,6 +166,7 @@ impl ReadableStorageTraits for ZarrJsonStore {
 
 impl WritableStorageTraits for ZarrJsonStore {
     fn set(&self, key: &StoreKey, value: Bytes) -> Result<(), StorageError> {
+        Self::check_write_key(key)?;
         let encoded = encode_value(key.as_str(), &value)
             .map_err(|e| StorageError::Other(e.to_string()))?;
         let mut document = self.document.write().unwrap();
@@ -162,6 +179,8 @@ impl WritableStorageTraits for ZarrJsonStore {
         key: &StoreKey,
         offset_values: OffsetBytesIterator,
     ) -> Result<(), StorageError> {
+        // set_partial_many also creates keys, so it gets the same R1 guard.
+        Self::check_write_key(key)?;
         // Read-modify-write under a single write-lock acquisition, so a
         // concurrent set_partial_many cannot observe (and clobber) a stale
         // value between the read and the write.
@@ -325,6 +344,41 @@ mod tests {
         assert!(result.is_err());
         // No mutation happened.
         assert!(store.document().is_empty());
+    }
+
+    #[test]
+    fn set_rejects_keys_failing_r1() {
+        // zarrs's StoreKey is laxer than the validator's R1 rule, so the
+        // store must reject such keys itself; the document stays unchanged.
+        let store = ZarrJsonStore::new();
+        let mut exercised = Vec::new();
+        for bad in ["", "a/", "a//b", "a/./b", "a/../b", "..", "/a"] {
+            let Ok(store_key) = StoreKey::new(bad) else {
+                continue; // zarrs itself refuses to construct this key
+            };
+            exercised.push(bad);
+            let err = store
+                .set(&store_key, Bytes::from_static(&[1]))
+                .expect_err(&format!("set must reject key {bad:?}"));
+            assert!(
+                err.to_string().contains("invalid store key"),
+                "key {bad:?}: {err}"
+            );
+            let writes: OffsetBytesIterator =
+                Box::new(std::iter::once((0u64, Bytes::from_static(&[1]))));
+            let err = store
+                .set_partial_many(&store_key, writes)
+                .expect_err(&format!("set_partial_many must reject key {bad:?}"));
+            assert!(
+                err.to_string().contains("invalid store key"),
+                "key {bad:?}: {err}"
+            );
+            assert!(store.document().is_empty(), "key {bad:?} mutated the document");
+        }
+        // zarrs 0.23 accepts at least these two R1-invalid keys, so the
+        // guard is known to be doing real work.
+        assert!(exercised.contains(&"a/./b"), "exercised: {exercised:?}");
+        assert!(exercised.contains(&".."), "exercised: {exercised:?}");
     }
 
     #[test]

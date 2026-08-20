@@ -19,11 +19,14 @@ decode, and for the inline check on encode):
 - Object member order is preserved as given (no sorting).
 - No `NaN` / `Infinity` tokens — serialization of a non-finite number is an
   error (the fill_value convention uses strings like `"NaN"` instead).
-- Numbers: integers as digits; floats shortest-round-trip. **Known
-  divergence:** cross-language float formatting is not yet pinned
-  (integral-valued floats: Python/Rust `1.0` vs JS `1`; exponent styles
-  differ). The property test avoids these values; RFC 8785 (JCS) number
-  formatting is the likely eventual answer.
+- Numbers per **RFC 8785 (JCS) section 3.2.2.3**: floats are formatted
+  with ECMAScript `Number::toString` semantics (integral floats print
+  without a decimal point, `1.0` -> `1`; negative zero prints `0`, so the
+  sign of -0.0 is NOT preserved; exponents are unpadded, `1e-7`; fixed
+  notation within [1e-6, 1e21)); integers print as digits (identical to
+  the float form for every safe integer). Unlike full JCS, object member
+  names are NOT sorted — insertion order is preserved. JavaScript gets
+  this for free; Python and Rust implement ES ToString explicitly.
 - **JS caveat:** JavaScript objects reorder integer-like member names; the
   property test avoids integer-like object keys in metadata/attributes.
 
@@ -79,14 +82,11 @@ does not generate such documents, and portable documents must not contain:
 - **Non-finite number literals**, including overflow like `1e999`
   (Python and Rust reject the document; JavaScript's JSON.parse silently
   produces Infinity).
-- **Integers outside ±(2^53 − 1)** (JavaScript loses precision silently;
-  serde_json falls back to lossy float64 outside `[i64::MIN, u64::MAX]`).
-- **The integer literal `-0`** (Python parses it as int 0, serde_json as
-  float −0.0, JavaScript cannot distinguish it from −0.0).
-- **Floats with magnitude >= 2^53** (in JavaScript they are
-  indistinguishable from unsafe integers, so the TypeScript
-  implementation rejects them loudly where Python/Rust serialize them
-  with differing exponent text).
+- **Numbers with magnitude ≥ 2^53** (JavaScript cannot distinguish a
+  parse-rounded integer from a float there, so its canonicalizer rejects
+  integral-magnitude values ≥ 2^53 loudly while Python/Rust serialize
+  exact integer digits or ES float text; serde_json additionally falls
+  back to lossy float64 outside `[i64::MIN, u64::MAX]`).
 - **Nesting deeper than 100 levels** (serde_json's recursion limit is 128;
   CPython's is higher but finite).
 - **Lone surrogates** in any string (serde_json rejects the document;

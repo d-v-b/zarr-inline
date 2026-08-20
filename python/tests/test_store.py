@@ -228,3 +228,17 @@ async def test_lenient_mode_no_warning_on_valid_document():
         _warnings.simplefilter("always")
         ZarrJsonStore(MemoryBacking({"zarr.json": {"node_type": "group"}}))
     assert not any("zarr-json validation" in str(w.message) for w in caught)
+
+
+async def test_set_rejects_malformed_store_key():
+    import pytest
+    from zarr.core.buffer import default_buffer_prototype
+
+    from zarr_json import MemoryBacking, ZarrJsonStore
+
+    store = ZarrJsonStore(MemoryBacking({}))
+    buf = default_buffer_prototype().buffer.from_bytes(b"x")
+    for bad in ("", "/a", "a/", "a//b", "a/./b", "a/../b", ".."):
+        with pytest.raises(ValueError, match="invalid store key"):
+            await store.set(bad, buf)
+    assert MemoryBacking({}).load() == {}

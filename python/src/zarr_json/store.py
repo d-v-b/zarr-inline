@@ -17,7 +17,7 @@ from zarr.core.buffer import Buffer, BufferPrototype
 
 from zarr_json.backing import Backing
 from zarr_json.codec import decode_value, encode_value
-from zarr_json.validator import Strictness, validate
+from zarr_json.validator import Strictness, check_key, validate
 
 
 def _apply_byte_range(data: bytes, byte_range: ByteRequest | None) -> bytes:
@@ -120,6 +120,11 @@ class ZarrJsonStore(Store):
 
     async def set(self, key: str, value: Buffer) -> None:
         self._check_writable()
+        # The Zarr v3 spec defines well-formed store keys; rejecting the rest
+        # here keeps every document this store produces valid (R1).
+        issue = check_key(key)
+        if issue is not None:
+            raise ValueError(f"invalid store key {key!r}: {issue.message}")
         async with self._lock:
             self._document[key] = encode_value(key, value.to_bytes())
             self._backing.persist(self._document)

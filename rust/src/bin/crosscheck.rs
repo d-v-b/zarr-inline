@@ -22,7 +22,7 @@ use zarrs::group::GroupBuilder;
 use zarrs::metadata::v3::MetadataV3;
 use zarrs::storage::ReadableWritableListableStorage;
 
-use zarr_json::{is_metadata_key, Document, JsonCodec, ZarrJsonStore};
+use zarr_json::{canonical_to_string, is_metadata_key, Document, JsonCodec, ZarrJsonStore};
 
 /// Nest a flat C-order list of scalars by `shape`.
 fn nest(flat: &[Value], shape: &[u64]) -> Result<Value, String> {
@@ -275,7 +275,9 @@ fn read(document_value: &Value) -> Result<String, String> {
 
     let mut payload = Map::new();
     payload.insert("arrays".to_string(), Value::Array(arrays));
-    serde_json::to_string(&Value::Object(payload)).map_err(|e| format!("cannot serialize: {e}"))
+    // Canonical serialization: float scalars in payload data use the same
+    // ES number text as canonical documents.
+    Ok(canonical_to_string(&Value::Object(payload)))
 }
 
 fn main() -> ExitCode {

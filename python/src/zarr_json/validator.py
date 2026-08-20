@@ -62,6 +62,11 @@ def _check_value_type(key: str, value: Any) -> ValidationIssue | None:
     return None
 
 
+def check_key(key: str) -> ValidationIssue | None:
+    """Public form of the R1 well-formed-key check (Zarr v3 store keys)."""
+    return _check_key_well_formed(key)
+
+
 def validate(
     document: dict[str, Any],
     strictness: Strictness = Strictness.LENIENT,

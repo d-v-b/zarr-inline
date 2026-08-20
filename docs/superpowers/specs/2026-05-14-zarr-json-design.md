@@ -261,6 +261,13 @@ base64. The `is_metadata_key` rule is also tightened to whole-segment
 matching (`zarr.json` or `*/zarr.json`), fixing misclassification of keys
 like `xyzarr.json`.
 
+Two further amendments from the 2026-08-20 adversarial review: store
+`set` rejects keys that fail the well-formed-key rule (R1, the Zarr v3
+store-key grammar), so a store driven through its API always produces a
+valid document; and the canonical serialization adopts RFC 8785 (JCS)
+number formatting — ECMAScript `Number::toString` for floats (member
+order remains insertion order, deliberately departing from full JCS).
+
 The paragraph above stating that base64 is *required* for chunk data is
 superseded accordingly: base64 remains the representation for opaque codec
 output, and arrays whose codec chain terminates in `json` are represented as

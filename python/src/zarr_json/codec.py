@@ -46,16 +46,89 @@ def is_metadata_key(key: str) -> bool:
     return key == METADATA_SUFFIX or key.endswith("/" + METADATA_SUFFIX)
 
 
+def es_number_str(value: float) -> str:
+    """Format a finite float per ECMAScript Number::toString, as required by
+    RFC 8785 (JCS) section 3.2.2.3. This is what makes canonical number text
+    identical across Python, JavaScript, and Rust: integral floats print
+    without a decimal point (1.0 -> "1"), negative zero prints "0", and
+    exponents are unpadded ("1e-7", not "1e-07"), switching to exponential
+    form only outside [1e-6, 1e21).
+    """
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError("canonical JSON cannot represent non-finite numbers")
+    if value == 0:
+        return "0"
+    if value < 0:
+        return "-" + es_number_str(-value)
+    from decimal import Decimal
+
+    _, digits, exponent = Decimal(repr(value)).as_tuple()
+    parts = list(digits)
+    while parts and parts[-1] == 0:
+        parts.pop()
+        exponent += 1
+    k = len(parts)
+    n = exponent + k
+    text = "".join(map(str, parts))
+    if k <= n <= 21:
+        return text + "0" * (n - k)
+    if 0 < n <= 21:
+        return text[:n] + "." + text[n:]
+    if -6 < n <= 0:
+        return "0." + "0" * (-n) + text
+    mantissa = text[0] + ("." + text[1:] if k > 1 else "")
+    return f"{mantissa}e{'+' if n - 1 >= 0 else '-'}{abs(n - 1)}"
+
+
+def _canonical_write(value: Any, out: list[str]) -> None:
+    if value is None:
+        out.append("null")
+    elif value is True:
+        out.append("true")
+    elif value is False:
+        out.append("false")
+    elif isinstance(value, int):
+        out.append(str(value))
+    elif isinstance(value, float):
+        out.append(es_number_str(value))
+    elif isinstance(value, str):
+        out.append(json.dumps(value, ensure_ascii=False))
+    elif isinstance(value, (list, tuple)):
+        out.append("[")
+        for i, item in enumerate(value):
+            if i:
+                out.append(",")
+            _canonical_write(item, out)
+        out.append("]")
+    elif isinstance(value, dict):
+        out.append("{")
+        for i, (key, item) in enumerate(value.items()):
+            if i:
+                out.append(",")
+            if not isinstance(key, str):
+                raise ValueError(f"object member name must be a string: {key!r}")
+            out.append(json.dumps(key, ensure_ascii=False))
+            out.append(":")
+            _canonical_write(item, out)
+        out.append("}")
+    else:
+        raise ValueError(f"value is not JSON-serializable: {type(value).__name__}")
+
+
 def canonical_dumps(value: Any) -> str:
     """Serialize a JSON value in the canonical zarr-json form.
 
     No whitespace; non-ASCII characters unescaped (UTF-8); object member
-    order preserved; NaN/Infinity tokens rejected (they are not JSON; the
-    fill_value convention represents them as strings like "NaN"). This form
-    is shared by all zarr-json implementations so that decoded bytes agree
-    across languages.
+    order preserved (member names are NOT sorted — this deliberately departs
+    from full RFC 8785); numbers per RFC 8785: floats via ECMAScript
+    Number::toString (es_number_str), integers as digits; non-finite numbers
+    rejected (the fill_value convention represents them as strings like
+    "NaN"). This form is shared by all zarr-json implementations so that
+    decoded bytes agree byte-for-byte across languages.
     """
-    return json.dumps(value, separators=(",", ":"), allow_nan=False, ensure_ascii=False)
+    out: list[str] = []
+    _canonical_write(value, out)
+    return "".join(out)
 
 
 def decode_value(key: str, value: Any) -> bytes:

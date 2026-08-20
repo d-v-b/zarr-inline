@@ -15,9 +15,9 @@ CASES = [
     (
         "float64",
         [[1.5, float("nan"), float("inf"), -0.0]],
-        [[1.5, "NaN", "Infinity", -0.0]],
+        [[1.5, "NaN", "Infinity", 0]],
     ),
-    ("complex128", [[1 + 2j]], [[[1.0, 2.0]]]),
+    ("complex128", [[1 + 2j]], [[[1, 2]]]),
     ("bool", [[True, False]], [[True, False]]),
 ]
 

@@ -32,6 +32,11 @@ zarrs = ["dep:zarrs", "dep:inventory"]
 # parsing to the correctly-rounded value so parse -> serialize round-trips
 # match the Python reference implementation.
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+# serde: to drive serde_json's Serializer with the canonical Formatter.
+# ryu: shortest-round-trip float digits, re-formatted to ECMAScript
+# Number::toString per RFC 8785 (JCS). Both are already serde_json deps.
+serde = "1"
+ryu = "1"
 base64 = "0.22"
 zarrs = { version = "0.23", default-features = false, optional = true }
 # For registering the `json` codec plugin with zarrs (compile-time registry).

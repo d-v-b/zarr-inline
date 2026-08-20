@@ -199,3 +199,15 @@ test("lenient construction surfaces issues via onIssue and continues", () => {
 	assert.deepEqual(seen, ["R1:/bad"]);
 	assert.ok(store instanceof ZarrJsonStore);
 });
+
+test("set rejects malformed store keys per the Zarr v3 key grammar", async () => {
+	const backing = new MemoryBacking({});
+	const store = new ZarrJsonStore(backing);
+	for (const bad of ["/a/./b", "/a//b", "/..", "/a/", "//x", "/a/../b"]) {
+		await assert.rejects(
+			() => store.set(bad as `/${string}`, new Uint8Array([1])),
+			/invalid store key/,
+		);
+	}
+	assert.deepEqual(Object.keys(backing.load()), []);
+});

@@ -95,8 +95,8 @@ test("CLI reports base64 decode failure in errors with exit 0", () => {
 });
 
 test("CLI matches the Python report for the inline-json fixture shape", () => {
-	// The shipped fixture contains a -0.0 inline element; the canonical
-	// serializer must emit "-0.0" (as Python and Rust do), so the decoded
+	// The shipped fixture contains a -0.0 inline element; RFC 8785 numbers
+	// serialize negative zero as "0" in every implementation, so the decoded
 	// base64 is byte-identical across implementations.
 	const fixture = fs.readFileSync(
 		path.join(EXAMPLES, "valid", "array_with_inline_json_chunk.json"),
@@ -113,7 +113,7 @@ test("CLI matches the Python report for the inline-json fixture shape", () => {
 	assert.deepEqual(report.errors, []);
 	assert.equal(
 		Buffer.from(report.decoded["myarray/c/0"], "base64").toString("utf-8"),
-		'[1.5,"NaN","Infinity",-0.0]',
+		'[1.5,"NaN","Infinity",0]',
 	);
 });
 

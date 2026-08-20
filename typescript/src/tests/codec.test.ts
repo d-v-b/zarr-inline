@@ -173,12 +173,12 @@ test("canonicalStringify matches JSON.stringify byte-for-byte on portable values
 	}
 });
 
-test("canonicalStringify emits -0.0 for negative zero like Python and Rust", () => {
+test("canonicalStringify emits 0 for negative zero per RFC 8785", () => {
 	// JSON.stringify(-0) is "0", which silently changes the decoded bytes of
 	// documents other implementations wrote.
-	assert.equal(canonicalStringify(-0), "-0.0");
-	assert.equal(canonicalStringify([1.5, -0, 2]), "[1.5,-0.0,2]");
-	assert.equal(canonicalStringify({ a: -0 }), '{"a":-0.0}');
+	assert.equal(canonicalStringify(-0), "0");
+	assert.equal(canonicalStringify([1.5, -0, 2]), "[1.5,0,2]");
+	assert.equal(canonicalStringify({ a: -0 }), '{"a":0}');
 });
 
 test("canonicalStringify rejects unsafe integers", () => {

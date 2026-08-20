@@ -97,7 +97,10 @@ def test_encode_byte_value_keeps_nan_token_array_as_base64():
 
 
 def test_decode_byte_value_serializes_inline_array_canonically():
-    assert decode_value("a/c/0", [1.5, "NaN", -0.0]) == b'[1.5,"NaN",-0.0]'
+    # RFC 8785 numbers: -0.0 -> "0", 2.0 -> "2", exponents unpadded.
+    assert decode_value("a/c/0", [1.5, "NaN", -0.0, 2.0, 1e-7]) == (
+        b'[1.5,"NaN",0,2,1e-7]'
+    )
 
 
 def test_round_trip_inline_array():

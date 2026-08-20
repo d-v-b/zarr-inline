@@ -88,6 +88,14 @@ fn check_value_type(key: &str, value: &Value) -> Option<ValidationIssue> {
     None
 }
 
+/// Check a single key against R1 (well-formedness). Returns the issue, or
+/// None if the key is well-formed. Used by the store to reject writes to
+/// keys that would make the document invalid.
+#[must_use]
+pub fn check_key(key: &str) -> Option<ValidationIssue> {
+    check_key_well_formed(key)
+}
+
 /// Check a zarr-json document. Returns the list of issues (empty if valid),
 /// in document order.
 pub fn validate(document: &Map<String, Value>) -> Vec<ValidationIssue> {

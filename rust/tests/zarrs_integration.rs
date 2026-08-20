@@ -92,11 +92,12 @@ fn array_with_json_codec_inlines_chunks() {
     array.store_chunk(&[0], elements.clone()).unwrap();
 
     // The document contains a real JSON array chunk with fill_value-style
-    // scalar serialization.
+    // scalar serialization. Canonical numbers use ECMAScript Number::toString
+    // (RFC 8785), so -0.0 is stored as 0.
     let document = store.document();
     assert_eq!(
         document["legible/c/0"],
-        serde_json::json!([1.5, "NaN", "Infinity", -0.0])
+        serde_json::json!([1.5, "NaN", "Infinity", 0])
     );
     // The metadata names the json codec.
     let codecs = document["legible/zarr.json"]["codecs"].as_array().unwrap();
@@ -106,11 +107,15 @@ fn array_with_json_codec_inlines_chunks() {
     );
 
     // Reading back through a freshly opened array reproduces the values
-    // exactly (bitwise: NaN stays NaN, -0.0 stays -0.0).
+    // bitwise (NaN stays NaN), except -0.0: canonical numbers do not
+    // preserve the sign of zero, so it comes back as +0.0.
     let reopened = zarrs::array::Array::open(storage.clone(), "/legible").unwrap();
     let read: Vec<f64> = reopened.retrieve_chunk(&[0]).unwrap();
     let read_bits: Vec<u64> = read.iter().map(|v| v.to_bits()).collect();
-    let expected_bits: Vec<u64> = elements.iter().map(|v| v.to_bits()).collect();
+    let expected_bits: Vec<u64> = [1.5f64, f64::NAN, f64::INFINITY, 0.0]
+        .iter()
+        .map(|v| v.to_bits())
+        .collect();
     assert_eq!(read_bits, expected_bits);
 }
 

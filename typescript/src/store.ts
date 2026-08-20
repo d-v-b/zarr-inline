@@ -11,7 +11,7 @@
 import type { AbsolutePath, AsyncMutable, RangeQuery } from "@zarrita/storage";
 import { toNullPrototype, type Backing, type Document } from "./backing.js";
 import { decodeValue, encodeValue } from "./codec.js";
-import { validate, type ValidationIssue } from "./validator.js";
+import { checkKey, validate, type ValidationIssue } from "./validator.js";
 
 export interface ZarrJsonStoreOptions {
 	/** Refuse set/delete when true. Default false. */
@@ -116,8 +116,17 @@ export class ZarrJsonStore implements AsyncMutable {
 
 	async set(key: AbsolutePath, value: Uint8Array): Promise<void> {
 		this.#checkWritable();
+		// The Zarr v3 spec defines well-formed store keys; rejecting the rest
+		// here keeps every document this store produces valid (R1). The check
+		// runs on the document key (leading "/" stripped) before any mutation.
+		const docKey = this.#docKey(key);
+		const issue = checkKey(docKey);
+		if (issue !== undefined) {
+			throw new Error(
+				`invalid store key ${JSON.stringify(docKey)}: ${issue.message}`,
+			);
+		}
 		return this.#withLock(() => {
-			const docKey = this.#docKey(key);
 			this.#document[docKey] = encodeValue(docKey, value);
 			this.#backing.persist(this.#document);
 		});

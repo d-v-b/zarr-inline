@@ -25,7 +25,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use serde_json::{json, Map, Value};
 
-use zarr_json::codec::{decode_value, encode_value};
+use zarr_json::codec::{canonical_to_string, decode_value, encode_value};
 use zarr_json::validator::validate;
 
 fn run(document: &Map<String, Value>) -> Result<Value, String> {
@@ -85,8 +85,9 @@ fn main() -> ExitCode {
     };
     match run(&document) {
         Ok(report) => {
-            // Canonical output: compact, UTF-8 (non-ASCII unescaped).
-            print!("{}", serde_json::to_string(&report).expect("serializable"));
+            // Canonical output: compact, UTF-8 (non-ASCII unescaped),
+            // numbers per RFC 8785 (ES Number::toString for floats).
+            print!("{}", canonical_to_string(&report));
             ExitCode::SUCCESS
         }
         Err(e) => {

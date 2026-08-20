@@ -26,12 +26,13 @@ export function isMetadataKey(key: string): boolean {
  * Serialize a JSON value in the canonical zarr-json form.
  *
  * No whitespace; non-ASCII characters unescaped (UTF-8); object member order
- * preserved. Byte-identical to `JSON.stringify` compact output for portable
- * values, with four deliberate divergences that keep decoded bytes identical
+ * preserved. Numbers follow RFC 8785 (JCS): ECMAScript Number::toString,
+ * which is exactly `String(v)` in JavaScript — so canonical output is
+ * byte-identical to `JSON.stringify` compact output for portable values
+ * (negative zero prints `0`; Python and Rust implement ES ToString to match),
+ * with three deliberate divergences that keep decoded bytes identical
  * across languages:
  *
- * - negative zero serializes as `-0.0` (Python and Rust serialize the float
- *   -0.0 that way; JSON.stringify emits `0`, silently changing bytes);
  * - non-finite numbers are an error (JSON.stringify would silently emit
  *   `null` — the fill_value convention represents them as strings like
  *   "NaN" instead);
@@ -102,12 +103,9 @@ function writeCanonicalNumber(value: number, parts: string[]): void {
 				"precision in JavaScript, so serializing would silently corrupt them",
 		);
 	}
-	if (Object.is(value, -0)) {
-		// Python and Rust serialize the float -0.0 as "-0.0"; JS String(-0)
-		// is "0", which would silently change the decoded bytes.
-		parts.push("-0.0");
-		return;
-	}
+	// RFC 8785 numbers are ES Number::toString, which is exactly String(v);
+	// note String(-0) === "0" — the sign of negative zero is not preserved
+	// (Python and Rust emit "0" for -0.0 as well).
 	parts.push(String(value));
 }
 

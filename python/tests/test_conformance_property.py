@@ -5,14 +5,15 @@ Python conformance harness in-process and through the TypeScript and Rust
 harness CLIs (built on demand; skipped if their toolchains or sources are
 absent). All reports must agree structurally.
 
-The generated value space deliberately avoids the known cross-language
-canonicalization divergences documented in
+Canonical numbers follow RFC 8785 (ECMAScript Number::toString), so
+floats — including integral values, negative zero, exponent forms, and
+subnormals — are portable and generated freely within the float64-safe
+magnitude range. The generated value space still avoids the residual
+divergences documented in
 docs/superpowers/specs/2026-08-20-conformance-protocol.md:
 
-- floats with integral values (Python/Rust "1.0" vs JS "1") and exponent
-  formatting — generated floats are always half-integers like 3.5;
-- integers outside the float64-safe range (JS parses all numbers as
-  float64);
+- numbers with magnitude >= 2^53 (JS cannot distinguish rounded integers
+  from floats there);
 - integer-like JSON object member names (JS objects reorder them).
 """
 
@@ -92,7 +93,9 @@ SEGMENT = st.from_regex(r"[a-z0-9][a-z0-9._-]{0,5}", fullmatch=True).filter(
 OBJ_KEY = st.from_regex(r"[a-z_][a-z0-9_]{0,6}", fullmatch=True)
 
 SAFE_INT = st.integers(min_value=-(2**53) + 1, max_value=2**53 - 1)
-SAFE_FLOAT = st.integers(min_value=-(2**20), max_value=2**20).map(lambda n: n + 0.5)
+SAFE_FLOAT = st.floats(
+    min_value=-(2.0**53 - 1), max_value=2.0**53 - 1, allow_nan=False
+)
 SAFE_TEXT = st.text(
     alphabet=st.sampled_from(list('abz09 _-"\\\n\té∆中\U0001f388')),
     max_size=8,
