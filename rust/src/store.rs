@@ -10,7 +10,7 @@
 use std::sync::RwLock;
 
 use serde_json::{Map, Value};
-use zarrs::storage::byte_range::{ByteRangeIterator, InvalidByteRangeError};
+use zarrs::storage::byte_range::{ByteRange, ByteRangeIterator, InvalidByteRangeError};
 use zarrs::storage::{
     Bytes, ListableStorageTraits, MaybeBytes, MaybeBytesIterator, OffsetBytesIterator,
     ReadableStorageTraits, StorageError, StoreKey, StoreKeys, StoreKeysPrefixes, StorePrefix,
@@ -115,12 +115,24 @@ impl ReadableStorageTraits for ZarrJsonStore {
         };
         let data = Bytes::from(data);
         let out = Box::new(byte_ranges.map(move |byte_range| {
-            let start = usize::try_from(byte_range.start(data.len() as u64)).unwrap();
-            let end = usize::try_from(byte_range.end(data.len() as u64)).unwrap();
-            if start > data.len() || end > data.len() || start > end {
-                Err(InvalidByteRangeError::new(byte_range, data.len() as u64).into())
-            } else {
-                Ok(data.slice(start..end))
+            let len = data.len() as u64;
+            // Checked arithmetic: ByteRange::start/end use unchecked u64
+            // arithmetic that panics in debug builds on out-of-range
+            // requests (e.g. Suffix longer than the value).
+            let bounds = match byte_range {
+                ByteRange::FromStart(offset, None) => Some((offset, len)),
+                ByteRange::FromStart(offset, Some(length)) => {
+                    offset.checked_add(length).map(|end| (offset, end))
+                }
+                ByteRange::Suffix(length) => len.checked_sub(length).map(|start| (start, len)),
+            };
+            match bounds {
+                Some((start, end)) if start <= end && end <= len => {
+                    // start <= end <= len == data.len() (a usize), so these
+                    // casts cannot truncate.
+                    Ok(data.slice(start as usize..end as usize))
+                }
+                _ => Err(InvalidByteRangeError::new(byte_range, len).into()),
             }
         }));
         Ok(Some(out))
@@ -150,8 +162,33 @@ impl WritableStorageTraits for ZarrJsonStore {
         key: &StoreKey,
         offset_values: OffsetBytesIterator,
     ) -> Result<(), StorageError> {
-        // Read-modify-write: partial writes are not supported natively.
-        zarrs::storage::store_set_partial_many(self, key, offset_values)
+        // Read-modify-write under a single write-lock acquisition, so a
+        // concurrent set_partial_many cannot observe (and clobber) a stale
+        // value between the read and the write.
+        let mut document = self.document.write().unwrap();
+        let mut bytes = match document.get(key.as_str()) {
+            None => Vec::new(),
+            Some(value) => decode_value(key.as_str(), value)
+                .map_err(|e| StorageError::Other(e.to_string()))?,
+        };
+        for (offset, value) in offset_values {
+            let offset = usize::try_from(offset).map_err(|_| {
+                StorageError::Other(format!("partial write offset {offset} overflows usize"))
+            })?;
+            let end = offset.checked_add(value.len()).ok_or_else(|| {
+                StorageError::Other("partial write end offset overflows usize".to_string())
+            })?;
+            if bytes.len() < end {
+                // Zero-fill extension for missing/short values, matching
+                // zarrs's MemoryStore semantics.
+                bytes.resize(end, 0);
+            }
+            bytes[offset..end].copy_from_slice(&value);
+        }
+        let encoded = encode_value(key.as_str(), &bytes)
+            .map_err(|e| StorageError::Other(e.to_string()))?;
+        document.insert(key.as_str().to_string(), encoded);
+        Ok(())
     }
 
     fn erase(&self, key: &StoreKey) -> Result<(), StorageError> {
@@ -174,19 +211,26 @@ impl WritableStorageTraits for ZarrJsonStore {
 }
 
 impl ListableStorageTraits for ZarrJsonStore {
+    // Listing silently skips document keys that are not valid store keys
+    // (possible only in a leniently constructed store): lenient mode
+    // surfaces such entries as diagnostics at construction time, and one
+    // bad entry must not make the whole hierarchy unlistable.
+
     fn list(&self) -> Result<StoreKeys, StorageError> {
-        self.sorted_keys()
+        Ok(self
+            .sorted_keys()
             .into_iter()
-            .map(|key| StoreKey::new(key).map_err(StorageError::from))
-            .collect()
+            .filter_map(|key| StoreKey::new(key).ok())
+            .collect())
     }
 
     fn list_prefix(&self, prefix: &StorePrefix) -> Result<StoreKeys, StorageError> {
-        self.sorted_keys()
+        Ok(self
+            .sorted_keys()
             .into_iter()
             .filter(|key| key.starts_with(prefix.as_str()))
-            .map(|key| StoreKey::new(key).map_err(StorageError::from))
-            .collect()
+            .filter_map(|key| StoreKey::new(key).ok())
+            .collect())
     }
 
     fn list_dir(&self, prefix: &StorePrefix) -> Result<StoreKeysPrefixes, StorageError> {
@@ -198,13 +242,20 @@ impl ListableStorageTraits for ZarrJsonStore {
             };
             match remainder.split_once('/') {
                 Some((child, _)) => {
-                    let child_prefix =
-                        StorePrefix::new(format!("{}{}/", prefix.as_str(), child))?;
+                    let Ok(child_prefix) =
+                        StorePrefix::new(format!("{}{}/", prefix.as_str(), child))
+                    else {
+                        continue;
+                    };
                     if prefixes.last() != Some(&child_prefix) {
                         prefixes.push(child_prefix);
                     }
                 }
-                None => keys.push(StoreKey::new(key)?),
+                None => {
+                    if let Ok(key) = StoreKey::new(key) {
+                        keys.push(key);
+                    }
+                }
             }
         }
         Ok(StoreKeysPrefixes::new(keys, prefixes))
@@ -356,6 +407,118 @@ mod tests {
         assert_eq!(
             store.get(&key("ok/c/0")).unwrap().unwrap().as_ref(),
             &[0, 1, 2]
+        );
+    }
+
+    #[test]
+    fn lenient_store_with_invalid_key_is_still_listable() {
+        let (store, issues) =
+            ZarrJsonStore::from_document_lenient(doc(json!({"/bad": "eA==", "ok/c/0": "AAEC"})));
+        assert_eq!(issues.len(), 1);
+
+        // list() skips the invalid document key.
+        let all: Vec<String> = store
+            .list()
+            .unwrap()
+            .iter()
+            .map(|k| k.as_str().to_string())
+            .collect();
+        assert_eq!(all, vec!["ok/c/0"]);
+
+        // list_prefix at root skips it too.
+        let at_root: Vec<String> = store
+            .list_prefix(&StorePrefix::root())
+            .unwrap()
+            .iter()
+            .map(|k| k.as_str().to_string())
+            .collect();
+        assert_eq!(at_root, vec!["ok/c/0"]);
+
+        // list_dir at root works and derives only the valid hierarchy.
+        let root = store.list_dir(&StorePrefix::root()).unwrap();
+        assert!(root.keys().is_empty());
+        assert_eq!(
+            root.prefixes().iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+            vec!["ok/"]
+        );
+
+        // The valid entry is still readable.
+        assert_eq!(
+            store.get(&key("ok/c/0")).unwrap().unwrap().as_ref(),
+            &[0, 1, 2]
+        );
+    }
+
+    #[test]
+    fn get_partial_many_out_of_range_errors_instead_of_panicking() {
+        let store = ZarrJsonStore::new();
+        store
+            .set(&key("a/c/0"), Bytes::from_static(&[0, 1, 2, 3, 4]))
+            .unwrap();
+
+        // Suffix longer than the value: previously subtract-with-overflow
+        // in debug builds.
+        let ranges: ByteRangeIterator = Box::new(std::iter::once(ByteRange::Suffix(10)));
+        let results: Vec<_> = store
+            .get_partial_many(&key("a/c/0"), ranges)
+            .unwrap()
+            .unwrap()
+            .collect();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_err());
+
+        // FromStart(u64::MAX, Some(1)): previously add-with-overflow.
+        let ranges: ByteRangeIterator =
+            Box::new(std::iter::once(ByteRange::FromStart(u64::MAX, Some(1))));
+        let results: Vec<_> = store
+            .get_partial_many(&key("a/c/0"), ranges)
+            .unwrap()
+            .unwrap()
+            .collect();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_err());
+
+        // In-range requests still work alongside out-of-range ones.
+        let ranges: ByteRangeIterator = Box::new(
+            vec![ByteRange::FromStart(1, Some(2)), ByteRange::Suffix(2)].into_iter(),
+        );
+        let results: Vec<_> = store
+            .get_partial_many(&key("a/c/0"), ranges)
+            .unwrap()
+            .unwrap()
+            .collect();
+        assert_eq!(results[0].as_ref().unwrap().as_ref(), &[1, 2]);
+        assert_eq!(results[1].as_ref().unwrap().as_ref(), &[3, 4]);
+    }
+
+    #[test]
+    fn set_partial_many_overwrites_and_zero_fills() {
+        let store = ZarrJsonStore::new();
+        store
+            .set(&key("a/c/0"), Bytes::from_static(&[9, 9, 9]))
+            .unwrap();
+
+        // Overwrite within the existing value, extending past its end.
+        let writes: OffsetBytesIterator = Box::new(
+            vec![
+                (1u64, Bytes::from_static(&[7, 8])),
+                (5u64, Bytes::from_static(&[1])),
+            ]
+            .into_iter(),
+        );
+        store.set_partial_many(&key("a/c/0"), writes).unwrap();
+        assert_eq!(
+            store.get(&key("a/c/0")).unwrap().unwrap().as_ref(),
+            &[9, 7, 8, 0, 0, 1]
+        );
+
+        // Partial write to a missing key zero-fills from the start.
+        let writes: OffsetBytesIterator =
+            Box::new(std::iter::once((2u64, Bytes::from_static(&[5]))));
+        store.set_partial_many(&key("b/c/0"), writes).unwrap();
+        assert_eq!(
+            store.get(&key("b/c/0")).unwrap().unwrap().as_ref(),
+            &[0, 0, 5]
         );
     }
 

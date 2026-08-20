@@ -13,6 +13,11 @@ path = "src/lib.rs"
 name = "conformance"
 path = "src/bin/conformance.rs"
 
+[[bin]]
+name = "crosscheck"
+path = "src/bin/crosscheck.rs"
+required-features = ["zarrs"]
+
 [features]
 # The conformance harness (codec + validator + the `conformance` binary) has no
 # zarrs dependency; the store and the `json` serializer codec do. Keeping zarrs
