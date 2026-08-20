@@ -72,7 +72,7 @@ fn main() -> ExitCode {
         eprintln!("failed to read stdin: {e}");
         return ExitCode::from(1);
     }
-    let parsed: Value = match serde_json::from_str(&input) {
+    let parsed: Value = match zarr_json::strict_from_str(&input) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("input must be a JSON object: {e}");

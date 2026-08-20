@@ -207,7 +207,7 @@ impl ArrayToBytesCodecTraits for JsonCodec {
         _options: &CodecOptions,
     ) -> Result<ArrayBytes<'a>, CodecError> {
         let element_size = fixed_size(data_type)?;
-        let nested: Value = serde_json::from_slice(&bytes)
+        let nested: Value = crate::codec::strict_from_slice(&bytes)
             .map_err(|e| CodecError::Other(format!("json codec: chunk is not JSON: {e}")))?;
 
         let shape_u64: Vec<u64> = shape.iter().map(|d| d.get()).collect();

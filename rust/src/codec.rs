@@ -120,19 +120,61 @@ pub fn es_number_str(value: f64) -> String {
     format!("{mantissa}e{}{}", if e >= 0 { '+' } else { '-' }, e.abs())
 }
 
+/// True for a JSON integer literal: `-?[0-9]+` (no fraction, no exponent).
+fn is_integer_literal(text: &str) -> bool {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
 /// serde_json `Formatter` for the canonical zarr-json form: compact output
-/// with floats formatted per ECMAScript `Number::toString` ([`es_number_str`]).
-/// Integers keep serde_json's exact digit output (itoa), which is identical
-/// to the ES float form for every safe integer.
+/// with numbers per RFC 8785. With `arbitrary_precision`, every
+/// `serde_json::Number` carries its raw token text and serializes through
+/// `write_number_str`: integer literals pass through as exact digits at any
+/// size (`-0` normalized to `0`, the one non-canonical integer token JSON's
+/// grammar admits), and everything else re-formats through
+/// [`es_number_str`] (so a document's `1.0` canonicalizes to `1`, like
+/// Python and JavaScript). Number tokens that overflow float64 (e.g.
+/// `1e999`) are an error here; [`strict_from_str`] rejects them at parse
+/// time so canonical serialization of a strictly-parsed value cannot fail.
 struct CanonicalFormatter;
 
+fn write_canonical_number<W>(writer: &mut W, value: &str) -> std::io::Result<()>
+where
+    W: ?Sized + std::io::Write,
+{
+    if is_integer_literal(value) {
+        let text = if value == "-0" { "0" } else { value };
+        return writer.write_all(text.as_bytes());
+    }
+    let parsed: f64 = value.parse().map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("invalid JSON number token {value:?}"),
+        )
+    })?;
+    if !parsed.is_finite() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("number literal {value} overflows float64"),
+        ));
+    }
+    writer.write_all(es_number_str(parsed).as_bytes())
+}
+
 impl serde_json::ser::Formatter for CanonicalFormatter {
+    fn write_number_str<W>(&mut self, writer: &mut W, value: &str) -> std::io::Result<()>
+    where
+        W: ?Sized + std::io::Write,
+    {
+        write_canonical_number(writer, value)
+    }
+
     fn write_f64<W>(&mut self, writer: &mut W, value: f64) -> std::io::Result<()>
     where
         W: ?Sized + std::io::Write,
     {
-        // Unreachable through serde_json::Value (Number is always finite),
-        // but fail loudly rather than panicking if reached another way.
+        // Unreachable with arbitrary_precision (numbers go through
+        // write_number_str), but kept for defense in depth.
         if !value.is_finite() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -141,6 +183,49 @@ impl serde_json::ser::Formatter for CanonicalFormatter {
         }
         writer.write_all(es_number_str(value).as_bytes())
     }
+}
+
+/// Reject numbers no other implementation can represent: tokens that are
+/// not integer literals and overflow float64 (e.g. `1e999`). Python's
+/// strict_loads rejects these at parse time; with `arbitrary_precision`
+/// serde_json accepts any number token, so the check runs as a post-parse
+/// walk. Integer literals are exact at any size in all implementations
+/// (Python natively, TypeScript via BigInt, Rust via the raw token).
+fn check_numbers(value: &Value) -> Result<(), ZarrJsonError> {
+    match value {
+        Value::Number(n) => {
+            let text = n.to_string();
+            if !is_integer_literal(&text) {
+                let parsed: f64 = text.parse().map_err(|_| {
+                    ZarrJsonError(format!("invalid JSON number token {text:?}"))
+                })?;
+                if !parsed.is_finite() {
+                    return Err(ZarrJsonError(format!(
+                        "number literal {text} overflows float64"
+                    )));
+                }
+            }
+            Ok(())
+        }
+        Value::Array(items) => items.iter().try_for_each(check_numbers),
+        Value::Object(members) => members.values().try_for_each(check_numbers),
+        _ => Ok(()),
+    }
+}
+
+/// Parse JSON like Python's `strict_loads`: NaN/Infinity tokens are
+/// rejected by serde_json's grammar, and number literals that overflow
+/// float64 are rejected by [`check_numbers`].
+pub fn strict_from_str(text: &str) -> Result<Value, ZarrJsonError> {
+    strict_from_slice(text.as_bytes())
+}
+
+/// Byte-slice form of [`strict_from_str`].
+pub fn strict_from_slice(data: &[u8]) -> Result<Value, ZarrJsonError> {
+    let parsed: Value = serde_json::from_slice(data)
+        .map_err(|e| ZarrJsonError(format!("invalid JSON: {e}")))?;
+    check_numbers(&parsed)?;
+    Ok(parsed)
 }
 
 /// Serialize a JSON value in the canonical zarr-json form.
@@ -200,7 +285,7 @@ pub fn decode_value(key: &str, value: &Value) -> Result<Vec<u8>, ZarrJsonError> 
 /// serialization of one (lossless by construction); otherwise base64-encode.
 pub fn encode_value(key: &str, data: &[u8]) -> Result<Value, ZarrJsonError> {
     if is_metadata_key(key) {
-        let parsed: Value = serde_json::from_slice(data).map_err(|e| {
+        let parsed: Value = strict_from_slice(data).map_err(|e| {
             ZarrJsonError(format!("metadata key {key:?} bytes are not JSON: {e}"))
         })?;
         if !parsed.is_object() {
@@ -218,8 +303,9 @@ pub fn encode_value(key: &str, data: &[u8]) -> Result<Value, ZarrJsonError> {
 
 /// Return the parsed JSON array if inlining `data` is lossless, else None.
 fn try_inline_array(data: &[u8]) -> Option<Value> {
-    // Not JSON, not UTF-8, or containing NaN/Infinity tokens -> parse error.
-    let parsed: Value = serde_json::from_slice(data).ok()?;
+    // Not JSON, not UTF-8, NaN/Infinity tokens, or float64 overflow ->
+    // parse error -> base64 fallback.
+    let parsed: Value = strict_from_slice(data).ok()?;
     if parsed.is_array() && canonical_to_string(&parsed).as_bytes() == data {
         Some(parsed)
     } else {
@@ -272,6 +358,50 @@ mod tests {
             canonical_to_string(&json!([0, -5, 9007199254740991i64])),
             "[0,-5,9007199254740991]"
         );
+    }
+
+    #[test]
+    fn integers_of_any_size_round_trip_exactly() {
+        for text in [
+            "18446744073709551616",                      // u64::MAX + 1
+            "-9223372036854775809",                      // i64::MIN - 1
+            "1000000000000000000000000000000",           // 10^30
+            "-123456789012345678901234567890123456789",  // way past f64
+        ] {
+            let doc = format!("[{text}]");
+            let parsed = strict_from_str(&doc).unwrap();
+            assert_eq!(canonical_to_string(&parsed), doc, "token {text}");
+        }
+    }
+
+    #[test]
+    fn canonical_normalizes_number_tokens() {
+        // -0 integer literal -> "0" (matching Python's int 0); float tokens
+        // re-format per ES ToString ("1.0" -> "1", padded exponents unpadded).
+        for (doc, want) in [
+            ("[-0]", "[0]"),
+            ("[1.0]", "[1]"),
+            ("[1e-07]", "[1e-7]"),
+            ("[100.0]", "[100]"),
+            ("[-0.0]", "[0]"),
+        ] {
+            let parsed = strict_from_str(doc).unwrap();
+            assert_eq!(canonical_to_string(&parsed), want, "doc {doc}");
+        }
+    }
+
+    #[test]
+    fn strict_parse_rejects_float64_overflow() {
+        let err = strict_from_str("[1e999]").unwrap_err();
+        assert!(err.to_string().contains("overflows float64"), "{err}");
+    }
+
+    #[test]
+    fn big_integer_arrays_inline_losslessly() {
+        let data = b"[18446744073709551616,9007199254740993]";
+        let value = encode_value("a/c/0", data).unwrap();
+        assert!(value.is_array(), "should inline, got {value:?}");
+        assert_eq!(decode_value("a/c/0", &value).unwrap(), data);
     }
 
     #[test]

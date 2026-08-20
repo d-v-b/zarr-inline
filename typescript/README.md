@@ -145,10 +145,10 @@ numbers follow RFC 8785 (ES `Number::toString`, so negative zero prints
 numbers and on lone surrogates (which have no UTF-8 encoding) — cases the
 conformance protocol's document constraints declare non-portable.
 
-Known cross-language caveats (documented in the protocol): integers
-outside `[i64::MIN, u64::MAX]` are lossy in the Rust implementation
-(serde_json), and JavaScript objects reorder integer-like member names.
-The cross-implementation property test avoids these values.
+Known cross-language caveats (documented in the protocol): JavaScript
+objects reorder integer-like member names; the cross-implementation
+property test avoids such keys. Numbers carry no caveats — integers of
+any size and the full float64 range are portable.
 
 ## Crosscheck harness
 

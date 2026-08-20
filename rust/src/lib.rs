@@ -13,7 +13,8 @@ pub mod serializer;
 pub mod store;
 
 pub use codec::{
-    canonical_to_string, decode_value, encode_value, es_number_str, is_metadata_key, ZarrJsonError,
+    canonical_to_string, decode_value, encode_value, es_number_str, is_metadata_key,
+    strict_from_slice, strict_from_str, ZarrJsonError,
 };
 pub use validator::{check_key, validate, ValidationError, ValidationIssue};
 

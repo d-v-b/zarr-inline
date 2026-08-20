@@ -23,10 +23,15 @@ decode, and for the inline check on encode):
   with ECMAScript `Number::toString` semantics (integral floats print
   without a decimal point, `1.0` -> `1`; negative zero prints `0`, so the
   sign of -0.0 is NOT preserved; exponents are unpadded, `1e-7`; fixed
-  notation within [1e-6, 1e21)); integers print as digits (identical to
-  the float form for every safe integer). Unlike full JCS, object member
-  names are NOT sorted — insertion order is preserved. JavaScript gets
-  this for free; Python and Rust implement ES ToString explicitly.
+  notation within [1e-6, 1e21)); integers print as digits at any size
+  (identical to the float form for every safe integer; the integer
+  literal `-0` normalizes to `0`). Integer digits survive exactly at ANY
+  size in all three implementations: Python natively, TypeScript via
+  BigInt (JSON.parse reviver source access, Node >= 21), Rust via
+  serde_json's arbitrary_precision raw tokens. Unlike full JCS, object
+  member names are NOT sorted — insertion order is preserved. JavaScript
+  gets float formatting for free; Python and Rust implement ES ToString
+  explicitly.
 - **JS caveat:** JavaScript objects reorder integer-like member names; the
   property test avoids integer-like object keys in metadata/attributes.
 
@@ -82,9 +87,6 @@ does not generate such documents, and portable documents must not contain:
 - **Non-finite number literals**, including overflow like `1e999`
   (Python and Rust reject the document; JavaScript's JSON.parse silently
   produces Infinity).
-- **Integers outside `[i64::MIN, u64::MAX]`** (serde_json falls back to
-  lossy float64 there; Python and TypeScript are exact at any size —
-  Python natively, TypeScript via BigInt).
 - **Nesting deeper than 100 levels** (serde_json's recursion limit is 128;
   CPython's is higher but finite).
 - **Lone surrogates** in any string (serde_json rejects the document;

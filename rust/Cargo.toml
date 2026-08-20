@@ -31,7 +31,14 @@ zarrs = ["dep:zarrs", "dep:inventory"]
 # member order for lossless metadata round-trips. float_roundtrip pins float
 # parsing to the correctly-rounded value so parse -> serialize round-trips
 # match the Python reference implementation.
-serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+serde_json = { version = "1", features = [
+    "preserve_order",
+    "float_roundtrip",
+    # arbitrary_precision: numbers keep their raw token text, so integers
+    # of any size round-trip exactly (matching Python and TypeScript) and
+    # the canonical formatter re-formats floats from the raw text.
+    "arbitrary_precision",
+] }
 # serde: to drive serde_json's Serializer with the canonical Formatter.
 # ryu: shortest-round-trip float digits, re-formatted to ECMAScript
 # Number::toString per RFC 8785 (JCS). Both are already serde_json deps.
