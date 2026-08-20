@@ -1,13 +1,16 @@
 /** zarr-json public API (TypeScript reference implementation). */
 
 export {
+	assertNumbersFinite,
 	base64Decode,
 	base64Encode,
 	canonicalStringify,
+	compareCodePoints,
 	decodeValue,
 	encodeValue,
 	isMetadataKey,
 	METADATA_SUFFIX,
+	strictParse,
 } from "./codec.js";
 export {
 	validate,
@@ -18,6 +21,7 @@ export {
 export {
 	MemoryBacking,
 	StringBacking,
+	toNullPrototype,
 	type Backing,
 	type Document,
 } from "./backing.js";

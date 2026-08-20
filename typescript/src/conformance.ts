@@ -5,9 +5,11 @@
  * report on stdout:
  *
  * - "issues": validator issues, sorted by (key, rule).
- * - "decoded": for every issue-free key, base64 of the bytes decodeValue
- *   returns (the bytes a Zarr library would see).
+ * - "decoded": for every issue-free key that decodes, base64 of the bytes
+ *   decodeValue returns (the bytes a Zarr library would see).
  * - "reencoded": encodeValue(key, decoded_bytes) for every decoded key.
+ * - "errors": sorted keys that passed validation but failed to decode (e.g.
+ *   a byte key whose string value is not valid base64).
  *
  * The Python and Rust implementations ship the same harness; the Python
  * property test generates documents and requires the reports to agree. See
@@ -18,13 +20,21 @@
 
 import { pathToFileURL } from "node:url";
 
-import { base64Encode, decodeValue, encodeValue } from "./codec.js";
+import {
+	assertNumbersFinite,
+	base64Encode,
+	canonicalStringify,
+	compareCodePoints,
+	decodeValue,
+	encodeValue,
+} from "./codec.js";
 import { validate } from "./validator.js";
 
 export interface ConformanceReport {
 	issues: { rule: string; key: string }[];
 	decoded: Record<string, string>;
 	reencoded: Record<string, unknown>;
+	errors: string[];
 }
 
 export function run(document: Record<string, unknown>): ConformanceReport {
@@ -32,20 +42,32 @@ export function run(document: Record<string, unknown>): ConformanceReport {
 	const issueKeys = new Set(issues.map((i) => i.key));
 	const decoded: Record<string, string> = {};
 	const reencoded: Record<string, unknown> = {};
+	const errors: string[] = [];
 	for (const [key, value] of Object.entries(document)) {
 		if (issueKeys.has(key)) {
 			continue;
 		}
-		const data = decodeValue(key, value);
+		let data: Uint8Array;
+		try {
+			data = decodeValue(key, value);
+		} catch {
+			// A decode failure on one key must not abort the report.
+			errors.push(key);
+			continue;
+		}
 		decoded[key] = base64Encode(data);
 		reencoded[key] = encodeValue(key, data);
 	}
+	// Sort by Unicode code points, matching Python's sorted(): "😀/" must
+	// sort after "/", where UTF-16 code-unit order would put it first.
 	const sortedIssues = issues
 		.map((i) => ({ rule: i.rule as string, key: i.key }))
-		.sort((a, b) =>
-			a.key < b.key ? -1 : a.key > b.key ? 1 : a.rule < b.rule ? -1 : a.rule > b.rule ? 1 : 0,
+		.sort(
+			(a, b) =>
+				compareCodePoints(a.key, b.key) || compareCodePoints(a.rule, b.rule),
 		);
-	return { issues: sortedIssues, decoded, reencoded };
+	errors.sort(compareCodePoints);
+	return { issues: sortedIssues, decoded, reencoded, errors };
 }
 
 async function readStdin(): Promise<string> {
@@ -61,15 +83,28 @@ async function main(): Promise<number> {
 	let document: unknown;
 	try {
 		document = JSON.parse(text);
+		// Only overflow like 1e400 can produce a non-finite number here
+		// (JSON.parse rejects NaN/Infinity tokens); Python and Rust reject
+		// such documents at parse time, so this harness must too.
+		assertNumbersFinite(document);
 	} catch (err) {
-		process.stderr.write(`input is not valid JSON: ${String(err)}\n`);
+		process.stderr.write(`invalid JSON input: ${String(err)}\n`);
 		return 1;
 	}
 	if (typeof document !== "object" || document === null || Array.isArray(document)) {
 		process.stderr.write("input must be a JSON object\n");
 		return 1;
 	}
-	process.stdout.write(JSON.stringify(run(document as Record<string, unknown>)));
+	let report: string;
+	try {
+		// canonicalStringify (not JSON.stringify): a lone surrogate in a key
+		// must be a loud error, matching Python's "cannot encode report".
+		report = canonicalStringify(run(document as Record<string, unknown>));
+	} catch (err) {
+		process.stderr.write(`cannot encode report: ${String(err)}\n`);
+		return 1;
+	}
+	process.stdout.write(report);
 	return 0;
 }
 

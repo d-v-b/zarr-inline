@@ -149,6 +149,70 @@ test("canonicalStringify rejects non-finite numbers", () => {
 	assert.throws(() => canonicalStringify({ a: -Infinity }), /non-finite/);
 });
 
+test("canonicalStringify matches JSON.stringify byte-for-byte on portable values", () => {
+	const values: unknown[] = [
+		null,
+		true,
+		false,
+		0,
+		-1,
+		1.5,
+		1e-7,
+		5e-324,
+		1.2345678901234567,
+		0.30000000000000004,
+		Number.MAX_SAFE_INTEGER,
+		-Number.MAX_SAFE_INTEGER,
+		"",
+		'quote " backslash \\ newline \n tab \t controls \u0001\u001f \b\f\r héllo 😀',
+		[1, [2, [3, []]]],
+		{ a: 1, b: [true, null, "x"], nested: { z: 2, a: 1 } },
+	];
+	for (const value of values) {
+		assert.equal(canonicalStringify(value), JSON.stringify(value));
+	}
+});
+
+test("canonicalStringify emits -0.0 for negative zero like Python and Rust", () => {
+	// JSON.stringify(-0) is "0", which silently changes the decoded bytes of
+	// documents other implementations wrote.
+	assert.equal(canonicalStringify(-0), "-0.0");
+	assert.equal(canonicalStringify([1.5, -0, 2]), "[1.5,-0.0,2]");
+	assert.equal(canonicalStringify({ a: -0 }), '{"a":-0.0}');
+});
+
+test("canonicalStringify rejects unsafe integers", () => {
+	// The original digits are already lost to float64 rounding; emitting the
+	// rounded value would be silent corruption.
+	assert.throws(() => canonicalStringify(2 ** 53), /unsafe integer/);
+	assert.throws(() => canonicalStringify([-(2 ** 53) - 2]), /unsafe integer/);
+	assert.throws(() => canonicalStringify({ a: 9007199254740994 }), /unsafe integer/);
+});
+
+test("canonicalStringify rejects lone surrogates", () => {
+	// Python cannot UTF-8-encode a lone surrogate; escaping it here would
+	// produce bytes Python can never produce.
+	assert.throws(() => canonicalStringify("\ud800"), /lone surrogate/);
+	assert.throws(() => canonicalStringify(["a\udfff-b"]), /lone surrogate/);
+	assert.throws(() => canonicalStringify({ "\ud800": 1 }), /lone surrogate/);
+	// A real surrogate pair is fine.
+	assert.equal(canonicalStringify("😀"), '"😀"');
+});
+
+test("encode byte value keeps overflowing JSON array as base64", () => {
+	// "[1e400]" parses to [Infinity], which cannot be canonicalized; the
+	// bytes must fall back to base64 (as Python does), not throw.
+	assert.equal(encodeValue("a/c/0", UTF8.encode("[1e400]")), "WzFlNDAwXQ==");
+});
+
+test("encode metadata value rejects overflowing number literals", () => {
+	// Python's strict_loads refuses 1e400 in metadata; match it.
+	assert.throws(
+		() => encodeValue("zarr.json", UTF8.encode('{"a": 1e400}')),
+		/overflow/,
+	);
+});
+
 test("base64Decode accepts non-zero trailing padding bits like Python", () => {
 	// Python's b64decode(validate=True) accepts "AB==" (decodes to 0x00);
 	// all implementations agree on this leniency.

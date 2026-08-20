@@ -26,25 +26,212 @@ export function isMetadataKey(key: string): boolean {
  * Serialize a JSON value in the canonical zarr-json form.
  *
  * No whitespace; non-ASCII characters unescaped (UTF-8); object member order
- * preserved; non-finite numbers rejected (JSON.stringify would silently emit
- * `null` for NaN/Infinity — the fill_value convention represents them as
- * strings like "NaN" instead). This form is shared by all zarr-json
- * implementations so that decoded bytes agree across languages.
+ * preserved. Byte-identical to `JSON.stringify` compact output for portable
+ * values, with four deliberate divergences that keep decoded bytes identical
+ * across languages:
+ *
+ * - negative zero serializes as `-0.0` (Python and Rust serialize the float
+ *   -0.0 that way; JSON.stringify emits `0`, silently changing bytes);
+ * - non-finite numbers are an error (JSON.stringify would silently emit
+ *   `null` — the fill_value convention represents them as strings like
+ *   "NaN" instead);
+ * - unsafe integers (integral values beyond ±(2^53 − 1)) are an error —
+ *   JavaScript has already lost the original digits, so emitting the rounded
+ *   value would be silent corruption (such documents are declared
+ *   non-portable by the conformance protocol);
+ * - strings that are not well-formed UTF-16 (lone surrogates) are an error,
+ *   matching Python's UTF-8 encode failure, instead of being escaped into
+ *   bytes no other implementation can produce.
  */
 export function canonicalStringify(value: unknown): string {
-	const text = JSON.stringify(value, (_key, v) => {
-		if (typeof v === "number" && !Number.isFinite(v)) {
-			throw new Error(
-				"canonical JSON cannot represent non-finite numbers (NaN/Infinity); " +
-					'use the fill_value string convention ("NaN", "Infinity", "-Infinity")',
-			);
-		}
-		return v;
-	});
-	if (text === undefined) {
+	if (
+		value === undefined ||
+		typeof value === "function" ||
+		typeof value === "symbol"
+	) {
 		throw new Error("value is not JSON-serializable");
 	}
-	return text;
+	const parts: string[] = [];
+	writeCanonical(value, parts);
+	return parts.join("");
+}
+
+const STRING_ESCAPES: Record<string, string> = {
+	'"': '\\"',
+	"\\": "\\\\",
+	"\b": "\\b",
+	"\t": "\\t",
+	"\n": "\\n",
+	"\f": "\\f",
+	"\r": "\\r",
+};
+
+// eslint-disable-next-line no-control-regex
+const STRING_ESCAPE_RE = /[\u0000-\u001f"\\]/g;
+
+function writeCanonicalString(value: string, parts: string[]): void {
+	if (!value.isWellFormed()) {
+		throw new Error(
+			"canonical JSON cannot encode a string containing a lone surrogate " +
+				"(it has no UTF-8 encoding)",
+		);
+	}
+	parts.push(
+		'"',
+		value.replace(
+			STRING_ESCAPE_RE,
+			(ch) =>
+				STRING_ESCAPES[ch] ??
+				"\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"),
+		),
+		'"',
+	);
+}
+
+function writeCanonicalNumber(value: number, parts: string[]): void {
+	if (!Number.isFinite(value)) {
+		throw new Error(
+			"canonical JSON cannot represent non-finite numbers (NaN/Infinity); " +
+				'use the fill_value string convention ("NaN", "Infinity", "-Infinity")',
+		);
+	}
+	if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
+		throw new Error(
+			`canonical JSON cannot represent the unsafe integer ${value}: ` +
+				"integral values beyond \u00b1(2^53 \u2212 1) have already lost " +
+				"precision in JavaScript, so serializing would silently corrupt them",
+		);
+	}
+	if (Object.is(value, -0)) {
+		// Python and Rust serialize the float -0.0 as "-0.0"; JS String(-0)
+		// is "0", which would silently change the decoded bytes.
+		parts.push("-0.0");
+		return;
+	}
+	parts.push(String(value));
+}
+
+function isUnserializable(value: unknown): boolean {
+	return (
+		value === undefined ||
+		typeof value === "function" ||
+		typeof value === "symbol"
+	);
+}
+
+function writeCanonical(value: unknown, parts: string[]): void {
+	if (value === null) {
+		parts.push("null");
+		return;
+	}
+	switch (typeof value) {
+		case "boolean":
+			parts.push(value ? "true" : "false");
+			return;
+		case "number":
+			writeCanonicalNumber(value, parts);
+			return;
+		case "string":
+			writeCanonicalString(value, parts);
+			return;
+		case "object":
+			break;
+		default:
+			// bigint, and anything the language grows later.
+			throw new Error(`value is not JSON-serializable: ${typeof value}`);
+	}
+	if (Array.isArray(value)) {
+		parts.push("[");
+		for (let i = 0; i < value.length; i++) {
+			if (i > 0) {
+				parts.push(",");
+			}
+			const element: unknown = value[i];
+			// JSON.stringify emits null for unserializable array elements.
+			if (isUnserializable(element)) {
+				parts.push("null");
+			} else {
+				writeCanonical(element, parts);
+			}
+		}
+		parts.push("]");
+		return;
+	}
+	parts.push("{");
+	let first = true;
+	for (const [key, member] of Object.entries(value)) {
+		// JSON.stringify skips unserializable object members.
+		if (isUnserializable(member)) {
+			continue;
+		}
+		if (!first) {
+			parts.push(",");
+		}
+		first = false;
+		writeCanonicalString(key, parts);
+		parts.push(":");
+		writeCanonical(member, parts);
+	}
+	parts.push("}");
+}
+
+/**
+ * Compare two strings by Unicode code points (not UTF-16 code units), the
+ * order Python's `sorted()` uses. "😀" (U+1F600) sorts after "\uffff", where
+ * UTF-16 code-unit order would place its surrogate pair before it.
+ */
+export function compareCodePoints(a: string, b: string): number {
+	let i = 0;
+	let j = 0;
+	while (i < a.length && j < b.length) {
+		const ca = a.codePointAt(i) as number;
+		const cb = b.codePointAt(j) as number;
+		if (ca !== cb) {
+			return ca < cb ? -1 : 1;
+		}
+		i += ca > 0xffff ? 2 : 1;
+		j += cb > 0xffff ? 2 : 1;
+	}
+	return (a.length - i) - (b.length - j);
+}
+
+/**
+ * Walk a parsed JSON value and reject any non-finite number.
+ *
+ * JSON.parse rejects NaN/Infinity tokens, so the only way a non-finite
+ * number appears is overflow of a literal like 1e400 — which Python and
+ * Rust reject at parse time (see strict_loads / serde_json). Rejecting here
+ * keeps the three implementations agreeing on which documents are readable.
+ */
+export function assertNumbersFinite(value: unknown): void {
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) {
+			throw new Error("number literal overflows float64 (e.g. 1e400)");
+		}
+		return;
+	}
+	if (Array.isArray(value)) {
+		for (const element of value) {
+			assertNumbersFinite(element);
+		}
+		return;
+	}
+	if (typeof value === "object" && value !== null) {
+		for (const member of Object.values(value)) {
+			assertNumbersFinite(member);
+		}
+	}
+}
+
+/**
+ * Parse JSON like Python's strict_loads: reject number literals that
+ * overflow float64 (JSON.parse silently produces Infinity for e.g. 1e400,
+ * where Python and Rust reject the document).
+ */
+export function strictParse(text: string): unknown {
+	const parsed: unknown = JSON.parse(text);
+	assertNumbersFinite(parsed);
+	return parsed;
 }
 
 const BASE64_RE =
@@ -114,7 +301,9 @@ export function decodeValue(key: string, value: unknown): Uint8Array {
  */
 export function encodeValue(key: string, data: Uint8Array): unknown {
 	if (isMetadataKey(key)) {
-		const parsed: unknown = JSON.parse(UTF8_DECODER.decode(data));
+		// strictParse: a metadata document containing an overflowing number
+		// literal like 1e400 is an error (Python/Rust reject it at parse time).
+		const parsed: unknown = strictParse(UTF8_DECODER.decode(data));
 		if (!isPlainObject(parsed)) {
 			throw new Error(
 				`metadata key ${JSON.stringify(key)} requires a JSON object value`,
@@ -131,26 +320,28 @@ export function encodeValue(key: string, data: Uint8Array): unknown {
 
 /** Return the parsed JSON array if inlining `data` is lossless, else undefined. */
 function tryInlineArray(data: Uint8Array): unknown[] | undefined {
-	let parsed: unknown;
 	try {
 		// JSON.parse rejects NaN/Infinity tokens (they are not JSON), so bytes
 		// like "[NaN]" fall through to base64 here, matching canonical form.
-		parsed = JSON.parse(UTF8_DECODER.decode(data));
-	} catch {
-		// Not UTF-8 or not JSON.
-		return undefined;
-	}
-	if (!Array.isArray(parsed)) {
-		return undefined;
-	}
-	const canonical = UTF8_ENCODER.encode(canonicalStringify(parsed));
-	if (canonical.length !== data.length) {
-		return undefined;
-	}
-	for (let i = 0; i < canonical.length; i++) {
-		if (canonical[i] !== data[i]) {
+		const parsed: unknown = JSON.parse(UTF8_DECODER.decode(data));
+		if (!Array.isArray(parsed)) {
 			return undefined;
 		}
+		// canonicalStringify must stay inside the try: bytes that parse as
+		// JSON but cannot be canonicalized (e.g. "[1e400]", whose parse
+		// overflows to Infinity) must fall back to base64, matching Python.
+		const canonical = UTF8_ENCODER.encode(canonicalStringify(parsed));
+		if (canonical.length !== data.length) {
+			return undefined;
+		}
+		for (let i = 0; i < canonical.length; i++) {
+			if (canonical[i] !== data[i]) {
+				return undefined;
+			}
+		}
+		return parsed;
+	} catch {
+		// Not UTF-8, not JSON, or not canonicalizable.
+		return undefined;
 	}
-	return parsed;
 }

@@ -115,7 +115,60 @@ test("delete removes a key and persists", async () => {
 	const backing = new MemoryBacking({ "a/c/0": "AAEC" });
 	const store = new ZarrJsonStore(backing);
 	await store.delete("/a/c/0");
-	assert.deepEqual(backing.load(), {});
+	// Documents are null-prototype objects; spread to compare contents.
+	assert.deepEqual({ ...backing.load() }, {});
+});
+
+test("prototype-named keys are ordinary document keys", async () => {
+	// A plain object's inherited __proto__ setter would silently swallow
+	// store.set of key "__proto__"; documents are null-prototype objects so
+	// every key is an own property.
+	const backing = new MemoryBacking({});
+	const store = new ZarrJsonStore(backing);
+	for (const key of ["__proto__", "constructor", "toString"] as const) {
+		const path = `/${key}` as const;
+		assert.equal(await store.has(path), false);
+		await store.set(path, new Uint8Array([0, 1, 2]));
+		assert.equal(await store.has(path), true);
+		assert.deepEqual(await store.get(path), new Uint8Array([0, 1, 2]));
+	}
+	assert.deepEqual(
+		(await store.list()).sort(),
+		["__proto__", "constructor", "toString"],
+	);
+	assert.deepEqual({ ...backing.load() }, {
+		["__proto__"]: "AAEC",
+		constructor: "AAEC",
+		toString: "AAEC",
+	});
+	for (const key of ["__proto__", "constructor", "toString"] as const) {
+		await store.delete(`/${key}`);
+		assert.equal(await store.has(`/${key}`), false);
+	}
+	assert.deepEqual(await store.list(), []);
+});
+
+test("prototype-named keys load from parsed and constructed documents", async () => {
+	// JSON.parse creates "__proto__" as an own property; the backings must
+	// keep it one (StringBacking) and re-key plain objects (MemoryBacking).
+	const fromString = new ZarrJsonStore(
+		new StringBacking('{"__proto__": "AAEC", "toString": "AAEC"}'),
+	);
+	assert.deepEqual(await fromString.get("/__proto__"), new Uint8Array([0, 1, 2]));
+	assert.deepEqual(await fromString.get("/toString"), new Uint8Array([0, 1, 2]));
+	const doc = JSON.parse('{"constructor": "AAEC"}') as Record<string, unknown>;
+	const fromMemory = new ZarrJsonStore(new MemoryBacking(doc));
+	assert.equal(await fromMemory.has("/constructor"), true);
+	assert.deepEqual(await fromMemory.get("/constructor"), new Uint8Array([0, 1, 2]));
+});
+
+test("string backing load rejects overflowing number literals", () => {
+	// 1e400 parses to Infinity under JSON.parse; Python and Rust reject the
+	// document, so loading it here must fail loudly.
+	assert.throws(
+		() => new StringBacking('{"zarr.json": {"a": 1e400}}').load(),
+		/overflow/,
+	);
 });
 
 test("read-only store refuses set and delete", async () => {

@@ -4,7 +4,11 @@ import { test } from "node:test";
 import * as zarr from "zarrita";
 
 import { MemoryBacking } from "../backing.js";
-import { JsonSerializer, registerJsonCodec } from "../serializer.js";
+import {
+	JsonSerializer,
+	fromJsonScalar,
+	registerJsonCodec,
+} from "../serializer.js";
 import { ZarrJsonStore } from "../store.js";
 
 registerJsonCodec();
@@ -156,6 +160,83 @@ test("decode rejects JSON not matching chunk shape", () => {
 	assert.throws(
 		() => codec.decode(new TextEncoder().encode("[1,2,3]")),
 		/chunk shape/,
+	);
+});
+
+test("encode walks chunk.stride in C order of chunk.shape", () => {
+	// A transpose codec earlier in the chain hands the array->bytes codec a
+	// non-C-contiguous chunk; the emitted JSON must nest the logical
+	// (shape-ordered) values, or peers cannot read the chunk back.
+	const codec = JsonSerializer.fromConfig(
+		{},
+		{ dataType: "uint8", shape: [2, 3], codecs: [], fillValue: null },
+	);
+	const bytes = codec.encode({
+		data: Uint8Array.from([1, 2, 3, 4, 5, 6]),
+		shape: [2, 3],
+		stride: [1, 2], // F-order memory: element (i, j) lives at i + 2*j
+	});
+	assert.equal(
+		new TextDecoder().decode(bytes),
+		"[[1,3,5],[2,4,6]]",
+	);
+});
+
+test("fromJsonScalar accepts in-range scalars per dtype", () => {
+	assert.equal(fromJsonScalar(-128, "int8"), -128);
+	assert.equal(fromJsonScalar(255, "uint8"), 255);
+	assert.equal(fromJsonScalar(-2147483648, "int32"), -2147483648);
+	assert.equal(fromJsonScalar(9007199254740991, "int64"), 9007199254740991n);
+	assert.equal(fromJsonScalar(-5, "int64"), -5n);
+	assert.equal(fromJsonScalar(1.5, "float32"), 1.5);
+	assert.ok(Number.isNaN(fromJsonScalar("NaN", "float64")));
+	assert.equal(fromJsonScalar("Infinity", "float64"), Infinity);
+	assert.equal(fromJsonScalar("-Infinity", "float64"), -Infinity);
+	assert.equal(fromJsonScalar(true, "bool"), true);
+});
+
+test("fromJsonScalar rejects unsafe int64 values", () => {
+	// JSON.parse of a peer's 9007199254740993 has already rounded to
+	// ...992 (2^53, not a safe integer): BigInt of that would be silent
+	// corruption, so it must throw instead.
+	assert.throws(() => fromJsonScalar(2 ** 53, "int64"), /invalid int64/);
+	assert.throws(() => fromJsonScalar(1.5, "int64"), /invalid int64/);
+	assert.throws(() => fromJsonScalar("7", "int64"), /invalid int64/);
+});
+
+test("fromJsonScalar rejects negative uint64 values", () => {
+	assert.throws(() => fromJsonScalar(-1, "uint64"), /invalid uint64/);
+});
+
+test("fromJsonScalar rejects out-of-range int scalars", () => {
+	assert.throws(() => fromJsonScalar(300, "int8"), /invalid int8/);
+	assert.throws(() => fromJsonScalar(-1, "uint8"), /invalid uint8/);
+	assert.throws(() => fromJsonScalar(2147483648, "int32"), /invalid int32/);
+});
+
+test("fromJsonScalar rejects non-integer int scalars", () => {
+	assert.throws(() => fromJsonScalar(1.7, "int32"), /invalid int32/);
+	assert.throws(() => fromJsonScalar("NaN", "int32"), /invalid int32/);
+});
+
+test("fromJsonScalar rejects invalid float strings", () => {
+	assert.throws(() => fromJsonScalar("nan", "float64"), /invalid float64/);
+});
+
+test("fromJsonScalar rejects non-boolean bool scalars", () => {
+	assert.throws(() => fromJsonScalar(1, "bool"), /invalid bool/);
+});
+
+test("decode surfaces strict scalar errors", () => {
+	const codec = JsonSerializer.fromConfig(
+		{},
+		{ dataType: "int64", shape: [1], codecs: [], fillValue: null },
+	);
+	// A peer writing 9007199254740993 parses as the rounded double 2^53;
+	// decoding must be a loud error, not 9007199254740992n.
+	assert.throws(
+		() => codec.decode(new TextEncoder().encode("[9007199254740993]")),
+		/invalid int64/,
 	);
 });
 

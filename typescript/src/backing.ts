@@ -3,9 +3,25 @@
  *
  * A Backing has two operations: load() returns the document object, persist()
  * writes a document object. The store logic is identical regardless of backing.
+ *
+ * Documents are held as null-prototype objects: a zarr-json key is an
+ * arbitrary string, and on a plain object assigning the key "__proto__" hits
+ * the inherited Object.prototype setter instead of creating a property (a
+ * silent-no-op write). Re-keying every accepted document onto
+ * Object.create(null) makes reads and writes own-property-only.
  */
 
+import { strictParse } from "./codec.js";
+
 export type Document = Record<string, unknown>;
+
+/** Copy a document's own enumerable members onto a null-prototype object. */
+export function toNullPrototype(document: Document): Document {
+	// The null-prototype target has no inherited "__proto__" setter, so
+	// Object.assign creates an own property for every key, including
+	// "__proto__" / "constructor" / "toString".
+	return Object.assign(Object.create(null) as Document, document);
+}
 
 /**
  * Where a zarr-json document lives and how it persists.
@@ -23,7 +39,7 @@ export class MemoryBacking implements Backing {
 	#document: Document;
 
 	constructor(document: Document = {}) {
-		this.#document = document;
+		this.#document = toNullPrototype(document);
 	}
 
 	load(): Document {
@@ -46,7 +62,10 @@ export class StringBacking implements Backing {
 
 	/** Parse and return the document. Call once; see the Backing contract. */
 	load(): Document {
-		return JSON.parse(this.#text) as Document;
+		// strictParse rejects number literals that overflow float64 (1e400):
+		// Python and Rust refuse such documents, so loading one here would
+		// silently diverge.
+		return toNullPrototype(strictParse(this.#text) as Document);
 	}
 
 	persist(document: Document): void {

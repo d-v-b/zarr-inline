@@ -9,7 +9,7 @@
  */
 
 import type { AbsolutePath, AsyncMutable, RangeQuery } from "@zarrita/storage";
-import type { Backing, Document } from "./backing.js";
+import { toNullPrototype, type Backing, type Document } from "./backing.js";
 import { decodeValue, encodeValue } from "./codec.js";
 import { validate, type ValidationIssue } from "./validator.js";
 
@@ -50,7 +50,13 @@ export class ZarrJsonStore implements AsyncMutable {
 	constructor(backing: Backing, options: ZarrJsonStoreOptions = {}) {
 		this.#backing = backing;
 		this.#readOnly = options.readOnly ?? false;
-		this.#document = backing.load();
+		// Documents must be null-prototype objects so that keys like
+		// "__proto__" are ordinary own properties (see backing.ts). The
+		// shipped backings already guarantee this; re-key defensively for
+		// custom backings that hand over a plain object.
+		const loaded = backing.load();
+		this.#document =
+			Object.getPrototypeOf(loaded) === null ? loaded : toNullPrototype(loaded);
 		if (options.strict) {
 			validate(this.#document, { strict: true });
 		} else {

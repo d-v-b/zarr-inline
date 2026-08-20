@@ -27,7 +27,7 @@ type ChunkMeta = {
 	fillValue: unknown;
 };
 
-function cStrides(shape: number[]): number[] {
+export function cStrides(shape: number[]): number[] {
 	const stride = new Array<number>(shape.length);
 	let step = 1;
 	for (let i = shape.length - 1; i >= 0; i--) {
@@ -48,7 +48,7 @@ function isBigintType(dataType: string): boolean {
 }
 
 /** Serialize one element per the Zarr v3 fill_value scalar convention. */
-function toJsonScalar(value: unknown, dataType: string): unknown {
+export function toJsonScalar(value: unknown, dataType: string): unknown {
 	if (typeof value === "bigint") {
 		if (
 			value > BigInt(Number.MAX_SAFE_INTEGER) ||
@@ -76,25 +76,71 @@ function toJsonScalar(value: unknown, dataType: string): unknown {
 	);
 }
 
-/** Parse one element per the Zarr v3 fill_value scalar convention. */
-function fromJsonScalar(value: unknown, dataType: string): unknown {
-	if (isFloatType(dataType) && typeof value === "string") {
+const INT_RANGES: Record<string, [number, number]> = {
+	int8: [-128, 127],
+	int16: [-32768, 32767],
+	int32: [-2147483648, 2147483647],
+	uint8: [0, 255],
+	uint16: [0, 65535],
+	uint32: [0, 4294967295],
+};
+
+/**
+ * Parse one element per the Zarr v3 fill_value scalar convention.
+ *
+ * Strict, like zarr-python's from_json_scalar: coercing silently would be
+ * corruption. int64/uint64 values must be safe integers (JSON.parse has
+ * already rounded 9007199254740993 to ...992 — BigInt of that rounded double
+ * must be a loud error, not a wrong answer); other int dtypes reject
+ * non-integers and out-of-range values; floats accept numbers plus the
+ * "NaN"/"Infinity"/"-Infinity" strings; bool requires a JSON boolean.
+ */
+export function fromJsonScalar(value: unknown, dataType: string): unknown {
+	if (isFloatType(dataType)) {
+		if (typeof value === "number") {
+			return value;
+		}
 		if (value === "NaN") return Number.NaN;
 		if (value === "Infinity") return Number.POSITIVE_INFINITY;
 		if (value === "-Infinity") return Number.NEGATIVE_INFINITY;
 		throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
 	}
 	if (isBigintType(dataType)) {
-		if (typeof value === "number" || typeof value === "string") {
-			return BigInt(value);
+		if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+			throw new Error(
+				`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}: ` +
+					"must be an integer within ±(2^53 − 1) " +
+					"(larger values lose precision in JSON.parse)",
+			);
 		}
-		throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
+		if (dataType === "uint64" && value < 0) {
+			throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
+		}
+		return BigInt(value);
+	}
+	if (dataType === "bool") {
+		if (typeof value !== "boolean") {
+			throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
+		}
+		return value;
+	}
+	const range = INT_RANGES[dataType];
+	if (range !== undefined) {
+		if (
+			typeof value !== "number" ||
+			!Number.isInteger(value) ||
+			value < range[0] ||
+			value > range[1]
+		) {
+			throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
+		}
+		return value;
 	}
 	return value;
 }
 
 /** Nest a flat C-order scalar list by shape. */
-function nest(flat: unknown[], shape: number[]): unknown {
+export function nest(flat: unknown[], shape: number[]): unknown {
 	if (shape.length === 0) {
 		return flat[0];
 	}
@@ -150,7 +196,7 @@ const NUMBER_CTORS: Record<string, NumberArrayCtor> = {
 	float64: Float64Array as unknown as NumberArrayCtor,
 };
 
-function makeTypedArray(dataType: string, scalars: unknown[]): TypedArray<DataType> {
+export function makeTypedArray(dataType: string, scalars: unknown[]): TypedArray<DataType> {
 	if (isBigintType(dataType)) {
 		const Ctor = dataType === "int64" ? BigInt64Array : BigUint64Array;
 		return Ctor.from(scalars as bigint[]) as unknown as TypedArray<DataType>;
@@ -168,6 +214,50 @@ function makeTypedArray(dataType: string, scalars: unknown[]): TypedArray<DataTy
 const UTF8_ENCODER = new TextEncoder();
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
+/** Indexed element access covering both TypedArrays and BoolArray-likes. */
+function elementAt(data: unknown, index: number): unknown {
+	if (typeof (data as { get?: unknown }).get === "function") {
+		return (data as { get(i: number): unknown }).get(index);
+	}
+	return (data as ArrayLike<unknown>)[index];
+}
+
+/**
+ * Read a chunk's elements in C order of `shape`, honoring `stride`.
+ *
+ * zarrita's Chunk carries an explicit stride: an array->array codec earlier
+ * in the chain (e.g. transpose) hands the array->bytes codec a chunk whose
+ * memory is not C-contiguous. Walking raw memory order would emit JSON that
+ * nests wrongly by shape (verified divergence against zarr-python/zarrs), so
+ * elements are gathered by logical index.
+ */
+export function chunkElements(chunk: {
+	data: unknown;
+	shape: number[];
+	stride: number[];
+}): unknown[] {
+	const { data, shape, stride } = chunk;
+	const rank = shape.length;
+	const size = shape.reduce((a, b) => a * b, 1);
+	const out = new Array<unknown>(size);
+	const index = new Array<number>(rank).fill(0);
+	for (let n = 0; n < size; n++) {
+		let offset = 0;
+		for (let dim = 0; dim < rank; dim++) {
+			offset += index[dim] * stride[dim];
+		}
+		out[n] = elementAt(data, offset);
+		for (let dim = rank - 1; dim >= 0; dim--) {
+			index[dim] += 1;
+			if (index[dim] < shape[dim]) {
+				break;
+			}
+			index[dim] = 0;
+		}
+	}
+	return out;
+}
+
 /** Array->bytes codec encoding chunks as canonical UTF-8 JSON arrays. */
 export class JsonSerializer {
 	readonly kind = "array_to_bytes" as const;
@@ -184,12 +274,10 @@ export class JsonSerializer {
 	}
 
 	encode(chunk: Chunk<DataType>): Uint8Array {
-		// chunk.data is C-contiguous when handed to an array->bytes codec
-		// (same assumption zarrita's own bytes codec makes).
-		const flat = Array.from(
-			chunk.data as Iterable<unknown>,
-			(v) => toJsonScalar(v, this.#dataType),
-		);
+		// Walk elements in C order of chunk.shape via chunk.stride: a
+		// transpose codec earlier in the chain hands over non-C-contiguous
+		// memory, and raw-order iteration would nest the JSON wrongly.
+		const flat = chunkElements(chunk).map((v) => toJsonScalar(v, this.#dataType));
 		const text = canonicalStringify(nest(flat, chunk.shape));
 		return UTF8_ENCODER.encode(text);
 	}

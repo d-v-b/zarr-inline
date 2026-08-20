@@ -77,13 +77,35 @@ Supported dtypes: int8/16/32, uint8/16/32, float32/64, bool, and
 int64/uint64 (as BigInt). int64/uint64 values beyond
 `Number.MAX_SAFE_INTEGER` throw on encode — the known int64-in-JS
 limitation, inherited from the `fill_value` convention (plain `JSON.parse`
-cannot round-trip integers beyond 2^53 either).
+cannot round-trip integers beyond 2^53 either). Decoding is strict, like
+zarr-python's `from_json_scalar`: out-of-range or non-integer values for
+int dtypes, non-safe integers for int64/uint64 (a peer's
+`9007199254740993` has already been rounded by `JSON.parse`, so it errors
+loudly instead of silently corrupting), and non-boolean bool values all
+throw; floats accept numbers plus the `"NaN"`/`"Infinity"`/`"-Infinity"`
+strings.
+
+The codec walks chunk elements via `chunk.stride` in C order of
+`chunk.shape`, so the emitted JSON always nests the logical values.
+Combining the `json` codec with a `transpose` codec is not currently
+cross-compatible, though: zarr-python and zarrs nest transpose+json chunk
+JSON by the *transposed* chunk shape (their array->bytes codecs see the
+resolved shape), which zarrita does not expose to the codec. Both sides
+fail loudly on the shape mismatch; use the `json` codec without
+array->array codecs for portable documents.
 
 ## Backings
 
 - `new MemoryBacking(document)` — the in-memory object is the source of truth.
 - `new StringBacking(text)` — parses from a string; `dumps()` returns the
   current string.
+
+Documents are re-keyed onto null-prototype objects on load, so keys like
+`"__proto__"`, `"constructor"`, or `"toString"` are ordinary own
+properties (on a plain object, assigning `"__proto__"` would hit the
+inherited setter and silently drop the write). `StringBacking.load` also
+rejects number literals that overflow float64 (`1e400`), which Python and
+Rust refuse to parse.
 
 ## Validation
 
@@ -104,16 +126,40 @@ strings or inline JSON arrays).
 echo '{"zarr.json": {"a": 1}}' | node dist/conformance.js
 ```
 
-Reads a document on stdin, writes `{"issues", "decoded", "reencoded"}` on
-stdout per `../docs/superpowers/specs/2026-08-20-conformance-protocol.md`.
+Reads a document on stdin, writes `{"issues", "decoded", "reencoded",
+"errors"}` on stdout per
+`../docs/superpowers/specs/2026-08-20-conformance-protocol.md`. Keys that
+pass validation but fail to decode (e.g. a byte key whose string is not
+valid base64) land in `"errors"`; documents containing number literals
+that overflow float64 (like `1e400`) are rejected outright, matching
+Python and Rust.
+
+The canonical serializer is hand-rolled rather than `JSON.stringify`: it
+emits `-0.0` for negative zero (matching Python and Rust) and throws on
+non-finite numbers, on integral values beyond ±(2^53 − 1) (their digits
+are already lost to float64 rounding), and on lone surrogates (which have
+no UTF-8 encoding) — all cases the conformance protocol's document
+constraints declare non-portable.
 
 Known cross-language caveats (documented in the protocol): JavaScript
-number formatting differs from Python for integral-valued floats
-(`1.0`/`-0.0` serialize as `1`/`0`), and JavaScript objects reorder
-integer-like member names. The cross-implementation property test avoids
-these values. This implementation's strict base64 check also verifies a
-decode/re-encode round-trip, so base64 strings with non-zero padding bits
-(e.g. `"AB=="`) are rejected, where Python's `validate=True` accepts them.
+number formatting differs from Python for integral-valued floats (`1.0`
+serializes as `1`), and JavaScript objects reorder integer-like member
+names. The cross-implementation property test avoids these values.
+
+## Crosscheck harness
+
+```bash
+node dist/crosscheck.js write < payload.json   # payload -> document
+node dist/crosscheck.js read < document.json   # document -> payload
+```
+
+The array-layer harness from
+`../docs/superpowers/specs/2026-08-20-crosscheck-protocol.md`: `write`
+drives zarrita over a `ZarrJsonStore` to build a hierarchy of json-codec
+arrays from a payload, `read` opens every array in a document and reports
+its values using the `fill_value` scalar serialization. The Python test
+orchestrator (`python/tests/test_crosscheck.py`) runs the full
+writer × reader matrix across zarr-python, zarrita, and zarrs.
 
 ## Tests
 
