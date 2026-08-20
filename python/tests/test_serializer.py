@@ -71,3 +71,8 @@ async def test_decode_rejects_json_not_matching_chunk_shape():
 def test_from_dict_rejects_wrong_codec_name():
     with pytest.raises(ValueError, match="expected codec name 'json'"):
         JsonSerializer.from_dict({"name": "bytes"})
+
+
+def test_from_dict_rejects_unrecognized_configuration():
+    with pytest.raises(ValueError, match="no configuration"):
+        JsonSerializer.from_dict({"name": "json", "configuration": {"x": 1}})

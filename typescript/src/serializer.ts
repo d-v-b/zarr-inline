@@ -279,7 +279,16 @@ export class JsonSerializer {
 		this.#shape = meta.shape;
 	}
 
-	static fromConfig(_config: unknown, meta: ChunkMeta): JsonSerializer {
+	static fromConfig(config: unknown, meta: ChunkMeta): JsonSerializer {
+		if (
+			config !== undefined &&
+			config !== null &&
+			(typeof config !== "object" || Object.keys(config).length > 0)
+		) {
+			throw new Error(
+				`json codec takes no configuration; got ${JSON.stringify(config)}`,
+			);
+		}
 		return new JsonSerializer(meta);
 	}
 

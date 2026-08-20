@@ -59,8 +59,16 @@ inventory::submit! {
 }
 
 impl CodecTraitsV3 for JsonCodec {
-    fn create(_metadata: &MetadataV3) -> Result<Codec, PluginCreateError> {
-        // The json codec has no configuration.
+    fn create(metadata: &MetadataV3) -> Result<Codec, PluginCreateError> {
+        // The json codec takes no configuration (SPEC.md section 9); reject
+        // unrecognized configuration members rather than ignoring them.
+        if let Some(configuration) = metadata.configuration() {
+            if !configuration.is_empty() {
+                return Err(PluginCreateError::from(
+                    "json codec takes no configuration",
+                ));
+            }
+        }
         Ok(Codec::ArrayToBytes(Arc::new(JsonCodec)))
     }
 }

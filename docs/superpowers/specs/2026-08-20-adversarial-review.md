@@ -108,3 +108,45 @@ handling (TS) and lock/erase/list semantics (Rust); serializer fill_value
 conventions including f32 text (`0.10000000149011612` identical in all
 three), complex pairs, rank-0, and edge chunks; malicious inline chunks
 through zarrs (clean errors, no panics).
+
+## Specification review (v0.1.0-draft → v0.2.0-draft)
+
+SPEC.md was attacked by a clean-room reviewer (spec text only: could an
+implementer build an interoperable library from the document alone?) and
+verified against the implementations by probing. Verdict on v0.1:
+implementable-with-guesses. The v0.2 revision addressed every finding;
+the load-bearing ones:
+
+1. **Document ingestion was never specified** — strict-parse applied
+   only to writer paths. v0.2 §6 makes strict-parse govern reading the
+   document and every embedded parse, requires exact integer
+   preservation at any magnitude, and requires a conforming parser where
+   the host parser falls short.
+2. **Duplicate member names were undecided.** Probing showed all three
+   implementations agree (last value in text order, position of first
+   occurrence), so v0.2 codifies that instead of inventing rejection.
+3. **The number rule leaned on "source tokens", meaningless for
+   programmatic values.** v0.2 §5.1 defines a two-sorted number data
+   model (arbitrary-precision integer / float64) with explicit token and
+   host-value mappings, and correctly attributes only the float64 half
+   to RFC 8785.
+4. **Optional acceptance (MAY) created legal divergence.** base64
+   trailing-padding-bit acceptance is uniform in practice and became
+   MUST-accept; hex-string float forms genuinely diverge (Python/zarrs
+   accept, TypeScript rejects) and moved to the portability list with
+   encoders still forbidden from emitting them.
+5. **A §5-determinism vs §9-JavaScript contradiction** (integer-like
+   member names) — resolved by scoping the determinism guarantee to
+   portable documents.
+6. **Rank-0 complex chunks contradicted the inlining rule** (their
+   scalar form is an array) — v0.2 states the exception.
+7. Also added on review: an error taxonomy with per-key decode-error
+   isolation, store `get`/`set`/`delete` semantics, chunk-decode
+   strictness by number sort (`1.0` is an error for integer dtypes),
+   forward-compatibility via R2 as the extension point, key comparison
+   rules, a depth metric, media-type/extension suggestions, and honest
+   notes on Zarr v3 key-grammar and codec-name registration deltas.
+
+One implementation gap surfaced and was fixed in all three: the `json`
+codec silently accepted unrecognized `configuration` members; it now
+rejects them (SPEC §9).

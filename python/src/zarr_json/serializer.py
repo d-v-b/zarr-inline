@@ -69,6 +69,11 @@ class JsonSerializer(ArrayBytesCodec):
     def from_dict(cls, data: dict[str, JSON]) -> Self:
         if data.get("name") != "json":
             raise ValueError(f"expected codec name 'json', got {data.get('name')!r}")
+        if data.get("configuration") not in (None, {}):
+            raise ValueError(
+                "json codec takes no configuration; got "
+                f"{data.get('configuration')!r}"
+            )
         return cls()
 
     def to_dict(self) -> dict[str, JSON]:
