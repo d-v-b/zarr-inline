@@ -91,3 +91,20 @@ def test_writer_reader_matrix(writer, reader):
     document = _run(HARNESSES[writer], "write", PAYLOAD)
     result = _run(HARNESSES[reader], "read", document)
     assert result == PAYLOAD, f"{writer}->{reader} mismatch"
+
+
+def test_all_implementations_read_the_ome_zarr_example():
+    """zarr-python, zarrita, and zarrs all open the shipped OME-Zarr 0.5
+    example and read identical values from it."""
+    if len(HARNESSES) < 3:
+        missing = {"python", "typescript", "rust"} - set(HARNESSES)
+        pytest.skip(f"crosscheck harnesses unavailable: {sorted(missing)}")
+    example = REPO / "examples" / "valid" / "ome_zarr_0.5_image.json"
+    document = json.loads(example.read_text())
+    results = {
+        name: _run(cmd, "read", document) for name, cmd in HARNESSES.items()
+    }
+    expected = results["python"]
+    assert [a["path"] for a in expected["arrays"]] == ["0", "1"]
+    assert results["typescript"] == expected
+    assert results["rust"] == expected

@@ -54,3 +54,35 @@ async def test_round_trip_through_string_backing():
     np.testing.assert_array_equal(
         root2["data"][:], np.array([10, 20, 30, 40], dtype="int32")
     )
+
+
+async def test_ome_zarr_example_reads_through_zarr_python():
+    """The shipped OME-Zarr 0.5 example is a real, readable hierarchy."""
+    import pathlib
+
+    example = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "examples"
+        / "valid"
+        / "ome_zarr_0.5_image.json"
+    )
+    document = json.loads(example.read_text())
+    store = ZarrJsonStore(MemoryBacking(document), read_only=True)
+    root = zarr.open_group(store=store, mode="r")
+
+    ome = root.attrs["ome"]
+    assert ome["version"] == "0.5"
+    datasets = ome["multiscales"][0]["datasets"]
+    assert [d["path"] for d in datasets] == ["0", "1"]
+
+    level0 = root["0"][:]
+    level1 = root["1"][:]
+    np.testing.assert_array_equal(
+        level0, np.arange(64, dtype="uint8").reshape(8, 8)
+    )
+    np.testing.assert_array_equal(level1, level0[::2, ::2])
+
+    # The chunks are legible: every chunk key holds an inline JSON array.
+    for key, value in document.items():
+        if "/c/" in key:
+            assert isinstance(value, list), f"{key} should be inline JSON"
