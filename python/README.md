@@ -2,8 +2,9 @@
 
 Store a Zarr v3 hierarchy as a single JSON object. `ZarrJsonStore` is a
 read-write `zarr.abc.store.Store` whose entire contents live in one JSON
-document — keys ending in `zarr.json` hold inline JSON metadata, all other
-keys hold base64-encoded bytes.
+document — metadata keys (`zarr.json` or `*/zarr.json`) hold inline JSON
+metadata; all other keys hold base64-encoded bytes or, for arrays using the
+`json` codec, inline JSON arrays of decoded values.
 
 See the spec: `../docs/superpowers/specs/2026-05-14-zarr-json-design.md`.
 
@@ -35,6 +36,28 @@ store2 = ZarrJsonStore(StringBacking(json.dumps(document)))
 root2 = zarr.open_group(store=store2, mode="r")
 ```
 
+## Legible chunks: the `json` codec
+
+By default chunk bytes are opaque (base64). Arrays created with the `json`
+array->bytes codec store their chunks as real JSON arrays in the document,
+using the Zarr v3 `fill_value` scalar serialization elementwise (NaN becomes
+`"NaN"`, complex becomes `[re, im]`, and so on):
+
+```python
+import math
+from zarr_json import JsonSerializer
+
+arr = root.create_array(
+    "legible", shape=(4,), chunks=(4,), dtype="float64",
+    serializer=JsonSerializer(), compressors=None,
+)
+arr[:] = [1.5, math.nan, math.inf, -0.0]
+# document now contains:  "legible/c/0": [1.5, "NaN", "Infinity", -0.0]
+```
+
+`compressors=None` matters: zarr-python otherwise appends a default
+compressor after the serializer, making chunks opaque again.
+
 ## Backings
 
 - `MemoryBacking(document)` — the in-memory object is the source of truth.
@@ -51,7 +74,8 @@ validate(document, strictness=Strictness.STRICT)   # strict: raises ValidationEr
 ```
 
 `validate` checks the two validity rules: **R1** well-formed keys and **R2**
-per-value type (metadata keys map to objects, byte keys map to base64 strings).
+per-value type (metadata keys map to objects; byte keys map to base64 strings
+or inline JSON arrays).
 
 ## Tests
 
