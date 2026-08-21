@@ -241,6 +241,24 @@ All three share one internal shape:
   the performance non-goal (an explicit flush mode would be the natural
   optimization if it ever mattered). Rust exposes the document directly
   (`document()` / `to_json_string()`).
+
+  **Document text is owned by whatever persisted it last.** Whitespace and
+  indentation in the document are never significant — a key's bytes are
+  the canonical serialization of its *parsed* value, so a hand-formatted
+  document reads identically to a minified one. But `persist` re-serializes
+  the whole in-memory document with the host's JSON dumper, so hand layout
+  does not survive a re-persist: Python's file backing pretty-prints at
+  `indent=2`, string exports and `to_json_string()` are compact. Member
+  order is preserved. Number *spellings* can also be rewritten, and this
+  varies by language because persist uses the native dumper rather than
+  the canonical serializer (a hand-written `1.0` stays `1.0` in Python and
+  Rust, becomes `1` in TypeScript); any key that goes through a write
+  cycle is fully normalized. The guarantee across all of this is
+  equivalence (SPEC §7.3) — same keys, same decoded bytes — not textual
+  stability, exactly as zarr-python rewrites `zarr.json` in its own
+  formatting. A formatting-preserving backing (targeted textual edits
+  instead of re-serialization) would be the fix if hand layout ever needed
+  to survive edits; nothing in the current use case calls for it.
 - **serializer** — the `json` codec registered with the host: zarr-python
   via `register_codec`, zarrita via its codec `registry` map, zarrs via
   `inventory`-based plugin registration mirroring its own `bytes` codec.
