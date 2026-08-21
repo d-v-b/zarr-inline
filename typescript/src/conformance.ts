@@ -13,7 +13,7 @@
  *
  * The Python and Rust implementations ship the same harness; the Python
  * property test generates documents and requires the reports to agree. See
- * docs/superpowers/specs/2026-08-20-conformance-protocol.md.
+ * DESIGN.md section 6.1.
  *
  * Run: node dist/conformance.js  (reads stdin)
  */

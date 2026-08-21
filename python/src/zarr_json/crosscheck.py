@@ -1,6 +1,6 @@
 """Cross-language array crosscheck harness (zarr-python side).
 
-See docs/superpowers/specs/2026-08-20-crosscheck-protocol.md. `write` turns
+See DESIGN.md section 6.2. `write` turns
 a payload of arrays into a zarr-json document by driving zarr-python with
 the json codec; `read` opens every array in a document and reports its
 values using the fill_value scalar serialization, so payloads compare

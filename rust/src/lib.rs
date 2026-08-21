@@ -1,8 +1,7 @@
 //! zarr-json: store a Zarr v3 hierarchy as a single JSON object.
 //!
 //! Rust reference implementation. See
-//! `../docs/superpowers/specs/2026-05-14-zarr-json-design.md` and
-//! `../docs/superpowers/specs/2026-08-20-conformance-protocol.md`.
+//! `../SPEC.md` and `../DESIGN.md`.
 
 pub mod codec;
 pub mod validator;

@@ -3,7 +3,7 @@
 Each implementation's crosscheck harness turns a payload into a zarr-json
 document (write) and a document back into a payload (read); every
 (writer, reader) pair must reproduce the input payload exactly. See
-docs/superpowers/specs/2026-08-20-crosscheck-protocol.md.
+DESIGN.md section 6.2.
 """
 
 from __future__ import annotations

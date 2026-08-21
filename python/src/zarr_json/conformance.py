@@ -13,7 +13,7 @@ report on stdout:
 The TypeScript and Rust implementations ship the same harness; the Python
 property test in tests/test_conformance_property.py generates documents and
 requires the three reports to agree. See
-docs/superpowers/specs/2026-08-20-conformance-protocol.md.
+DESIGN.md section 6.1.
 """
 
 from __future__ import annotations

@@ -9,5 +9,6 @@ human-inspectable, hand-editable file.
   zarr-python, zarrita, and zarrs.
 - `examples/` — shared conformance fixtures, including an
   [OME-Zarr 0.5 multiscale image](examples/valid/ome_zarr_0.5_image.json).
-- `docs/superpowers/specs/` — design history, conformance and crosscheck
-  protocols, adversarial review record.
+- **[DESIGN.md](DESIGN.md)** — how it works: the model, design rationale,
+  implementation architecture, conformance and crosscheck protocols, and
+  known limitations.

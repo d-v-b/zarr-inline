@@ -6,7 +6,7 @@ document — metadata keys (`zarr.json` or `*/zarr.json`) hold inline JSON
 metadata; all other keys hold base64-encoded bytes or, for arrays using the
 `json` codec, inline JSON arrays of decoded values.
 
-See the spec: `../docs/superpowers/specs/2026-05-14-zarr-json-design.md`.
+See [SPEC.md](../SPEC.md) and [DESIGN.md](../DESIGN.md).
 
 ## Install
 

@@ -8,7 +8,7 @@ keys (`zarr.json` or `*/zarr.json`) hold inline JSON metadata; all other
 keys hold base64-encoded bytes or, for arrays using the `json` codec,
 inline JSON arrays of decoded values.
 
-See the spec: `../docs/superpowers/specs/2026-05-14-zarr-json-design.md`.
+See [SPEC.md](../SPEC.md) and [DESIGN.md](../DESIGN.md).
 
 ## Requirements
 
@@ -133,7 +133,7 @@ echo '{"zarr.json": {"a": 1}}' | node dist/conformance.js
 
 Reads a document on stdin, writes `{"issues", "decoded", "reencoded",
 "errors"}` on stdout per
-`../docs/superpowers/specs/2026-08-20-conformance-protocol.md`. Keys that
+`../DESIGN.md` §6.1. Keys that
 pass validation but fail to decode (e.g. a byte key whose string is not
 valid base64) land in `"errors"`; documents containing number literals
 that overflow float64 (like `1e400`) are rejected outright, matching
@@ -158,7 +158,7 @@ node dist/crosscheck.js read < document.json   # document -> payload
 ```
 
 The array-layer harness from
-`../docs/superpowers/specs/2026-08-20-crosscheck-protocol.md`: `write`
+`../DESIGN.md` §6.2: `write`
 drives zarrita over a `ZarrJsonStore` to build a hierarchy of json-codec
 arrays from a payload, `read` opens every array in a document and reports
 its values using the `fill_value` scalar serialization. The Python test

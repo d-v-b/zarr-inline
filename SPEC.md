@@ -402,8 +402,7 @@ TypeScript/zarrita — requires Node ≥ 21 for §6's integer preservation —
 and Rust/zarrs) live in this repository, with shared fixtures in
 `examples/` (verdicts in `MANIFEST.json`), a conformance-harness
 protocol, a property-based cross-implementation test, and an array-level
-crosscheck matrix; see `docs/superpowers/specs/2026-08-20-conformance-protocol.md`
-and `2026-08-20-crosscheck-protocol.md`.
+crosscheck matrix; see [DESIGN.md](DESIGN.md) §6.
 
 ## 13. References
 

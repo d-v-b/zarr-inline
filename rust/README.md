@@ -8,7 +8,7 @@ live in one JSON document — metadata keys (`zarr.json` or `*/zarr.json`) hold
 inline JSON metadata; all other keys hold base64-encoded bytes or, for arrays
 using the `json` codec, inline JSON arrays of decoded values.
 
-See the spec: `../docs/superpowers/specs/2026-05-14-zarr-json-design.md`.
+See [SPEC.md](../SPEC.md) and [DESIGN.md](../DESIGN.md).
 
 ## Build
 
@@ -84,7 +84,7 @@ or inline JSON arrays). `ZarrJsonStore::from_document` validates strictly;
 ## Conformance harness
 
 `cargo build` produces `target/debug/conformance`, the CLI described in
-`../docs/superpowers/specs/2026-08-20-conformance-protocol.md`: it reads a
+`../DESIGN.md` §6.1: it reads a
 zarr-json document on stdin and writes a report (validator issues, decoded
 bytes as base64, re-encoded values) on stdout. The harness uses only the
 codec and validator modules, which have no zarrs dependency; if zarrs ever

@@ -8,13 +8,10 @@ absent). All reports must agree structurally.
 Canonical numbers follow RFC 8785 (ECMAScript Number::toString), so
 floats — including integral values, negative zero, exponent forms, and
 subnormals — are portable and generated freely within the float64-safe
-magnitude range. The generated value space still avoids the residual
-divergences documented in
-docs/superpowers/specs/2026-08-20-conformance-protocol.md:
-
-- (none for numbers: integers of any size and the full float64 range are
-  portable across all three implementations);
-- integer-like JSON object member names (JS objects reorder them).
+magnitude range, and integers are generated to +/-10^30. The generated
+value space avoids only the one residual divergence documented in
+DESIGN.md section 7: integer-like JSON object member names (JavaScript
+objects reorder them).
 """
 
 from __future__ import annotations

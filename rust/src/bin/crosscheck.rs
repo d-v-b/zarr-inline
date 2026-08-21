@@ -1,6 +1,6 @@
 //! Cross-language array crosscheck harness (zarrs side).
 //!
-//! See `docs/superpowers/specs/2026-08-20-crosscheck-protocol.md`. `write`
+//! See `DESIGN.md` section 6.2. `write`
 //! turns a payload of arrays into a zarr-json document by driving zarrs with
 //! the `json` codec through [`ZarrJsonStore`]; `read` opens every array in a
 //! document and reports its values using the fill_value scalar serialization,
