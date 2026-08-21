@@ -119,6 +119,20 @@ fn flatten(nested: &Value, shape: &[u64], out: &mut Vec<Value>) -> Result<(), Co
     }
 }
 
+/// For float data types, whether the native-endian element bytes hold a
+/// finite value. Non-float types (or unknown widths) are trivially finite.
+fn float_element_is_finite(type_name: &str, element: &[u8]) -> bool {
+    match (type_name, element.len()) {
+        ("float64", 8) => f64::from_ne_bytes(element.try_into().unwrap()).is_finite(),
+        ("float32", 4) => f32::from_ne_bytes(element.try_into().unwrap()).is_finite(),
+        // IEEE binary16: exponent bits 0x7C00 all set => inf/NaN.
+        ("float16", 2) => u16::from_ne_bytes(element.try_into().unwrap()) & 0x7C00 != 0x7C00,
+        // bfloat16: exponent bits 0x7F80 all set => inf/NaN.
+        ("bfloat16", 2) => u16::from_ne_bytes(element.try_into().unwrap()) & 0x7F80 != 0x7F80,
+        _ => true,
+    }
+}
+
 fn fixed_size(data_type: &DataType) -> Result<usize, CodecError> {
     data_type.fixed_size().ok_or_else(|| {
         CodecError::UnsupportedDataType(data_type.clone(), "json".to_string())
@@ -222,8 +236,17 @@ impl ArrayToBytesCodecTraits for JsonCodec {
         let mut flat = Vec::new();
         flatten(&nested, &shape_u64, &mut flat)?;
 
+        let type_name = data_type
+            .name_v3()
+            .map(|n| n.as_ref().to_string())
+            .unwrap_or_default();
         let mut out = Vec::with_capacity(flat.len() * element_size);
         for value in flat {
+            // SPEC 9.2: a finite JSON number that overflows the target float
+            // type's finite range is out of range (a codec error); non-finite
+            // values are representable only through the explicit strings.
+            let numeric_input = value.is_number();
+            let value_text = value.to_string();
             let metadata: FillValueMetadata = serde_json::from_value(value)
                 .map_err(|e| CodecError::Other(format!("json codec: {e}")))?;
             let fill_value = data_type
@@ -234,6 +257,13 @@ impl ArrayToBytesCodecTraits for JsonCodec {
                 return Err(CodecError::Other(format!(
                     "json codec: scalar decoded to {} bytes, expected {element_size}",
                     element.len()
+                )));
+            }
+            if numeric_input && !float_element_is_finite(&type_name, element) {
+                return Err(CodecError::Other(format!(
+                    "json codec: {type_name} value {value_text} is out of range \
+                     (not finite after conversion); use \"NaN\"/\"Infinity\"/\"-Infinity\" \
+                     for non-finite values"
                 )));
             }
             out.extend_from_slice(element);
@@ -289,6 +319,47 @@ mod tests {
             )
             .unwrap();
         assert_eq!(decoded.into_fixed().unwrap().into_owned(), elements);
+    }
+
+    #[test]
+    fn decode_rejects_numbers_that_overflow_the_target_float_type() {
+        let codec = JsonCodec;
+        let big_int = format!("[1{}]", "0".repeat(400)); // integer token, 401 digits
+        for (dt, text) in [
+            (data_type::float32(), "[1e39]".to_string()),
+            (data_type::float64(), big_int),
+            (data_type::float16(), "[70000]".to_string()),
+        ] {
+            let err = codec
+                .decode(
+                    Cow::Owned(text.clone().into_bytes()),
+                    &shape(&[1]),
+                    &dt,
+                    &FillValue::new(vec![0; dt.fixed_size().unwrap()]),
+                    &CodecOptions::default(),
+                )
+                .err()
+                .unwrap_or_else(|| panic!("{text} should be out of range for {dt:?}"));
+            // Either our finiteness check or zarrs's own fill-value parsing may
+            // reject first; what matters is that it is an error, never Infinity.
+            assert!(
+                err.to_string().contains("out of range")
+                    || err.to_string().contains("incompatible fill value"),
+                "{err}"
+            );
+        }
+        // The explicit string form is still how non-finite values are written.
+        let ok = codec
+            .decode(
+                Cow::Owned(b"[\"Infinity\"]".to_vec()),
+                &shape(&[1]),
+                &data_type::float32(),
+                &FillValue::new(vec![0; 4]),
+                &CodecOptions::default(),
+            )
+            .unwrap();
+        let v = f32::from_ne_bytes(ok.into_fixed().unwrap().as_ref().try_into().unwrap());
+        assert!(v.is_infinite());
     }
 
     #[test]

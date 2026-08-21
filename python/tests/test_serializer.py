@@ -142,3 +142,33 @@ async def test_decode_accepts_integer_tokens_for_float_types_as_nearest_float64(
         proto.buffer.from_bytes(b"[9007199254740993]"), spec
     )
     assert out.as_ndarray_like().tolist() == [9007199254740992.0]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "chunk_text"),
+    [
+        ("float32", b"[1e39]"),
+        ("float64", b"[1" + b"0" * 400 + b"]"),
+        ("float16", b"[70000]"),
+        ("complex64", b"[[1e39, 0]]"),
+    ],
+)
+async def test_decode_rejects_numbers_that_overflow_the_target_float_type(dtype, chunk_text):
+    import warnings
+
+    from zarr.core.array_spec import ArraySpec
+    from zarr.core.buffer import default_buffer_prototype
+    from zarr.core.dtype import get_data_type_from_native_dtype
+
+    proto = default_buffer_prototype()
+    spec = ArraySpec(
+        shape=(1,),
+        dtype=get_data_type_from_native_dtype(np.dtype(dtype)),
+        fill_value=0,
+        config={},
+        prototype=proto,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # numpy overflow RuntimeWarning
+        with pytest.raises(ValueError, match="out of range"):
+            await JsonSerializer()._decode_single(proto.buffer.from_bytes(chunk_text), spec)

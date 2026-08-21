@@ -343,7 +343,11 @@ Element parsing MUST be strict, by the number sorts of §5.1:
   integer converted to the nearest float64), plus the three non-finite
   strings.
 - all types: out-of-range values and malformed scalars are codec errors,
-  never coerced.
+  never coerced. For float types, *range* means the type's finite range: a
+  finite JSON number whose conversion to the target type is not finite
+  (e.g. `1e39` for `float32`, or an integer token beyond float64) is out of
+  range; non-finite values are representable only through the three
+  strings.
 
 ### 9.3 Composition and restrictions
 

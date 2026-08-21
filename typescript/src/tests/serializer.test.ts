@@ -302,3 +302,20 @@ test("decode keeps the JSON number sort: 1.0 is an error for int32, big ints rou
 		[9007199254740992],
 	);
 });
+
+test("decode rejects numbers that overflow the target float type", () => {
+	const f32 = JsonSerializer.fromConfig(
+		{},
+		{ dataType: "float32", shape: [1], codecs: [], fillValue: null },
+	);
+	assert.throws(() => f32.decode(new TextEncoder().encode("[1e39]")), /out of range/);
+	// 3.4e38 is within float32 range; the explicit string form still works.
+	assert.deepEqual([...(f32.decode(new TextEncoder().encode("[3.4e38]")).data as Float32Array)].map(Number.isFinite), [true]);
+	assert.equal((f32.decode(new TextEncoder().encode('["Infinity"]')).data as Float32Array)[0], Infinity);
+	const f64 = JsonSerializer.fromConfig(
+		{},
+		{ dataType: "float64", shape: [1], codecs: [], fillValue: null },
+	);
+	const hugeInt = "[1" + "0".repeat(400) + "]";
+	assert.throws(() => f64.decode(new TextEncoder().encode(hugeInt)), /out of range/);
+});

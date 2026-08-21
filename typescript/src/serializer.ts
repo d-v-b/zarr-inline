@@ -97,12 +97,21 @@ const INT_RANGES: Record<string, [number, number]> = {
  */
 export function fromJsonScalar(value: unknown, dataType: string): unknown {
 	if (isFloatType(dataType)) {
-		if (typeof value === "number") {
-			return value;
-		}
-		if (typeof value === "bigint") {
-			// An integer token for a float type: the nearest float64 (SPEC §9.2).
-			return Number(value);
+		if (typeof value === "number" || typeof value === "bigint") {
+			// An integer token for a float type converts to the nearest float64
+			// (SPEC §9.2). A finite JSON number that overflows the TARGET type's
+			// finite range is out of range — a codec error, never Infinity;
+			// non-finite values are written only as the explicit strings.
+			const asFloat64 = Number(value);
+			const converted = dataType === "float32" ? Math.fround(asFloat64) : asFloat64;
+			if (!Number.isFinite(converted)) {
+				throw new Error(
+					`json codec: ${dataType} value ${String(value)} is out of range ` +
+						'(not finite after conversion); use "NaN"/"Infinity"/"-Infinity" ' +
+						"for non-finite values",
+				);
+			}
+			return asFloat64;
 		}
 		if (value === "NaN") return Number.NaN;
 		if (value === "Infinity") return Number.POSITIVE_INFINITY;

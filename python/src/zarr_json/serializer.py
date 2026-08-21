@@ -93,6 +93,25 @@ def _check_scalar_sort(value: Any, native: np.dtype[Any]) -> None:
         )
 
 
+def _check_finite(value: Any, scalar: Any, native: np.dtype[Any]) -> None:
+    """SPEC 9.2: a finite JSON number that overflows the target float type's
+    finite range is out of range (a codec error), never Infinity; non-finite
+    values are representable only through the explicit strings.
+    """
+    if native.kind not in "fc":
+        return
+    numeric = (
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        if native.kind == "f"
+        else all(isinstance(p, (int, float)) and not isinstance(p, bool) for p in value)
+    )
+    if numeric and not np.isfinite(scalar):
+        raise ValueError(
+            f"json codec: {native} value {value!r} is out of range (not finite after "
+            'conversion); use "NaN"/"Infinity"/"-Infinity" for non-finite values'
+        )
+
+
 @dataclass(frozen=True)
 class JsonSerializer(ArrayBytesCodec):
     """Array->bytes codec encoding chunks as canonical UTF-8 JSON arrays."""
@@ -133,7 +152,16 @@ class JsonSerializer(ArrayBytesCodec):
         native = zdtype.to_native_dtype()
         for v in flat:
             _check_scalar_sort(v, native)
-        scalars = [zdtype.from_json_scalar(v, zarr_format=3) for v in flat]
+        scalars = []
+        for v in flat:
+            try:
+                scalar = zdtype.from_json_scalar(v, zarr_format=3)
+            except OverflowError as exc:  # e.g. a 400-digit integer token -> float
+                raise ValueError(
+                    f"json codec: {native} value {v!r} is out of range: {exc}"
+                ) from exc
+            _check_finite(v, scalar, native)
+            scalars.append(scalar)
         arr = np.asarray(scalars, dtype=zdtype.to_native_dtype()).reshape(
             chunk_spec.shape
         )

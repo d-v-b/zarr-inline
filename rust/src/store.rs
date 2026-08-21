@@ -204,10 +204,13 @@ impl WritableStorageTraits for ZarrJsonStore {
         // concurrent set_partial_many cannot observe (and clobber) a stale
         // value between the read and the write.
         let mut document = self.document.write().unwrap();
+        // A lenient-mode skipped entry behaves as absent (SPEC 8.1): the
+        // partial write starts from an empty, zero-filled value.
+        let skipped = self.skipped.read().unwrap().contains(key.as_str());
         let mut bytes = match document.get(key.as_str()) {
-            None => Vec::new(),
-            Some(value) => decode_value(key.as_str(), value)
+            Some(value) if !skipped => decode_value(key.as_str(), value)
                 .map_err(|e| StorageError::Other(e.to_string()))?,
+            _ => Vec::new(),
         };
         for (offset, value) in offset_values {
             let offset = usize::try_from(offset).map_err(|_| {
@@ -488,6 +491,15 @@ mod tests {
         assert_eq!(store.get(&key("bad/c/0")).unwrap().unwrap().as_ref(), &[7]);
         let listed: Vec<String> = store.list().unwrap().iter().map(|k| k.as_str().to_string()).collect();
         assert_eq!(listed, vec!["bad/c/0", "ok/c/0"]);
+    }
+
+    #[test]
+    fn partial_write_to_skipped_key_starts_from_empty_value() {
+        let (store, _issues) =
+            ZarrJsonStore::from_document_lenient(doc(json!({"bad/c/0": 123})));
+        let writes: OffsetBytesIterator = Box::new(vec![(1u64, Bytes::from_static(&[7]))].into_iter());
+        store.set_partial_many(&key("bad/c/0"), writes).unwrap();
+        assert_eq!(store.get(&key("bad/c/0")).unwrap().unwrap().as_ref(), &[0, 7]);
     }
 
     #[test]
