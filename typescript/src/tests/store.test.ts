@@ -211,3 +211,65 @@ test("set rejects malformed store keys per the Zarr v3 key grammar", async () =>
 	}
 	assert.deepEqual(Object.keys(backing.load()), []);
 });
+
+test("StringBacking persists integers beyond 2^53 losslessly", async () => {
+	// Regression: JSON.stringify throws on bigint; persist must use the
+	// canonical serializer so full int64/uint64 support holds end to end.
+	const backing = new StringBacking("{}");
+	const store = new ZarrJsonStore(backing);
+	await store.set("/a/c/0", new TextEncoder().encode("[9007199254740993]"));
+	assert.ok(backing.dumps().includes("9007199254740993"));
+	const reloaded = new ZarrJsonStore(new StringBacking(backing.dumps()));
+	assert.equal(
+		new TextDecoder().decode(await reloaded.get("/a/c/0")),
+		"[9007199254740993]",
+	);
+});
+
+test("backings reject a non-object top-level document", () => {
+	// Regression: an array must not be re-keyed into {"0": ...}.
+	assert.throws(() => new StringBacking('["AA=="]').load(), /top-level value must be a JSON object/);
+	assert.throws(() => new StringBacking("42").load(), /top-level value must be a JSON object/);
+	assert.throws(
+		() => new MemoryBacking(["AA=="] as unknown as Record<string, unknown>),
+		/top-level value must be a JSON object/,
+	);
+});
+
+test("a failed persist leaves the document unchanged (set and delete)", async () => {
+	let fail = false;
+	const inner = new MemoryBacking({ "keep/c/0": "AAEC" });
+	const backing = {
+		load: () => inner.load(),
+		persist: (doc: Record<string, unknown>) => {
+			if (fail) throw new Error("disk full");
+			inner.persist(doc);
+		},
+	};
+	const store = new ZarrJsonStore(backing);
+	fail = true;
+	await assert.rejects(() => store.set("/new/c/0", new Uint8Array([1])), /disk full/);
+	assert.equal(await store.get("/new/c/0"), undefined);
+	assert.equal(await store.has("/new/c/0"), false);
+	await assert.rejects(() => store.set("/keep/c/0", new Uint8Array([9])), /disk full/);
+	assert.deepEqual(await store.get("/keep/c/0"), new Uint8Array([0, 1, 2]));
+	await assert.rejects(() => store.delete("/keep/c/0"), /disk full/);
+	assert.deepEqual(await store.get("/keep/c/0"), new Uint8Array([0, 1, 2]));
+	fail = false;
+	await store.set("/new/c/0", new Uint8Array([1]));
+	assert.deepEqual(await store.get("/new/c/0"), new Uint8Array([1]));
+});
+
+test("lenient mode treats invalid entries as absent until rewritten", async () => {
+	const backing = new MemoryBacking({ "bad/c/0": 123, "ok/c/0": "AAEC" });
+	const store = new ZarrJsonStore(backing, { onIssue: () => undefined });
+	assert.equal(await store.has("/bad/c/0"), false);
+	assert.equal(await store.get("/bad/c/0"), undefined);
+	assert.deepEqual(await store.list(), ["ok/c/0"]);
+	// The offending entry survives in the document text (never destroyed)...
+	assert.equal(backing.load()["bad/c/0"], 123);
+	// ...and a successful set makes the key live again.
+	await store.set("/bad/c/0", new Uint8Array([7]));
+	assert.equal(await store.has("/bad/c/0"), true);
+	assert.deepEqual([...(await store.list())].sort(), ["bad/c/0", "ok/c/0"]);
+});

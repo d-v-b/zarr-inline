@@ -76,3 +76,69 @@ def test_from_dict_rejects_wrong_codec_name():
 def test_from_dict_rejects_unrecognized_configuration():
     with pytest.raises(ValueError, match="no configuration"):
         JsonSerializer.from_dict({"name": "json", "configuration": {"x": 1}})
+
+
+@pytest.mark.parametrize("chunk_text", [b"[NaN]", b"[1e999]", b"[Infinity]"])
+async def test_decode_strict_parses_chunk_bytes(chunk_text):
+    # SPEC 9.2: chunk bytes are strict-parsed; Python's lenient json.loads
+    # must not let NaN/Infinity tokens or float64 overflow through.
+    from zarr.core.array_spec import ArraySpec
+    from zarr.core.buffer import default_buffer_prototype
+    from zarr.core.dtype import get_data_type_from_native_dtype
+
+    proto = default_buffer_prototype()
+    spec = ArraySpec(
+        shape=(1,),
+        dtype=get_data_type_from_native_dtype(np.dtype("float64")),
+        fill_value=0.0,
+        config={},
+        prototype=proto,
+    )
+    with pytest.raises(ValueError):
+        await JsonSerializer()._decode_single(proto.buffer.from_bytes(chunk_text), spec)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "chunk_text"),
+    [
+        ("int32", b"[1.0]"),     # float token for an integer type
+        ("int32", b"[true]"),    # boolean for an integer type
+        ("int32", b'["1"]'),     # string for an integer type
+        ("bool", b"[1]"),        # integer for bool
+        ("float64", b'["nan"]'), # only the three exact non-finite strings
+    ],
+)
+async def test_decode_enforces_scalar_sorts(dtype, chunk_text):
+    from zarr.core.array_spec import ArraySpec
+    from zarr.core.buffer import default_buffer_prototype
+    from zarr.core.dtype import get_data_type_from_native_dtype
+
+    proto = default_buffer_prototype()
+    spec = ArraySpec(
+        shape=(1,),
+        dtype=get_data_type_from_native_dtype(np.dtype(dtype)),
+        fill_value=0,
+        config={},
+        prototype=proto,
+    )
+    with pytest.raises(ValueError):
+        await JsonSerializer()._decode_single(proto.buffer.from_bytes(chunk_text), spec)
+
+
+async def test_decode_accepts_integer_tokens_for_float_types_as_nearest_float64():
+    from zarr.core.array_spec import ArraySpec
+    from zarr.core.buffer import default_buffer_prototype
+    from zarr.core.dtype import get_data_type_from_native_dtype
+
+    proto = default_buffer_prototype()
+    spec = ArraySpec(
+        shape=(1,),
+        dtype=get_data_type_from_native_dtype(np.dtype("float64")),
+        fill_value=0.0,
+        config={},
+        prototype=proto,
+    )
+    out = await JsonSerializer()._decode_single(
+        proto.buffer.from_bytes(b"[9007199254740993]"), spec
+    )
+    assert out.as_ndarray_like().tolist() == [9007199254740992.0]

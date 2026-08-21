@@ -27,7 +27,7 @@ from zarr.abc.codec import ArrayBytesCodec
 from zarr.core.common import JSON
 from zarr.registry import register_codec
 
-from zarr_json.codec import canonical_dumps
+from zarr_json.codec import canonical_dumps, strict_loads
 
 if TYPE_CHECKING:
     from zarr.core.array_spec import ArraySpec
@@ -57,6 +57,40 @@ def _flatten(nested: Any, shape: tuple[int, ...]) -> list[Any]:
     for sub in nested:
         out.extend(_flatten(sub, shape[1:]))
     return out
+
+
+_NON_FINITE = ("NaN", "Infinity", "-Infinity")
+
+
+def _is_float_sort(v: Any) -> bool:
+    return (isinstance(v, (int, float)) and not isinstance(v, bool)) or v in _NON_FINITE
+
+
+def _check_scalar_sort(value: Any, native: np.dtype[Any]) -> None:
+    """Enforce SPEC 9.2 element sorts before delegating to zarr-python's
+    lenient from_json_scalar (which accepts 1.0, true, and "1" for int32,
+    and 1 for bool). Integer dtypes take integer tokens only; bool takes
+    booleans only; floats take integers, floats, or the non-finite strings;
+    complex takes a [re, im] pair of float-sort values.
+    """
+    kind = native.kind
+    ok = True
+    if kind in "iu":
+        ok = isinstance(value, int) and not isinstance(value, bool)
+    elif kind == "b":
+        ok = isinstance(value, bool)
+    elif kind == "f":
+        ok = _is_float_sort(value)
+    elif kind == "c":
+        ok = (
+            isinstance(value, (list, tuple))
+            and len(value) == 2
+            and all(_is_float_sort(part) for part in value)
+        )
+    if not ok:
+        raise ValueError(
+            f"json codec: invalid {native} scalar {value!r}: wrong JSON number sort"
+        )
 
 
 @dataclass(frozen=True)
@@ -92,8 +126,13 @@ class JsonSerializer(ArrayBytesCodec):
         self, chunk_bytes: Buffer, chunk_spec: ArraySpec
     ) -> NDBuffer:
         zdtype = chunk_spec.dtype
-        nested = json.loads(chunk_bytes.to_bytes())
+        # SPEC 9.2: chunk bytes are strict-parsed (no NaN/Infinity tokens,
+        # no float64 overflow literals).
+        nested = strict_loads(chunk_bytes.to_bytes())
         flat = _flatten(nested, tuple(chunk_spec.shape))
+        native = zdtype.to_native_dtype()
+        for v in flat:
+            _check_scalar_sort(v, native)
         scalars = [zdtype.from_json_scalar(v, zarr_format=3) for v in flat]
         arr = np.asarray(scalars, dtype=zdtype.to_native_dtype()).reshape(
             chunk_spec.shape

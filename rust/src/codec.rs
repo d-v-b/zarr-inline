@@ -405,6 +405,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)] // the spec vector is the literal digits, not PI
     fn es_number_str_mandatory_vectors() {
         for (value, expected) in [
             (0.0, "0"),

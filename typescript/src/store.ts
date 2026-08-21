@@ -46,6 +46,11 @@ export class ZarrJsonStore implements AsyncMutable {
 	#document: Document;
 	#readOnly: boolean;
 	#lock: Promise<unknown> = Promise.resolve();
+	// Lenient mode: keys with validation issues behave as absent (SPEC §8.1)
+	// while staying in the document text, so unrecognized-but-future-valid
+	// values are never destroyed by a re-persist. A successful set clears
+	// the key's skip.
+	#skipped: Set<string> = new Set();
 
 	constructor(backing: Backing, options: ZarrJsonStoreOptions = {}) {
 		this.#backing = backing;
@@ -67,6 +72,7 @@ export class ZarrJsonStore implements AsyncMutable {
 						`zarr-json validation [${issue.rule}] ${issue.key}: ${issue.message}`,
 					));
 			for (const issue of validate(this.#document)) {
+				this.#skipped.add(issue.key);
 				onIssue(issue);
 			}
 		}
@@ -93,10 +99,14 @@ export class ZarrJsonStore implements AsyncMutable {
 		}
 	}
 
+	#present(docKey: string): boolean {
+		return Object.hasOwn(this.#document, docKey) && !this.#skipped.has(docKey);
+	}
+
 	async get(key: AbsolutePath): Promise<Uint8Array | undefined> {
 		return this.#withLock(() => {
 			const docKey = this.#docKey(key);
-			if (!Object.hasOwn(this.#document, docKey)) {
+			if (!this.#present(docKey)) {
 				return undefined;
 			}
 			return decodeValue(docKey, this.#document[docKey]);
@@ -127,25 +137,53 @@ export class ZarrJsonStore implements AsyncMutable {
 			);
 		}
 		return this.#withLock(() => {
-			this.#document[docKey] = encodeValue(docKey, value);
-			this.#backing.persist(this.#document);
+			const encoded = encodeValue(docKey, value);
+			// A failed set MUST leave the document unchanged (SPEC §8.2): if
+			// persist throws, restore the previous entry before rethrowing.
+			const had = Object.hasOwn(this.#document, docKey);
+			const previous = this.#document[docKey];
+			this.#document[docKey] = encoded;
+			try {
+				this.#backing.persist(this.#document);
+			} catch (err) {
+				if (had) {
+					this.#document[docKey] = previous;
+				} else {
+					delete this.#document[docKey];
+				}
+				throw err;
+			}
+			this.#skipped.delete(docKey);
 		});
 	}
 
 	async delete(key: AbsolutePath): Promise<void> {
 		this.#checkWritable();
 		return this.#withLock(() => {
-			delete this.#document[this.#docKey(key)];
-			this.#backing.persist(this.#document);
+			const docKey = this.#docKey(key);
+			const had = Object.hasOwn(this.#document, docKey);
+			const previous = this.#document[docKey];
+			delete this.#document[docKey];
+			try {
+				this.#backing.persist(this.#document);
+			} catch (err) {
+				if (had) {
+					this.#document[docKey] = previous;
+				}
+				throw err;
+			}
+			this.#skipped.delete(docKey);
 		});
 	}
 
 	async has(key: AbsolutePath): Promise<boolean> {
-		return this.#withLock(() => Object.hasOwn(this.#document, this.#docKey(key)));
+		return this.#withLock(() => this.#present(this.#docKey(key)));
 	}
 
-	/** All document keys (zarr-json keys, without a leading "/"). */
+	/** All usable document keys (zarr-json keys, without a leading "/"). */
 	async list(): Promise<string[]> {
-		return this.#withLock(() => Object.keys(this.#document));
+		return this.#withLock(() =>
+			Object.keys(this.#document).filter((k) => !this.#skipped.has(k)),
+		);
 	}
 }

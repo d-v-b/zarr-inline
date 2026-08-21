@@ -15,6 +15,16 @@ from zarr_json.codec import strict_loads
 Document = dict[str, Any]
 
 
+def require_document(value: Any) -> Document:
+    """A document's top-level value must be a JSON object (SPEC 6)."""
+    if not isinstance(value, dict):
+        raise ValueError(
+            "document error: top-level value must be a JSON object, "
+            f"got {type(value).__name__}"
+        )
+    return value
+
+
 @runtime_checkable
 class Backing(Protocol):
     """Where a zarr-json document lives and how it persists.
@@ -31,7 +41,9 @@ class MemoryBacking:
     """Holds the document in memory; the in-memory object is the source of truth."""
 
     def __init__(self, document: Document | None = None) -> None:
-        self._document: Document = document if document is not None else {}
+        self._document: Document = (
+            require_document(document) if document is not None else {}
+        )
 
     def load(self) -> Document:
         return self._document
@@ -49,7 +61,7 @@ class StringBacking:
 
     def load(self) -> Document:
         """Parse and return the document. Call once; see the Backing contract."""
-        return strict_loads(self._text)
+        return require_document(strict_loads(self._text))
 
     def persist(self, document: Document) -> None:
         self._text = json.dumps(document, ensure_ascii=False, allow_nan=False)
@@ -69,7 +81,7 @@ class FileBacking:
         document (detached — the store must call persist() to write it)."""
         if not self._path.exists():
             return {}
-        return strict_loads(self._path.read_text())
+        return require_document(strict_loads(self._path.read_text()))
 
     def persist(self, document: Document) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)

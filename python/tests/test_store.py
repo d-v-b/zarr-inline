@@ -242,3 +242,64 @@ async def test_set_rejects_malformed_store_key():
         with pytest.raises(ValueError, match="invalid store key"):
             await store.set(bad, buf)
     assert MemoryBacking({}).load() == {}
+
+
+async def test_failed_persist_leaves_document_unchanged():
+    from zarr.core.buffer import default_buffer_prototype
+
+    from zarr_json import MemoryBacking, ZarrJsonStore
+
+    class FlakyBacking:
+        def __init__(self):
+            self.inner = MemoryBacking({"keep/c/0": "AAEC"})
+            self.fail = False
+
+        def load(self):
+            return self.inner.load()
+
+        def persist(self, document):
+            if self.fail:
+                raise OSError("disk full")
+            self.inner.persist(document)
+
+    backing = FlakyBacking()
+    store = ZarrJsonStore(backing)
+    proto = default_buffer_prototype()
+    backing.fail = True
+    with pytest.raises(OSError):
+        await store.set("new/c/0", proto.buffer.from_bytes(b"\x01"))
+    assert await store.get("new/c/0", proto) is None
+    assert not await store.exists("new/c/0")
+    with pytest.raises(OSError):
+        await store.set("keep/c/0", proto.buffer.from_bytes(b"\x09"))
+    assert (await store.get("keep/c/0", proto)).to_bytes() == b"\x00\x01\x02"
+    with pytest.raises(OSError):
+        await store.delete("keep/c/0")
+    assert (await store.get("keep/c/0", proto)).to_bytes() == b"\x00\x01\x02"
+    backing.fail = False
+    await store.set("new/c/0", proto.buffer.from_bytes(b"\x01"))
+    assert (await store.get("new/c/0", proto)).to_bytes() == b"\x01"
+
+
+async def test_lenient_mode_treats_invalid_entries_as_absent_until_rewritten():
+    import warnings
+
+    from zarr.core.buffer import default_buffer_prototype
+
+    from zarr_json import MemoryBacking, ZarrJsonStore
+
+    backing = MemoryBacking({"bad/c/0": 123, "ok/c/0": "AAEC"})
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        store = ZarrJsonStore(backing)
+    proto = default_buffer_prototype()
+    assert not await store.exists("bad/c/0")
+    assert await store.get("bad/c/0", proto) is None
+    assert [k async for k in store.list()] == ["ok/c/0"]
+    assert [k async for k in store.list_dir("")] == ["ok"]
+    # The offending entry survives in the document text (never destroyed)...
+    assert backing.load()["bad/c/0"] == 123
+    # ...and a successful set makes the key live again.
+    await store.set("bad/c/0", proto.buffer.from_bytes(b"\x07"))
+    assert await store.exists("bad/c/0")
+    assert sorted([k async for k in store.list()]) == ["bad/c/0", "ok/c/0"]

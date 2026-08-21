@@ -243,7 +243,17 @@ const HAS_REVIVER_SOURCE: boolean = (() => {
  * - Number literals that overflow float64 (e.g. 1e400) are rejected, like
  *   Python's strict_loads and Rust's serde_json.
  */
-export function strictParse(text: string): unknown {
+export interface StrictParseOptions {
+	/**
+	 * Parse EVERY integer-literal token as bigint, not just those outside
+	 * the float64-safe range. This preserves the JSON number sort (integer
+	 * vs float64) of every token, which the json codec's decoder needs to
+	 * reject float tokens like `1.0` for integer data types (SPEC §9.2).
+	 */
+	integersAsBigInt?: boolean;
+}
+
+export function strictParse(text: string, options: StrictParseOptions = {}): unknown {
 	if (!HAS_REVIVER_SOURCE) {
 		throw new Error(
 			"zarr-json requires JSON.parse reviver source access (Node >= 21) " +
@@ -257,7 +267,7 @@ export function strictParse(text: string): unknown {
 				const source = context?.source;
 				if (
 					source !== undefined &&
-					!Number.isSafeInteger(value) &&
+					(options.integersAsBigInt || !Number.isSafeInteger(value)) &&
 					INTEGER_LITERAL_RE.test(source)
 				) {
 					return BigInt(source);

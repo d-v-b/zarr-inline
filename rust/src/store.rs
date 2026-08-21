@@ -7,6 +7,7 @@
 //! `serde_json::Map` document guarded by an `RwLock`; `list_dir` /
 //! `list_prefix` derive hierarchy by splitting the flat keys on `/`.
 
+use std::collections::HashSet;
 use std::sync::RwLock;
 
 use serde_json::{Map, Value};
@@ -30,6 +31,11 @@ pub type Document = Map<String, Value>;
 #[derive(Debug, Default)]
 pub struct ZarrJsonStore {
     document: RwLock<Document>,
+    /// Lenient mode: keys with validation issues behave as absent (SPEC 8.1)
+    /// while staying in the document text, so values this version does not
+    /// understand are never destroyed by a re-export. A successful write or
+    /// erase clears the key's skip. Lock order: `document` before `skipped`.
+    skipped: RwLock<HashSet<String>>,
 }
 
 impl ZarrJsonStore {
@@ -48,6 +54,7 @@ impl ZarrJsonStore {
         crate::validator::validate_strict(&document)?;
         Ok(Self {
             document: RwLock::new(document),
+            skipped: RwLock::new(HashSet::new()),
         })
     }
 
@@ -56,9 +63,11 @@ impl ZarrJsonStore {
     #[must_use]
     pub fn from_document_lenient(document: Document) -> (Self, Vec<ValidationIssue>) {
         let issues = validate(&document);
+        let skipped: HashSet<String> = issues.iter().map(|i| i.key.clone()).collect();
         (
             Self {
                 document: RwLock::new(document),
+                skipped: RwLock::new(skipped),
             },
             issues,
         )
@@ -84,6 +93,9 @@ impl ZarrJsonStore {
 
     fn get_bytes(&self, key: &StoreKey) -> Result<Option<Vec<u8>>, StorageError> {
         let document = self.document.read().unwrap();
+        if self.skipped.read().unwrap().contains(key.as_str()) {
+            return Ok(None);
+        }
         match document.get(key.as_str()) {
             None => Ok(None),
             Some(value) => decode_value(key.as_str(), value)
@@ -108,9 +120,15 @@ impl ZarrJsonStore {
         }
     }
 
+    /// Sorted document keys, excluding lenient-mode skipped entries.
     fn sorted_keys(&self) -> Vec<String> {
         let document = self.document.read().unwrap();
-        let mut keys: Vec<String> = document.keys().cloned().collect();
+        let skipped = self.skipped.read().unwrap();
+        let mut keys: Vec<String> = document
+            .keys()
+            .filter(|k| !skipped.contains(k.as_str()))
+            .cloned()
+            .collect();
         keys.sort();
         keys
     }
@@ -171,6 +189,7 @@ impl WritableStorageTraits for ZarrJsonStore {
             .map_err(|e| StorageError::Other(e.to_string()))?;
         let mut document = self.document.write().unwrap();
         document.insert(key.as_str().to_string(), encoded);
+        self.skipped.write().unwrap().remove(key.as_str());
         Ok(())
     }
 
@@ -207,12 +226,14 @@ impl WritableStorageTraits for ZarrJsonStore {
         let encoded = encode_value(key.as_str(), &bytes)
             .map_err(|e| StorageError::Other(e.to_string()))?;
         document.insert(key.as_str().to_string(), encoded);
+        self.skipped.write().unwrap().remove(key.as_str());
         Ok(())
     }
 
     fn erase(&self, key: &StoreKey) -> Result<(), StorageError> {
         let mut document = self.document.write().unwrap();
         document.remove(key.as_str());
+        self.skipped.write().unwrap().remove(key.as_str());
         Ok(())
     }
 
@@ -221,6 +242,10 @@ impl WritableStorageTraits for ZarrJsonStore {
         // StorePrefix is "" (root) or ends in '/', so a plain starts_with
         // matches exactly the keys within the prefix directory.
         document.retain(|key, _| !key.starts_with(prefix.as_str()));
+        self.skipped
+            .write()
+            .unwrap()
+            .retain(|key| !key.starts_with(prefix.as_str()));
         Ok(())
     }
 
@@ -443,6 +468,26 @@ mod tests {
             dir_a.prefixes().iter().map(|p| p.as_str()).collect::<Vec<_>>(),
             vec!["a/c/"]
         );
+    }
+
+    #[test]
+    fn lenient_mode_treats_invalid_entries_as_absent_until_rewritten() {
+        // SPEC 8.1: R2-invalid entries behave as absent (get -> None, not
+        // listed) but survive in the document text; a successful set makes
+        // the key live again.
+        let (store, issues) =
+            ZarrJsonStore::from_document_lenient(doc(json!({"bad/c/0": 123, "ok/c/0": "AAEC"})));
+        assert_eq!(issues.len(), 1);
+        assert!(store.get(&key("bad/c/0")).unwrap().is_none());
+        assert_eq!(store.size_key(&key("bad/c/0")).unwrap(), None);
+        let listed: Vec<String> = store.list().unwrap().iter().map(|k| k.as_str().to_string()).collect();
+        assert_eq!(listed, vec!["ok/c/0"]);
+        assert_eq!(store.document()["bad/c/0"], json!(123));
+
+        store.set(&key("bad/c/0"), Bytes::from_static(&[7])).unwrap();
+        assert_eq!(store.get(&key("bad/c/0")).unwrap().unwrap().as_ref(), &[7]);
+        let listed: Vec<String> = store.list().unwrap().iter().map(|k| k.as_str().to_string()).collect();
+        assert_eq!(listed, vec!["bad/c/0", "ok/c/0"]);
     }
 
     #[test]

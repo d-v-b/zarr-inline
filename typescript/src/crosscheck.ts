@@ -103,7 +103,13 @@ async function write(payload: Payload): Promise<Document> {
 	for (const group of ancestorGroups(payload.arrays.map((a) => a.path))) {
 		await zarr.create(root.resolve(group));
 	}
-	for (const spec of payload.arrays) {
+	for (const rawSpec of payload.arrays) {
+		// shape/chunks were parsed as bigint (integersAsBigInt); zarrita wants numbers.
+		const spec: ArraySpec = {
+			...rawSpec,
+			shape: rawSpec.shape.map(Number),
+			chunks: rawSpec.chunks.map(Number),
+		};
 		const dtype = spec.dtype as DataType;
 		const arr = await zarr.create(root.resolve(spec.path), {
 			shape: spec.shape,
@@ -112,8 +118,15 @@ async function write(payload: Payload): Promise<Document> {
 			codecs: [{ name: "json", configuration: {} }],
 			fillValue: METADATA_FILL[spec.dtype] as Scalar<DataType>,
 		});
+		// Payload data is harness input, not chunk bytes: integer-valued JS
+		// numbers (from literal payloads) are promoted to integer tokens for
+		// integer dtypes; CLI input already arrives sort-preserved.
+		const isIntType = !/^(float|bool)/.test(spec.dtype);
 		const scalars = flattenPayload(spec.data, spec.shape).map((v) =>
-			fromJsonScalar(v, spec.dtype),
+			fromJsonScalar(
+				isIntType && typeof v === "number" && Number.isInteger(v) ? BigInt(v) : v,
+				spec.dtype,
+			),
 		);
 		if (spec.shape.length === 0) {
 			await zarr.set(arr, null, scalars[0] as Scalar<DataType>);
@@ -183,14 +196,23 @@ async function main(): Promise<number> {
 	}
 	let result: unknown;
 	try {
-		const input = strictParse(await readStdin());
-		if (!isPlainObject(input)) {
-			throw new Error("input must be a JSON object");
+		const text = await readStdin();
+		if (mode === "write") {
+			// integersAsBigInt so payload data elements carry their number
+			// sort for fromJsonScalar (integer tokens -> bigint); shape and
+			// chunks are converted back to plain numbers in write().
+			const input = strictParse(text, { integersAsBigInt: true });
+			if (!isPlainObject(input)) {
+				throw new Error("input must be a JSON object");
+			}
+			result = await write(input as unknown as Payload);
+		} else {
+			const input = strictParse(text);
+			if (!isPlainObject(input)) {
+				throw new Error("input must be a JSON object");
+			}
+			result = await read(input);
 		}
-		result =
-			mode === "write"
-				? await write(input as unknown as Payload)
-				: await read(input);
 	} catch (err) {
 		process.stderr.write(`crosscheck ${mode} failed: ${String(err)}\n`);
 		return 1;

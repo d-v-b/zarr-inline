@@ -189,24 +189,32 @@ test("encode walks chunk.stride in C order of chunk.shape", () => {
 });
 
 test("fromJsonScalar accepts in-range scalars per dtype", () => {
-	assert.equal(fromJsonScalar(-128, "int8"), -128);
-	assert.equal(fromJsonScalar(255, "uint8"), 255);
-	assert.equal(fromJsonScalar(-2147483648, "int32"), -2147483648);
-	assert.equal(fromJsonScalar(9007199254740991, "int64"), 9007199254740991n);
-	assert.equal(fromJsonScalar(-5, "int64"), -5n);
+	// Integer types take integer tokens (bigint from integersAsBigInt parsing).
+	assert.equal(fromJsonScalar(-128n, "int8"), -128);
+	assert.equal(fromJsonScalar(255n, "uint8"), 255);
+	assert.equal(fromJsonScalar(-2147483648n, "int32"), -2147483648);
+	assert.equal(fromJsonScalar(9007199254740991n, "int64"), 9007199254740991n);
+	assert.equal(fromJsonScalar(-5n, "int64"), -5n);
 	assert.equal(fromJsonScalar(1.5, "float32"), 1.5);
+	// Float types accept integer tokens too, as the nearest float64.
+	assert.equal(fromJsonScalar(9007199254740993n, "float64"), 9007199254740992);
 	assert.ok(Number.isNaN(fromJsonScalar("NaN", "float64")));
 	assert.equal(fromJsonScalar("Infinity", "float64"), Infinity);
 	assert.equal(fromJsonScalar("-Infinity", "float64"), -Infinity);
 	assert.equal(fromJsonScalar(true, "bool"), true);
 });
 
-test("fromJsonScalar accepts bigint and safe numbers for int64/uint64", () => {
-	// strictParse yields bigint for integer literals beyond 2^53; both forms
-	// are exact.
+test("fromJsonScalar accepts integer tokens of any size for int64/uint64", () => {
 	assert.equal(fromJsonScalar(9007199254740993n, "int64"), 9007199254740993n);
 	assert.equal(fromJsonScalar(2n ** 64n - 1n, "uint64"), 2n ** 64n - 1n);
-	assert.equal(fromJsonScalar(7, "int64"), 7n);
+	assert.equal(fromJsonScalar(7n, "int64"), 7n);
+});
+
+test("fromJsonScalar rejects float tokens for integer types even when integral", () => {
+	// SPEC §9.2: the token 1.0 is a float64 and is an error for int types.
+	// A JS number reaching here means a float token (integersAsBigInt).
+	assert.throws(() => fromJsonScalar(1, "int32"), /invalid int32/);
+	assert.throws(() => fromJsonScalar(7, "int64"), /must be an integer token/);
 });
 
 test("fromJsonScalar rejects unsafe plain numbers for int64", () => {
@@ -218,16 +226,16 @@ test("fromJsonScalar rejects unsafe plain numbers for int64", () => {
 });
 
 test("fromJsonScalar rejects out-of-range int64/uint64 values", () => {
-	assert.throws(() => fromJsonScalar(-1, "uint64"), /out of range/);
+	assert.throws(() => fromJsonScalar(-1n, "uint64"), /out of range/);
 	assert.throws(() => fromJsonScalar(2n ** 64n, "uint64"), /out of range/);
 	assert.throws(() => fromJsonScalar(2n ** 63n, "int64"), /out of range/);
 	assert.throws(() => fromJsonScalar(-(2n ** 63n) - 1n, "int64"), /out of range/);
 });
 
 test("fromJsonScalar rejects out-of-range int scalars", () => {
-	assert.throws(() => fromJsonScalar(300, "int8"), /invalid int8/);
-	assert.throws(() => fromJsonScalar(-1, "uint8"), /invalid uint8/);
-	assert.throws(() => fromJsonScalar(2147483648, "int32"), /invalid int32/);
+	assert.throws(() => fromJsonScalar(300n, "int8"), /invalid int8/);
+	assert.throws(() => fromJsonScalar(-1n, "uint8"), /invalid uint8/);
+	assert.throws(() => fromJsonScalar(2147483648n, "int32"), /invalid int32/);
 });
 
 test("fromJsonScalar rejects non-integer int scalars", () => {
@@ -273,4 +281,24 @@ test("decode is shape-driven and rebuilds nested C-order chunks", () => {
 	);
 	assert.deepEqual(out.shape, [2, 2]);
 	assert.deepEqual(out.stride, [2, 1]);
+});
+
+test("decode keeps the JSON number sort: 1.0 is an error for int32, big ints round to float64", () => {
+	const int32 = JsonSerializer.fromConfig(
+		{},
+		{ dataType: "int32", shape: [1], codecs: [], fillValue: null },
+	);
+	assert.throws(
+		() => int32.decode(new TextEncoder().encode("[1.0]")),
+		/invalid int32/,
+	);
+	assert.deepEqual([...(int32.decode(new TextEncoder().encode("[1]")).data as Int32Array)], [1]);
+	const f64 = JsonSerializer.fromConfig(
+		{},
+		{ dataType: "float64", shape: [1], codecs: [], fillValue: null },
+	);
+	assert.deepEqual(
+		[...(f64.decode(new TextEncoder().encode("[9007199254740993]")).data as Float64Array)],
+		[9007199254740992],
+	);
 });

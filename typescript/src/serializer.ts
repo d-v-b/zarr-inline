@@ -100,23 +100,27 @@ export function fromJsonScalar(value: unknown, dataType: string): unknown {
 		if (typeof value === "number") {
 			return value;
 		}
+		if (typeof value === "bigint") {
+			// An integer token for a float type: the nearest float64 (SPEC §9.2).
+			return Number(value);
+		}
 		if (value === "NaN") return Number.NaN;
 		if (value === "Infinity") return Number.POSITIVE_INFINITY;
 		if (value === "-Infinity") return Number.NEGATIVE_INFINITY;
 		throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
 	}
 	if (isBigintType(dataType)) {
-		let big: bigint;
-		if (typeof value === "bigint") {
-			big = value;
-		} else if (typeof value === "number" && Number.isSafeInteger(value)) {
-			big = BigInt(value);
-		} else {
+		// Integer types require an INTEGER token. Callers parse chunk JSON
+		// with integersAsBigInt so every integer literal arrives as bigint;
+		// a JS number here therefore means a float token like 1.0, which
+		// SPEC §9.2 forbids for integer types even when integral.
+		if (typeof value !== "bigint") {
 			throw new Error(
 				`json codec: invalid ${dataType} scalar ${String(value)}: ` +
-					"must be an integer (bigint or float64-safe number)",
+					"must be an integer token",
 			);
 		}
+		const big = value;
 		const [lo, hi] =
 			dataType === "int64"
 				? [-(2n ** 63n), 2n ** 63n - 1n]
@@ -136,15 +140,15 @@ export function fromJsonScalar(value: unknown, dataType: string): unknown {
 	}
 	const range = INT_RANGES[dataType];
 	if (range !== undefined) {
+		// As for int64/uint64: an integer token (bigint) is required.
 		if (
-			typeof value !== "number" ||
-			!Number.isInteger(value) ||
-			value < range[0] ||
-			value > range[1]
+			typeof value !== "bigint" ||
+			value < BigInt(range[0]) ||
+			value > BigInt(range[1])
 		) {
-			throw new Error(`json codec: invalid ${dataType} scalar ${JSON.stringify(value)}`);
+			throw new Error(`json codec: invalid ${dataType} scalar ${String(value)}`);
 		}
-		return value;
+		return Number(value);
 	}
 	return value;
 }
@@ -302,8 +306,11 @@ export class JsonSerializer {
 	}
 
 	decode(bytes: Uint8Array): Chunk<DataType> {
-		// strictParse: big int64/uint64 chunk elements arrive as bigint.
-		const nested: unknown = strictParse(UTF8_DECODER.decode(bytes));
+		// integersAsBigInt preserves each element's number sort: integer
+		// tokens arrive as bigint (any size), float tokens as number.
+		const nested: unknown = strictParse(UTF8_DECODER.decode(bytes), {
+			integersAsBigInt: true,
+		});
 		const flat = flatten(nested, this.#shape);
 		const scalars = flat.map((v) => fromJsonScalar(v, this.#dataType));
 		return {

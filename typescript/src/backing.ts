@@ -11,7 +11,7 @@
  * Object.create(null) makes reads and writes own-property-only.
  */
 
-import { strictParse } from "./codec.js";
+import { canonicalStringify, strictParse } from "./codec.js";
 
 export type Document = Record<string, unknown>;
 
@@ -21,6 +21,18 @@ export function toNullPrototype(document: Document): Document {
 	// Object.assign creates an own property for every key, including
 	// "__proto__" / "constructor" / "toString".
 	return Object.assign(Object.create(null) as Document, document);
+}
+
+/**
+ * A document's top-level value must be a JSON object (SPEC §6): arrays,
+ * strings, numbers, null, etc. are document errors — re-keying an array
+ * would silently turn its indices into store keys.
+ */
+export function requireDocumentObject(value: unknown): Document {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error("document error: top-level value must be a JSON object");
+	}
+	return value as Document;
 }
 
 /**
@@ -39,7 +51,7 @@ export class MemoryBacking implements Backing {
 	#document: Document;
 
 	constructor(document: Document = {}) {
-		this.#document = toNullPrototype(document);
+		this.#document = toNullPrototype(requireDocumentObject(document));
 	}
 
 	load(): Document {
@@ -65,11 +77,13 @@ export class StringBacking implements Backing {
 		// strictParse rejects number literals that overflow float64 (1e400):
 		// Python and Rust refuse such documents, so loading one here would
 		// silently diverge.
-		return toNullPrototype(strictParse(this.#text) as Document);
+		return toNullPrototype(requireDocumentObject(strictParse(this.#text)));
 	}
 
 	persist(document: Document): void {
-		this.#text = JSON.stringify(document);
+		// canonicalStringify, not JSON.stringify: documents may hold bigint
+		// (integers beyond 2^53), which JSON.stringify cannot serialize.
+		this.#text = canonicalStringify(document);
 	}
 
 	dumps(): string {

@@ -64,3 +64,16 @@ def test_string_backing_rejects_nan_token_document():
 
     with pytest.raises(ValueError, match="not a JSON token"):
         StringBacking('{"a/c/0": [NaN]}').load()
+
+
+def test_backings_reject_non_object_top_level_document():
+    import pytest
+
+    from zarr_json.backing import MemoryBacking, StringBacking
+
+    with pytest.raises(ValueError, match="top-level value must be a JSON object"):
+        StringBacking('["AA=="]').load()
+    with pytest.raises(ValueError, match="top-level value must be a JSON object"):
+        StringBacking("42").load()
+    with pytest.raises(ValueError, match="top-level value must be a JSON object"):
+        MemoryBacking(["AA=="])  # type: ignore[arg-type]

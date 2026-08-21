@@ -53,10 +53,16 @@ class ZarrJsonStore(Store):
         super().__init__(read_only=read_only)
         self._backing = backing
         self._document = backing.load()
+        # Lenient mode: keys with validation issues behave as absent (SPEC
+        # 8.1) while staying in the document text, so values this version
+        # does not understand are never destroyed by a re-persist. A
+        # successful set or delete clears the key's skip.
+        self._skipped: set[str] = set()
         if strictness is Strictness.STRICT:
             validate(self._document, strictness=Strictness.STRICT)
         else:
             for issue in validate(self._document):
+                self._skipped.add(issue.key)
                 warnings.warn(
                     f"zarr-json validation [{issue.rule}] {issue.key}: {issue.message}",
                     stacklevel=2,
@@ -72,6 +78,7 @@ class ZarrJsonStore(Store):
         # ensures that any in-memory mutations made since the last persist() are
         # immediately visible on the new store without an extra backing.load().
         new_store._document = self._document
+        new_store._skipped = self._skipped
         return new_store
 
     @property
@@ -103,7 +110,7 @@ class ZarrJsonStore(Store):
         byte_range: ByteRequest | None = None,
     ) -> Buffer | None:
         async with self._lock:
-            if key not in self._document:
+            if not self._present(key):
                 return None
             data = decode_value(key, self._document[key])
         return prototype.buffer.from_bytes(_apply_byte_range(data, byte_range))
@@ -125,35 +132,61 @@ class ZarrJsonStore(Store):
         issue = check_key(key)
         if issue is not None:
             raise ValueError(f"invalid store key {key!r}: {issue.message}")
+        encoded = encode_value(key, value.to_bytes())
         async with self._lock:
-            self._document[key] = encode_value(key, value.to_bytes())
-            self._backing.persist(self._document)
+            # A failed set MUST leave the document unchanged (SPEC 8.2): if
+            # persist raises, restore the previous entry before re-raising.
+            missing = object()
+            previous = self._document.get(key, missing)
+            self._document[key] = encoded
+            try:
+                self._backing.persist(self._document)
+            except BaseException:
+                if previous is missing:
+                    del self._document[key]
+                else:
+                    self._document[key] = previous
+                raise
+            self._skipped.discard(key)
 
     async def delete(self, key: str) -> None:
         self._check_writable()
         async with self._lock:
-            self._document.pop(key, None)
-            self._backing.persist(self._document)
+            missing = object()
+            previous = self._document.pop(key, missing)
+            try:
+                self._backing.persist(self._document)
+            except BaseException:
+                if previous is not missing:
+                    self._document[key] = previous
+                raise
+            self._skipped.discard(key)
+
+    def _present(self, key: str) -> bool:
+        return key in self._document and key not in self._skipped
+
+    def _keys(self) -> list[str]:
+        return [k for k in self._document if k not in self._skipped]
 
     async def exists(self, key: str) -> bool:
         async with self._lock:
-            return key in self._document
+            return self._present(key)
 
     async def list(self) -> AsyncIterator[str]:
         async with self._lock:
-            keys = list(self._document.keys())
+            keys = self._keys()
         for key in keys:
             yield key
 
     async def list_prefix(self, prefix: str) -> AsyncIterator[str]:
         async with self._lock:
-            keys = [k for k in self._document if k.startswith(prefix)]
+            keys = [k for k in self._keys() if k.startswith(prefix)]
         for key in keys:
             yield key
 
     async def list_dir(self, prefix: str) -> AsyncIterator[str]:
         async with self._lock:
-            keys = list(self._document.keys())
+            keys = self._keys()
         seen: set[str] = set()
         for key in keys:
             if not key.startswith(prefix):

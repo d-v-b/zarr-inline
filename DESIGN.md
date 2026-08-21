@@ -230,9 +230,13 @@ All three share one internal shape:
   `list_prefix`/`list_dir` by scanning keys and splitting on `/`, rejects
   R1-malformed keys on `set`, and runs the validator on construction.
   Partial reads apply byte ranges to the decoded bytes; Rust's partial
-  writes are a read-modify-write under a single lock acquisition. In
-  lenient mode, invalid entries are skipped and the rest — including
-  listing — stays usable.
+  writes are a read-modify-write under a single lock acquisition. A
+  failed `set` or `delete` (e.g. the backing's persist throws) restores
+  the previous entry, so the document is never left half-mutated. In
+  lenient mode, invalid entries behave as absent — `get` is not-found,
+  `exists` is false, listings omit them — while staying in the document
+  text so values this version does not understand are never destroyed by
+  a re-persist; a successful `set` makes such a key live again.
 - **backing** (Python, TypeScript) — where the document lives: memory
   (the object is the source of truth), string (parsed from / dumped to
   text), file (Python; read from / written to a `.json` file,
