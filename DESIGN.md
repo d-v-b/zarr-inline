@@ -297,6 +297,13 @@ valid and invalid), backings, store operations and locking, and the
 serializer (per-dtype round trips plus one test per error case); and an
 integration test driving the host library through the store.
 
+CI (`.github/workflows/ci.yml`) runs each implementation's suite in its
+own job, then a `cross` job that builds the TypeScript and Rust harnesses
+and runs the property test and crosscheck matrix with
+`ZARR_JSON_REQUIRE_HARNESSES=1`, so a missing harness fails the build
+instead of silently skipping (locally, the same tests skip when a
+toolchain is absent).
+
 Across implementations, three layers, all orchestrated from Python:
 
 **Fixtures.** `examples/valid/` and `examples/invalid/` hold documents;

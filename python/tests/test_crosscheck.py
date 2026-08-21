@@ -9,6 +9,7 @@ DESIGN.md section 6.2.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -69,6 +70,14 @@ def _harnesses() -> dict[str, list[str]]:
 HARNESSES = _harnesses()
 
 
+def _unavailable(message: str) -> None:
+    # In CI (ZARR_JSON_REQUIRE_HARNESSES=1) a missing harness is a failure,
+    # not a silent skip.
+    if os.environ.get("ZARR_JSON_REQUIRE_HARNESSES") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+
+
 def _run(cmd: list[str], mode: str, payload: dict) -> dict:
     proc = subprocess.run(
         [*cmd, mode],
@@ -87,7 +96,7 @@ def _run(cmd: list[str], mode: str, payload: dict) -> dict:
 def test_writer_reader_matrix(writer, reader):
     if len(HARNESSES) < 3:
         missing = {"python", "typescript", "rust"} - set(HARNESSES)
-        pytest.skip(f"crosscheck harnesses unavailable: {sorted(missing)}")
+        _unavailable(f"crosscheck harnesses unavailable: {sorted(missing)}")
     document = _run(HARNESSES[writer], "write", PAYLOAD)
     result = _run(HARNESSES[reader], "read", document)
     assert result == PAYLOAD, f"{writer}->{reader} mismatch"
@@ -98,7 +107,7 @@ def test_all_implementations_read_the_ome_zarr_example():
     example and read identical values from it."""
     if len(HARNESSES) < 3:
         missing = {"python", "typescript", "rust"} - set(HARNESSES)
-        pytest.skip(f"crosscheck harnesses unavailable: {sorted(missing)}")
+        _unavailable(f"crosscheck harnesses unavailable: {sorted(missing)}")
     example = REPO / "examples" / "valid" / "ome_zarr_0.5_image.json"
     document = json.loads(example.read_text())
     results = {

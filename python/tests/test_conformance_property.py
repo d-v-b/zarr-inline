@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -32,17 +33,29 @@ REPO = Path(__file__).resolve().parents[2]
 # --- external harnesses -----------------------------------------------------
 
 
+# In CI the harnesses are prebuilt and a missing one must be a failure,
+# not a silent skip; locally, skipping keeps `pytest` usable without every
+# toolchain installed.
+REQUIRE_HARNESSES = os.environ.get("ZARR_JSON_REQUIRE_HARNESSES") == "1"
+
+
+def _unavailable(message: str) -> None:
+    if REQUIRE_HARNESSES:
+        pytest.fail(message)
+    pytest.skip(message)
+
+
 def _build_or_skip(name: str, marker: Path, build: list[list[str]], cwd: Path) -> None:
     if marker.exists():
         return
     if not cwd.exists():
-        pytest.skip(f"{name} implementation not present at {cwd}")
+        _unavailable(f"{name} implementation not present at {cwd}")
     for cmd in build:
         proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
         if proc.returncode != 0:
-            pytest.skip(f"{name} harness build failed: {cmd}: {proc.stderr[-500:]}")
+            _unavailable(f"{name} harness build failed: {cmd}: {proc.stderr[-500:]}")
     if not marker.exists():
-        pytest.skip(f"{name} harness missing after build: {marker}")
+        _unavailable(f"{name} harness missing after build: {marker}")
 
 
 @pytest.fixture(scope="session")
