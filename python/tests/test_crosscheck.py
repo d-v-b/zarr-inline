@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -117,3 +119,97 @@ def test_all_implementations_read_the_ome_zarr_example():
     assert [a["path"] for a in expected["arrays"]] == ["0", "1"]
     assert results["typescript"] == expected
     assert results["rust"] == expected
+
+
+TRACE = {
+    "operations": [
+        {"op": "create_array", "path": "grp/a", "dtype": "uint8",
+         "shape": [3, 4], "chunks": [2, 2]},
+        {"op": "write_region", "path": "grp/a", "origin": [1, 1],
+         "shape": [2, 2], "data": [[1, 2], [3, 4]]},
+        {"op": "read_region", "path": "grp/a", "origin": [0, 0],
+         "shape": [3, 4]},
+    ]
+}
+
+
+def _require_all_harnesses() -> None:
+    if len(HARNESSES) < 3:
+        missing = {"python", "typescript", "rust"} - set(HARNESSES)
+        _unavailable(f"crosscheck harnesses unavailable: {sorted(missing)}")
+
+
+def test_operation_trace_writer_reader_matrix():
+    """Every implementation can resume a trace from every emitted store."""
+    _require_all_harnesses()
+    prefix = {"operations": TRACE["operations"][:2]}
+    suffix = {"operations": TRACE["operations"][2:]}
+    expected = [[[0, 0, 0, 0], [0, 1, 2, 0], [0, 3, 4, 0]]]
+    for writer, writer_cmd in HARNESSES.items():
+        document = _run(writer_cmd, "trace", prefix)["document"]
+        for reader, reader_cmd in HARNESSES.items():
+            result = _run(reader_cmd, "trace", {"document": document, **suffix})
+            assert [item["data"] for item in result["reads"]] == expected, (
+                f"{writer}->{reader} operation trace mismatch"
+            )
+
+
+@st.composite
+def _one_dimensional_trace(draw):
+    """A compact stateful trace that frequently crosses chunk boundaries."""
+    length = draw(st.integers(1, 10))
+    chunks = draw(st.integers(1, 6))
+    dtype = draw(st.sampled_from(["bool", "uint8", "int32"]))
+    scalar = (
+        st.booleans()
+        if dtype == "bool"
+        else st.integers(0, 255)
+        if dtype == "uint8"
+        else st.integers(-(2**31), 2**31 - 1)
+    )
+    model = [False if dtype == "bool" else 0 for _ in range(length)]
+    writes = []
+    for _ in range(2):
+        start = draw(st.integers(0, length - 1))
+        size = draw(st.integers(1, length - start))
+        data = draw(st.lists(scalar, min_size=size, max_size=size))
+        writes.append(
+            {"op": "write_region", "path": "a", "origin": [start],
+             "shape": [size], "data": data}
+        )
+        model[start:start + size] = data
+    read_start = draw(st.integers(0, length - 1))
+    read_size = draw(st.integers(1, length - read_start))
+    prefix = {
+        "operations": [
+            {"op": "create_array", "path": "a", "dtype": dtype,
+             "shape": [length], "chunks": [chunks]},
+            *writes,
+        ]
+    }
+    suffix = {
+        "operations": [
+            {"op": "read_region", "path": "a", "origin": [0],
+             "shape": [length]},
+            {"op": "read_region", "path": "a", "origin": [read_start],
+             "shape": [read_size]},
+        ]
+    }
+    return prefix, suffix, [model, model[read_start:read_start + read_size]]
+
+
+@settings(
+    max_examples=12, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+)
+@given(case=_one_dimensional_trace())
+def test_generated_operation_traces(case):
+    """Generated stores from each writer remain readable by every reader."""
+    _require_all_harnesses()
+    prefix, suffix, expected = case
+    for writer, writer_cmd in HARNESSES.items():
+        document = _run(writer_cmd, "trace", prefix)["document"]
+        for reader, reader_cmd in HARNESSES.items():
+            result = _run(reader_cmd, "trace", {"document": document, **suffix})
+            assert [item["data"] for item in result["reads"]] == expected, (
+                f"{writer}->{reader} generated trace mismatch for {case!r}"
+            )

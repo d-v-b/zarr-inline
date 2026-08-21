@@ -12,3 +12,23 @@ human-inspectable, hand-editable file.
 - **[DESIGN.md](DESIGN.md)** — how it works: the model, design rationale,
   implementation architecture, conformance and crosscheck protocols, and
   known limitations.
+
+## Development
+
+The root [`justfile`](justfile) is the command interface used locally and in
+CI. Run `just` to list recipes. The main entry points are:
+
+```console
+just test-python
+just test-typescript
+just test-rust
+just cross-conformance
+just cross-arrays
+just cross-traces
+just cross
+just check
+```
+
+`just cross` builds all three harnesses once, then runs document-level
+conformance, the whole-array writer × reader matrix, and serialized operation
+traces. It fails if any implementation harness is unavailable.

@@ -1,7 +1,7 @@
 # zarr-json Specification
 
 **Version:** 0.2.0-draft
-**Date:** 2026-08-20
+**Date:** 2026-08-21
 **Status:** Draft (revised after adversarial spec review)
 
 zarr-json is a convention for storing a Zarr v3 hierarchy as a single JSON
@@ -170,6 +170,36 @@ serialization: serializing it is a *canonicalization error*.
   unpadded, `+` only for non-negative exponents ≥ 21).
 - Serializing a non-finite float64 is a *canonicalization error*.
 
+Implementers MUST use a proven shortest-round-trip implementation of
+ECMAScript `Number::toString` (for example Ryu with the ECMAScript notation
+thresholds). Formatting with a fixed number of significant or fractional
+digits, or printing the exact integer represented by an integral binary64,
+is not conforming. Required boundary and rounding vectors are:
+
+| binary64 value | canonical text |
+|---|---|
+| `-0.0` | `0` |
+| `1.0` | `1` |
+| `1e-6` | `0.000001` |
+| `1e-7` | `1e-7` |
+| `1e20` | `100000000000000000000` |
+| `1e21` | `1e+21` |
+| `5e-324` | `5e-324` |
+| binary64 `-0x1.17664b157641dp+59` | `-629151929367400100` |
+
+The last value is the binary64 number commonly displayed as
+`-6.291519293674001e17`; its exact integer value is
+`-629151929367400064`, but that longer decimal is **not** the ECMAScript
+shortest representation.
+
+When a host already exposes correctly rounded shortest-round-trip digits
+(for example modern Python's `repr(float)`), an implementation may split
+that shortest mantissa and exponent and move the decimal point to meet the
+fixed/exponential thresholds above. It MUST preserve those digits while
+doing so. It MUST NOT switch to a fixed-precision formatter such as `.15f`:
+that asks a different rounding question and produces the exact wrong result
+for vectors such as the last row.
+
 ### 5.5 Properties (non-normative)
 
 `serialize ∘ parse` is the identity on canonical text, and
@@ -181,8 +211,19 @@ dtype-driven decoding) interprets numbers by context, not token sort.
 
 ## 6. Strict parsing
 
+*Strict-parse* is a JSON-text parser and may return **any** JSON value. It is
+not the same operation as reading a zarr-json document. Reading a document
+first strict-parses the text and then requires the result to be an object;
+embedded parses deliberately accept the value type required by their caller
+(an object for metadata bytes, an array for the byte-key inlining check, and
+any shape-appropriate JSON value for chunk bytes). Implementations SHOULD
+expose or internally maintain separate `strict_parse_json` and
+`parse_document` operations so the document-only top-level check cannot be
+accidentally applied to embedded arrays or scalars.
+
 Reading a document, and every embedded parse this specification calls for
-(metadata bytes in §7.2, chunk bytes in §9.2), MUST use *strict-parse*:
+(metadata bytes in §7.2, chunk bytes in §9.2), MUST use the following
+strict-parse discipline:
 
 - everything RFC 8259 rejects is rejected — in particular the non-JSON
   tokens `NaN`, `Infinity`, `-Infinity`;
@@ -225,6 +266,19 @@ Writers (e.g. a store's `set`) MUST proceed:
   serialization is byte-identical to the input, store that array
   (*lossless inlining*); otherwise store the canonical base64 of the
   bytes.
+
+In pseudocode, the byte-key branch is:
+
+```text
+parsed = try strict_parse_json(bytes)  # accepts any JSON top-level type
+if parsed succeeded AND parsed is array
+                    AND utf8(canonical_serialize(parsed)) == bytes:
+    return parsed
+return canonical_base64(bytes)
+```
+
+Calling the document parser here is incorrect: its object-only top-level
+check would make every array miss the inlining branch.
 
 The inlining rule is lossless by construction: whatever the bytes were,
 decoding the stored value reproduces them exactly.
@@ -272,6 +326,13 @@ RECOMMENDED default for readers.
   yields the host store interface's key-not-found condition.
 - `delete` of any key, present or not, is permitted; deleting the last
   key leaves the valid empty document.
+
+For example, a lenient store constructed from
+`{"bad/c/0":1,"ok/c/0":"AAEC"}` MUST report the R2 issue for
+`bad/c/0`; `get("bad/c/0")` is not-found, `exists("bad/c/0")` is false,
+and every listing omits it. The invalid entry may remain in the serialized
+document. After `set("bad/c/0", b"[1,2]")`, it is live, decodes to those
+five bytes, and its document value is the inline array `[1,2]`.
 
 ### 8.3 Error classes
 
@@ -363,6 +424,31 @@ Element parsing MUST be strict, by the number sorts of §5.1:
   complex), §7.2 stores the chunk base64-encoded; a rank-0 complex
   chunk's `[re, im]` form is itself an array and is inlined.
 
+### 9.4 Conformance vectors
+
+These vectors summarize §§9.1–9.2. A conforming codec MUST pass them.
+“Values” are typed host-array values; “bytes” are the array→bytes codec
+output before §7.2 decides whether to inline it.
+
+| dtype | chunk shape | values | encoded bytes |
+|---|---:|---|---|
+| `bool` | `[2]` | `[true,false]` | `[true,false]` |
+| `uint8` | `[2,2]` | `[[0,1],[254,255]]` | `[[0,1],[254,255]]` |
+| `int64` | `[2]` | `[-9223372036854775808,9223372036854775807]` | same JSON text |
+| `float64` | `[4]` | `[1.5, NaN, +Infinity, -Infinity]` | `[1.5,"NaN","Infinity","-Infinity"]` |
+| `complex128` | `[1]` | `[1+2i]` | `[[1,2]]` |
+| two-byte raw | `[2]` | `[0x6162,0x00ff]` | `["YWI=","AP8="]` |
+| UTF-8 string | `[2]` | `["é","x"]` | `["é","x"]` |
+| `int32` | `[]` | `7` | `7` |
+| `complex128` | `[]` | `1+2i` | `[1,2]` |
+
+A decoder smoke suite SHOULD separately reject `[1.0]`, `[true]`, and
+`["1"]` for `int32`; `[1]` for `bool`; `["nan"]` for `float64`;
+`[1e39]` for `float32`; `[[1e39,0]]` for `complex64`; and any nesting or
+length that does not match the chunk shape. Encoding MUST perform the same
+dtype scalar conversion as Zarr v3 `fill_value` serialization; merely
+canonicalizing the host values without dtype-aware conversion is incorrect.
+
 ## 10. Portability
 
 A *portable* document additionally satisfies (violations are
@@ -405,8 +491,9 @@ Three reference implementations (Python/zarr-python,
 TypeScript/zarrita — requires Node ≥ 21 for §6's integer preservation —
 and Rust/zarrs) live in this repository, with shared fixtures in
 `examples/` (verdicts in `MANIFEST.json`), a conformance-harness
-protocol, a property-based cross-implementation test, and an array-level
-crosscheck matrix; see [DESIGN.md](DESIGN.md) §6.
+protocol, a property-based cross-implementation test, an array-level
+crosscheck matrix, and JSON operation traces that create arrays and write or
+read regions across chunk boundaries; see [DESIGN.md](DESIGN.md) §6.
 
 ## 13. References
 

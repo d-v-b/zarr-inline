@@ -383,6 +383,53 @@ keep non-finite comparisons exact). Readers tolerate each other's
 metadata idioms without special cases; the Rust writer disables zarrs's
 `_zarrs` attribute to stay maximally standard.
 
+### 6.3 Operation-trace protocol
+
+Whole-array payloads do not exercise state transitions. Each crosscheck CLI
+therefore also accepts `trace`, with a JSON message that can start from an
+empty store or from a document emitted by another implementation:
+
+```json
+{
+  "document": {},
+  "operations": [
+    {"op": "create_array", "path": "grp/a", "dtype": "uint8",
+     "shape": [3, 4], "chunks": [2, 2]},
+    {"op": "write_region", "path": "grp/a", "origin": [1, 1],
+     "shape": [2, 2], "data": [[1, 2], [3, 4]]},
+    {"op": "read_region", "path": "grp/a", "origin": [0, 0],
+     "shape": [3, 4]}
+  ]
+}
+```
+
+`document` is optional and defaults to `{}`. `create_array` creates the root
+and missing ancestor groups, uses the `json` codec without compressors, and
+uses the dtype's zero value as fill. `write_region` and `read_region` use a
+zero-based `origin` and a `shape`; their rank must equal the array rank and
+the region must be in bounds. `data` is nested by the region shape in C order
+and uses the same fill-value scalar forms as §6.2. The response is:
+
+```json
+{
+  "document": {"...": "the resulting zarr-json store"},
+  "reads": [{"operation": 2, "data": [[0, 0, 0, 0],
+                                        [0, 1, 2, 0],
+                                        [0, 3, 4, 0]]}]
+}
+```
+
+`operation` is the zero-based index in the submitted operations array. This
+makes a trace splittable: run a create/write prefix in implementation A, then
+pass its result as `document` with a read suffix to implementation B. Final
+documents are deliberately not compared directly because host libraries emit
+different but compatible optional metadata. The suite instead runs the full
+writer × reader matrix and compares read results with a small independent
+array model. Hypothesis generates partial writes, overlaps, edge chunks, and
+subregion reads. Both trace messages and resulting stores are ordinary JSON,
+so the same protocol can be consumed by future implementations without a
+language-specific test dependency.
+
 ## 7. Constraints and known limitations
 
 Portable documents (SPEC §10) stay within bounds where all three

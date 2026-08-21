@@ -165,6 +165,28 @@ def assert_all_agree(document: dict, ts_cmd: list[str], rust_cmd: list[str]) -> 
     assert rust_report == expected, f"Rust disagrees on {document!r}"
 
 
+@pytest.mark.parametrize(
+    ("value", "canonical"),
+    [
+        (-0.0, "0"),
+        (1.0, "1"),
+        (1e-6, "0.000001"),
+        (1e-7, "1e-7"),
+        (1e20, "100000000000000000000"),
+        (1e21, "1e+21"),
+        (5e-324, "5e-324"),
+        (float.fromhex("-0x1.17664b157641dp+59"), "-629151929367400100"),
+    ],
+)
+def test_required_float_vectors(value, canonical, ts_harness, rust_harness):
+    document = {"a/c/0": [value]}
+    expected_bytes = f"[{canonical}]".encode()
+    assert run_python(document)["decoded"]["a/c/0"] == base64.b64encode(
+        expected_bytes
+    ).decode("ascii")
+    assert_all_agree(document, ts_harness, rust_harness)
+
+
 @settings(
     max_examples=50, deadline=None, suppress_health_check=[HealthCheck.too_slow]
 )

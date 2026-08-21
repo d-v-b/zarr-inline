@@ -6,6 +6,7 @@
 //! document and reports its values using the fill_value scalar serialization,
 //! so payloads compare exactly across languages (non-finite floats are the
 //! strings `"NaN"` etc.).
+//! `trace` executes the operation-trace protocol from `DESIGN.md` section 6.3.
 //!
 //! Errors: message on stderr, exit code 1.
 
@@ -16,7 +17,8 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value};
 use zarrs::array::{
-    Array, ArrayBuilder, ArrayBytes, ArrayMetadata, DataType, FillValue, FillValueMetadata,
+    Array, ArrayBuilder, ArrayBytes, ArrayMetadata, ArraySubset, DataType, FillValue,
+    FillValueMetadata,
 };
 use zarrs::group::GroupBuilder;
 use zarrs::metadata::v3::MetadataV3;
@@ -280,12 +282,179 @@ fn read(document_value: &Value) -> Result<String, String> {
     Ok(canonical_to_string(&Value::Object(payload)))
 }
 
+fn region_subset(operation: &Value, index: usize) -> Result<ArraySubset, String> {
+    let origin = u64_list(
+        operation.get("origin").unwrap_or(&Value::Null),
+        &format!("operation {index}: origin"),
+    )?;
+    let shape = u64_list(
+        operation.get("shape").unwrap_or(&Value::Null),
+        &format!("operation {index}: shape"),
+    )?;
+    ArraySubset::new_with_start_shape(origin, shape)
+        .map_err(|e| format!("operation {index}: invalid region: {e}"))
+}
+
+fn payload_bytes(array: &Array<ZarrJsonStore>, data: &Value, shape: &[u64]) -> Result<Vec<u8>, String> {
+    let data_type = array.data_type();
+    let element_size = data_type
+        .fixed_size()
+        .ok_or_else(|| "trace only supports fixed-size dtypes".to_string())?;
+    let mut flat = Vec::new();
+    flatten(data, shape, &mut flat)?;
+    let mut bytes = Vec::with_capacity(flat.len() * element_size);
+    for value in flat {
+        let metadata: FillValueMetadata = serde_json::from_value(value.clone())
+            .map_err(|e| format!("bad scalar {value}: {e}"))?;
+        let scalar = data_type
+            .fill_value_v3(&metadata)
+            .map_err(|e| format!("bad scalar {value}: {e}"))?;
+        bytes.extend_from_slice(scalar.as_ne_bytes());
+    }
+    Ok(bytes)
+}
+
+fn region_json(array: &Array<ZarrJsonStore>, subset: &ArraySubset) -> Result<Value, String> {
+    let data_type = array.data_type();
+    let element_size = data_type
+        .fixed_size()
+        .ok_or_else(|| "trace only supports fixed-size dtypes".to_string())?;
+    let bytes = array
+        .retrieve_array_subset::<ArrayBytes>(subset)
+        .map_err(|e| format!("cannot read region: {e}"))?
+        .into_fixed()
+        .map_err(|e| format!("variable-length data unsupported: {e}"))?;
+    let mut flat = Vec::with_capacity(bytes.len() / element_size.max(1));
+    for element in bytes.chunks_exact(element_size) {
+        let scalar = FillValue::new(element.to_vec());
+        let metadata = data_type
+            .metadata_fill_value(&scalar)
+            .map_err(|e| format!("cannot serialize scalar: {e}"))?;
+        flat.push(
+            serde_json::to_value(&metadata)
+                .map_err(|e| format!("cannot serialize scalar: {e}"))?,
+        );
+    }
+    nest(&flat, subset.shape())
+}
+
+/// Execute the JSON operation-trace protocol from DESIGN.md section 6.3.
+fn trace(payload: &Value) -> Result<String, String> {
+    let operations = payload
+        .get("operations")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "trace payload needs an operations array".to_string())?;
+    zarrs::config::global_config_mut().set_include_zarrs_metadata(false);
+    let store = match payload.get("document") {
+        None => Arc::new(ZarrJsonStore::new()),
+        Some(Value::Object(document)) => Arc::new(
+            ZarrJsonStore::from_document(document.clone())
+                .map_err(|e| format!("invalid initial document: {e}"))?,
+        ),
+        Some(_) => return Err("trace document must be an object".to_string()),
+    };
+    let storage: ReadableWritableListableStorage = store.clone();
+    let mut reads = Vec::new();
+
+    for (index, operation) in operations.iter().enumerate() {
+        let op = operation
+            .get("op")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("operation {index}: missing op"))?;
+        let path = operation
+            .get("path")
+            .and_then(Value::as_str)
+            .filter(|path| !path.is_empty())
+            .ok_or_else(|| format!("operation {index}: path must be non-empty"))?;
+        if op == "create_array" {
+            let dtype_name = operation
+                .get("dtype")
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("operation {index}: create_array needs dtype"))?;
+            let shape = u64_list(
+                operation.get("shape").unwrap_or(&Value::Null),
+                &format!("operation {index}: shape"),
+            )?;
+            let chunks = u64_list(
+                operation.get("chunks").unwrap_or(&Value::Null),
+                &format!("operation {index}: chunks"),
+            )?;
+
+            if !store.document().contains_key("zarr.json") {
+                GroupBuilder::new()
+                    .build(storage.clone(), "/")
+                    .map_err(|e| format!("cannot create root group: {e}"))?
+                    .store_metadata()
+                    .map_err(|e| format!("cannot store root metadata: {e}"))?;
+            }
+            let segments: Vec<&str> = path.split('/').collect();
+            for depth in 1..segments.len() {
+                let ancestor = segments[..depth].join("/");
+                if !store
+                    .document()
+                    .contains_key(&format!("{ancestor}/zarr.json"))
+                {
+                    GroupBuilder::new()
+                        .build(storage.clone(), &format!("/{ancestor}"))
+                        .map_err(|e| format!("cannot create group {ancestor}: {e}"))?
+                        .store_metadata()
+                        .map_err(|e| format!("cannot store group {ancestor}: {e}"))?;
+                }
+            }
+
+            let data_type = DataType::from_metadata(&MetadataV3::new(dtype_name))
+                .map_err(|e| format!("unsupported dtype {dtype_name}: {e}"))?;
+            let element_size = data_type
+                .fixed_size()
+                .ok_or_else(|| format!("dtype {dtype_name} is not fixed-size"))?;
+            let array = ArrayBuilder::new(
+                shape,
+                chunks,
+                data_type,
+                FillValue::new(vec![0u8; element_size]),
+            )
+            .array_to_bytes_codec(Arc::new(JsonCodec::new()))
+            .build(storage.clone(), &format!("/{path}"))
+            .map_err(|e| format!("cannot create array {path}: {e}"))?;
+            array
+                .store_metadata()
+                .map_err(|e| format!("cannot store array {path}: {e}"))?;
+            continue;
+        }
+
+        let array = Array::open(store.clone(), &format!("/{path}"))
+            .map_err(|e| format!("operation {index}: cannot open array {path}: {e}"))?;
+        let subset = region_subset(operation, index)?;
+        match op {
+            "write_region" => {
+                let data = operation
+                    .get("data")
+                    .ok_or_else(|| format!("operation {index}: write_region needs data"))?;
+                let bytes = payload_bytes(&array, data, subset.shape())?;
+                array
+                    .store_array_subset(&subset, ArrayBytes::new_flen(bytes))
+                    .map_err(|e| format!("operation {index}: cannot write region: {e}"))?;
+            }
+            "read_region" => {
+                let data = region_json(&array, &subset)?;
+                reads.push(serde_json::json!({"operation": index, "data": data}));
+            }
+            _ => return Err(format!("operation {index}: unknown op {op:?}")),
+        }
+    }
+
+    let mut result = Map::new();
+    result.insert("document".to_string(), Value::Object(store.document()));
+    result.insert("reads".to_string(), Value::Array(reads));
+    Ok(canonical_to_string(&Value::Object(result)))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let mode = match args.as_slice() {
-        [_, mode] if mode == "write" || mode == "read" => mode.clone(),
+        [_, mode] if mode == "write" || mode == "read" || mode == "trace" => mode.clone(),
         _ => {
-            eprintln!("usage: crosscheck write|read");
+            eprintln!("usage: crosscheck write|read|trace");
             return ExitCode::from(1);
         }
     };
@@ -303,10 +472,11 @@ fn main() -> ExitCode {
         }
     };
 
-    let result = if mode == "write" {
-        write(&parsed)
-    } else {
-        read(&parsed)
+    let result = match mode.as_str() {
+        "write" => write(&parsed),
+        "read" => read(&parsed),
+        "trace" => trace(&parsed),
+        _ => unreachable!(),
     };
     match result {
         Ok(output) => {

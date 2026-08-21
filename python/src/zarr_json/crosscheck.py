@@ -5,6 +5,7 @@ a payload of arrays into a zarr-json document by driving zarr-python with
 the json codec; `read` opens every array in a document and reports its
 values using the fill_value scalar serialization, so payloads compare
 exactly across languages (non-finite floats are the strings "NaN" etc.).
+`trace` executes the operation-trace protocol from DESIGN.md section 6.3.
 """
 
 from __future__ import annotations
@@ -75,6 +76,75 @@ def read(document: dict[str, Any]) -> dict[str, Any]:
     return {"arrays": arrays}
 
 
+def _json_scalars(data: Any, shape: tuple[int, ...], zdtype: Any) -> Any:
+    """Convert a shape-matching payload from fill-value JSON scalars."""
+    import numpy as np
+
+    flat = _flatten_payload(data, shape)
+    scalars = [zdtype.from_json_scalar(v, zarr_format=3) for v in flat]
+    return np.asarray(scalars, dtype=zdtype.to_native_dtype()).reshape(shape)
+
+
+def _selection(origin: tuple[int, ...], shape: tuple[int, ...]) -> Any:
+    if not shape:
+        return (...)
+    return tuple(slice(start, start + size) for start, size in zip(origin, shape))
+
+
+def trace(payload: dict[str, Any]) -> dict[str, Any]:
+    """Execute portable create/write/read operations and return the store.
+
+    The optional initial ``document`` permits a document emitted by any
+    implementation to be used as the starting store for another.
+    """
+    initial = payload.get("document", {})
+    if not isinstance(initial, dict):
+        raise ValueError("trace document must be an object")
+    backing = MemoryBacking(initial)
+    store = ZarrJsonStore(backing)
+    reads: list[dict[str, Any]] = []
+
+    for index, operation in enumerate(payload.get("operations", [])):
+        op = operation.get("op")
+        path = operation.get("path")
+        if not isinstance(path, str) or not path:
+            raise ValueError(f"operation {index}: path must be a non-empty string")
+        if op == "create_array":
+            root = zarr.open_group(store=store, mode="a")
+            root.create_array(
+                path,
+                shape=tuple(operation["shape"]),
+                chunks=tuple(operation["chunks"]),
+                dtype=operation["dtype"],
+                serializer=JsonSerializer(),
+                compressors=None,
+            )
+        elif op in ("write_region", "read_region"):
+            arr = zarr.open_array(
+                store=store,
+                path=path,
+                mode="r+" if op == "write_region" else "r",
+            )
+            origin = tuple(operation["origin"])
+            region_shape = tuple(operation["shape"])
+            if len(origin) != len(region_shape) or len(origin) != len(arr.shape):
+                raise ValueError(f"operation {index}: region dimensionality mismatch")
+            selection = _selection(origin, region_shape)
+            if op == "write_region":
+                arr[selection] = _json_scalars(
+                    operation["data"], region_shape, arr.metadata.data_type
+                )
+            else:
+                data = arr[selection]
+                zdtype = arr.metadata.data_type
+                flat = [zdtype.to_json_scalar(v, zarr_format=3) for v in data.ravel()]
+                reads.append({"operation": index, "data": _nest(flat, region_shape)})
+        else:
+            raise ValueError(f"operation {index}: unknown op {op!r}")
+
+    return {"document": backing.load(), "reads": reads}
+
+
 def _flatten_payload(nested: Any, shape: tuple[int, ...]) -> list[Any]:
     if len(shape) == 0:
         return [nested]
@@ -87,12 +157,18 @@ def _flatten_payload(nested: Any, shape: tuple[int, ...]) -> list[Any]:
 
 
 def main() -> int:
-    if len(sys.argv) != 2 or sys.argv[1] not in ("write", "read"):
-        print("usage: python -m zarr_json.crosscheck write|read", file=sys.stderr)
+    if len(sys.argv) != 2 or sys.argv[1] not in ("write", "read", "trace"):
+        print("usage: python -m zarr_json.crosscheck write|read|trace", file=sys.stderr)
         return 1
     try:
         payload = strict_loads(sys.stdin.buffer.read())
-        result = write(payload) if sys.argv[1] == "write" else read(payload)
+        result = (
+            write(payload)
+            if sys.argv[1] == "write"
+            else read(payload)
+            if sys.argv[1] == "read"
+            else trace(payload)
+        )
     except Exception as exc:  # noqa: BLE001 - harness boundary
         print(f"crosscheck {sys.argv[1]} failed: {exc}", file=sys.stderr)
         return 1
