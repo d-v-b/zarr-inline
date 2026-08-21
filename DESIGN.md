@@ -193,6 +193,13 @@ recoverable from text, which is harmless because every consumer
 (metadata semantics, dtype-driven chunk decoding) interprets numbers by
 context.
 
+**Parsing pitfall.** Strict-parse is a JSON-text parser and returns *any*
+JSON value; reading a *document* additionally requires an object. Keep those
+two operations distinct (the reference implementations do): applying the
+document-only top-level check inside the byte-key inlining branch would make
+every array miss inlining, and applying it to chunk bytes would reject every
+chunk.
+
 **Strict parsing.** Native JSON parsers disagree at the edges: Python's
 accepts bare `NaN`/`Infinity` tokens and overflow literals like `1e999`;
 serde_json rejects both and additionally rejects >128-deep nesting and
@@ -403,12 +410,7 @@ empty store or from a document emitted by another implementation:
 }
 ```
 
-`document` is optional and defaults to `{}`. `create_array` creates the root
-and missing ancestor groups, uses the `json` codec without compressors, and
-uses the dtype's zero value as fill. `write_region` and `read_region` use a
-zero-based `origin` and a `shape`; their rank must equal the array rank and
-the region must be in bounds. `data` is nested by the region shape in C order
-and uses the same fill-value scalar forms as §6.2. The response is:
+`document` is optional and defaults to `{}`. The response is:
 
 ```json
 {
@@ -419,8 +421,38 @@ and uses the same fill-value scalar forms as §6.2. The response is:
 }
 ```
 
-`operation` is the zero-based index in the submitted operations array. This
-makes a trace splittable: run a create/write prefix in implementation A, then
+`operation` is the zero-based index in the submitted operations array.
+
+**Input contract.** Every harness enforces the same rules, so a trace either
+succeeds identically everywhere or is rejected (exit 1) everywhere; the
+conformance tests include a set of invalid traces that all three harnesses
+must refuse:
+
+- `document`, when given, must be a *valid* zarr-json document; harnesses
+  load it strictly. `operations` is required and must be an array.
+- `create_array` creates the root and any missing ancestor groups, refuses
+  to place a node beneath an array or to overwrite an existing node (like
+  zarr-python), uses the `json` codec with no compressors, and writes the
+  dtype's zero value (`0` / `false` / `0.0`) as an explicit `fill_value`. A
+  dtype the host library or the harness cannot represent is an error, never
+  a `null` fill. `chunks` extents must be ≥ 1.
+- `write_region` / `read_region` take a zero-based `origin` and a `shape`
+  whose rank equals the array rank, every extent ≥ 1, and
+  `origin + shape ≤ array shape` on every axis; anything else is an error
+  (host libraries would otherwise clamp or fill silently, each differently).
+- `data` is nested by the region shape in C order and is interpreted by the
+  harness's own `json` codec, so it obeys SPEC §9.2 exactly: integer dtypes
+  take integer tokens only (`1.0` is an error), floats take numbers or the
+  three non-finite strings within the dtype's finite range, nesting must
+  match the shape (ragged data is an error). Harnesses re-serialize payload
+  data *sort-preserving* before handing it to the codec — canonicalizing it
+  would launder `1.0` into `1`.
+
+This is also why every harness routes conversions through its codec rather
+than its own scalar loops: what a harness accepts is then definitionally what
+the codec accepts, and there is one conversion implementation per language.
+
+This makes a trace splittable: run a create/write prefix in implementation A, then
 pass its result as `document` with a read suffix to implementation B. Final
 documents are deliberately not compared directly because host libraries emit
 different but compatible optional metadata. The suite instead runs the full

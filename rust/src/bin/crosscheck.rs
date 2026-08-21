@@ -1,93 +1,166 @@
 //! Cross-language array crosscheck harness (zarrs side).
 //!
-//! See `DESIGN.md` section 6.2. `write`
-//! turns a payload of arrays into a zarr-json document by driving zarrs with
-//! the `json` codec through [`ZarrJsonStore`]; `read` opens every array in a
-//! document and reports its values using the fill_value scalar serialization,
-//! so payloads compare exactly across languages (non-finite floats are the
-//! strings `"NaN"` etc.).
-//! `trace` executes the operation-trace protocol from `DESIGN.md` section 6.3.
+//! See `DESIGN.md` section 6.2 (write/read) and 6.3 (trace). All conversions
+//! between payload JSON and native arrays go through the json codec itself
+//! ([`JsonCodec`] encode / decode), so what this harness accepts is
+//! definitionally what the codec accepts: strict scalar sorts, finite ranges,
+//! exact nesting. Harness-level rules (in-bounds regions, valid initial
+//! documents, group-only parents, explicit zero fill) follow the trace input
+//! contract in `DESIGN.md` section 6.3.
 //!
 //! Errors: message on stderr, exit code 1.
 
-use std::collections::HashSet;
+use std::borrow::Cow;
 use std::io::Read as _;
+use std::num::NonZeroU64;
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
-use zarrs::array::{
-    Array, ArrayBuilder, ArrayBytes, ArrayMetadata, ArraySubset, DataType, FillValue,
-    FillValueMetadata,
-};
+use zarrs::array::codec::api::{ArrayToBytesCodecTraits, CodecOptions};
+use zarrs::array::{Array, ArrayBuilder, ArrayBytes, ArrayMetadata, ArraySubset, DataType, FillValue};
 use zarrs::group::GroupBuilder;
 use zarrs::metadata::v3::MetadataV3;
 use zarrs::storage::ReadableWritableListableStorage;
 
 use zarr_json::{canonical_to_string, is_metadata_key, Document, JsonCodec, ZarrJsonStore};
 
-/// Nest a flat C-order list of scalars by `shape`.
-fn nest(flat: &[Value], shape: &[u64]) -> Result<Value, String> {
-    match shape {
-        [] => flat
-            .first()
-            .cloned()
-            .ok_or_else(|| "empty array cannot be nested".to_string()),
-        [_] => Ok(Value::Array(flat.to_vec())),
-        [dim, rest @ ..] => {
-            let dim = usize::try_from(*dim).map_err(|_| "dimension overflows usize".to_string())?;
-            if dim == 0 || !flat.len().is_multiple_of(dim) {
-                return Err("data length does not match shape".to_string());
-            }
-            let step = flat.len() / dim;
-            let items: Result<Vec<Value>, String> = (0..dim)
-                .map(|i| nest(&flat[i * step..(i + 1) * step], rest))
-                .collect();
-            Ok(Value::Array(items?))
-        }
-    }
-}
-
-/// Shape-driven flattening of a payload `data` value (C order). Recursion
-/// stops at the last dimension, so scalar JSON forms that are themselves
-/// arrays (e.g. complex `[re, im]`) survive intact.
-fn flatten(nested: &Value, shape: &[u64], out: &mut Vec<Value>) -> Result<(), String> {
-    let mismatch = || format!("payload data does not match shape {shape:?}");
-    match shape {
-        [] => {
-            out.push(nested.clone());
-            Ok(())
-        }
-        [dim, rest @ ..] => {
-            let Value::Array(items) = nested else {
-                return Err(mismatch());
-            };
-            if items.len() as u64 != *dim {
-                return Err(mismatch());
-            }
-            if rest.is_empty() {
-                out.extend(items.iter().cloned());
-            } else {
-                for sub in items {
-                    flatten(sub, rest, out)?;
-                }
-            }
-            Ok(())
-        }
-    }
-}
-
-fn u64_list(value: &Value, what: &str) -> Result<Vec<u64>, String> {
+fn u64_list(value: &Value, what: &str, min_value: u64) -> Result<Vec<u64>, String> {
     let Value::Array(items) = value else {
-        return Err(format!("{what} must be an array of non-negative integers"));
+        return Err(format!("{what} must be a list of integers >= {min_value}"));
     };
     items
         .iter()
         .map(|v| {
             v.as_u64()
-                .ok_or_else(|| format!("{what} must contain non-negative integers"))
+                .filter(|n| *n >= min_value)
+                .ok_or_else(|| format!("{what} must be a list of integers >= {min_value}"))
         })
         .collect()
+}
+
+fn nonzero_shape(shape: &[u64], what: &str) -> Result<Vec<NonZeroU64>, String> {
+    shape
+        .iter()
+        .map(|d| NonZeroU64::new(*d).ok_or_else(|| format!("{what}: extents must be >= 1")))
+        .collect()
+}
+
+/// Payload JSON -> native bytes, via the codec's decoder. The payload is
+/// re-serialized SORT-PRESERVING (serde_json keeps the raw token `1.0`), not
+/// canonically: canonicalization would launder the float token `1.0` into
+/// the integer token `1` that the codec must reject for integer dtypes.
+fn to_native<S: ?Sized>(array: &Array<S>, data: &Value, shape: &[u64]) -> Result<Vec<u8>, String> {
+    let shape = nonzero_shape(shape, "region")?;
+    let text = serde_json::to_string(data).map_err(|e| format!("cannot serialize payload: {e}"))?;
+    let decoded = JsonCodec::new()
+        .decode(
+            Cow::Owned(text.into_bytes()),
+            &shape,
+            array.data_type(),
+            array.fill_value(),
+            &CodecOptions::default(),
+        )
+        .map_err(|e| format!("{e}"))?;
+    decoded
+        .into_fixed()
+        .map(Cow::into_owned)
+        .map_err(|e| format!("variable-length data unsupported: {e}"))
+}
+
+/// Native bytes -> payload JSON, via the codec's encoder.
+fn to_json<S: ?Sized>(array: &Array<S>, bytes: ArrayBytes, shape: &[u64]) -> Result<Value, String> {
+    let shape = nonzero_shape(shape, "region")?;
+    let encoded = JsonCodec::new()
+        .encode(bytes, &shape, array.data_type(), array.fill_value(), &CodecOptions::default())
+        .map_err(|e| format!("{e}"))?;
+    zarr_json::strict_from_slice(&encoded).map_err(|e| format!("codec output is not JSON: {e}"))
+}
+
+/// The node_type of the metadata document at `key`, if present.
+fn node_type(document: &Document, key: &str) -> Option<String> {
+    let value = document.get(key)?;
+    Some(
+        value
+            .get("node_type")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+    )
+}
+
+/// Create the root and every ancestor group of `path` that does not exist,
+/// refusing (like zarr-python) to place a node beneath an array or to
+/// overwrite an existing node.
+fn ensure_parents(
+    store: &Arc<ZarrJsonStore>,
+    storage: &ReadableWritableListableStorage,
+    path: &str,
+) -> Result<(), String> {
+    let document = store.document();
+    let ensure_group = |key: String, node_path: String, label: String| -> Result<(), String> {
+        match node_type(&document, &key) {
+            Some(kind) if kind == "group" => Ok(()),
+            Some(_) => Err(format!("cannot create {path}: {label} is not a group")),
+            None => GroupBuilder::new()
+                .build(storage.clone(), &node_path)
+                .map_err(|e| format!("cannot create group {label}: {e}"))?
+                .store_metadata()
+                .map_err(|e| format!("cannot store group {label}: {e}")),
+        }
+    };
+    ensure_group("zarr.json".to_string(), "/".to_string(), "the root".to_string())?;
+    let segments: Vec<&str> = path.split('/').collect();
+    for depth in 1..segments.len() {
+        let ancestor = segments[..depth].join("/");
+        ensure_group(
+            format!("{ancestor}/zarr.json"),
+            format!("/{ancestor}"),
+            format!("parent {ancestor}"),
+        )?;
+    }
+    if node_type(&document, &format!("{path}/zarr.json")).is_some() {
+        return Err(format!("cannot create {path}: a node already exists there"));
+    }
+    Ok(())
+}
+
+fn create_array(
+    store: &Arc<ZarrJsonStore>,
+    storage: &ReadableWritableListableStorage,
+    path: &str,
+    dtype_name: &str,
+    shape: Vec<u64>,
+    chunks: Vec<u64>,
+) -> Result<Array<dyn zarrs::storage::ReadableWritableListableStorageTraits>, String> {
+    ensure_parents(store, storage, path)?;
+    let data_type = DataType::from_metadata(&MetadataV3::new(dtype_name))
+        .map_err(|e| format!("array {path}: unsupported dtype {dtype_name}: {e}"))?;
+    let element_size = data_type
+        .fixed_size()
+        .ok_or_else(|| format!("array {path}: dtype {dtype_name} is not fixed-size"))?;
+    // Explicit zero fill value (0 / false / 0.0) for every dtype.
+    let array = ArrayBuilder::new(shape, chunks, data_type, FillValue::new(vec![0u8; element_size]))
+        .array_to_bytes_codec(Arc::new(JsonCodec::new()))
+        .build(storage.clone(), &format!("/{path}"))
+        .map_err(|e| format!("array {path}: cannot create: {e}"))?;
+    array
+        .store_metadata()
+        .map_err(|e| format!("array {path}: cannot store metadata: {e}"))?;
+    Ok(array)
+}
+
+fn new_store(document: Option<&Value>) -> Result<Arc<ZarrJsonStore>, String> {
+    // Maximally standard metadata: no zarrs-specific "_zarrs" attribute.
+    zarrs::config::global_config_mut().set_include_zarrs_metadata(false);
+    match document {
+        None => Ok(Arc::new(ZarrJsonStore::new())),
+        // The initial document MUST be valid (DESIGN 6.3).
+        Some(Value::Object(document)) => ZarrJsonStore::from_document(document.clone())
+            .map(Arc::new)
+            .map_err(|e| format!("invalid initial document: {e}")),
+        Some(_) => Err("trace document must be an object".to_string()),
+    }
 }
 
 /// Write mode: payload in, zarr-json document out.
@@ -96,20 +169,8 @@ fn write(payload: &Value) -> Result<String, String> {
         .get("arrays")
         .and_then(Value::as_array)
         .ok_or_else(|| "payload must be an object with an \"arrays\" array".to_string())?;
-
-    // Maximally standard metadata: no zarrs-specific "_zarrs" attribute.
-    zarrs::config::global_config_mut().set_include_zarrs_metadata(false);
-
-    let store = Arc::new(ZarrJsonStore::new());
+    let store = new_store(None)?;
     let storage: ReadableWritableListableStorage = store.clone();
-
-    let mut groups: HashSet<String> = HashSet::new();
-    GroupBuilder::new()
-        .build(storage.clone(), "/")
-        .map_err(|e| format!("cannot create root group: {e}"))?
-        .store_metadata()
-        .map_err(|e| format!("cannot store root group metadata: {e}"))?;
-    groups.insert(String::new());
 
     for spec in specs {
         let path = spec
@@ -121,76 +182,17 @@ fn write(payload: &Value) -> Result<String, String> {
             .get("dtype")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("array {path}: missing \"dtype\""))?;
-        let shape = u64_list(
-            spec.get("shape").unwrap_or(&Value::Null),
-            &format!("array {path}: \"shape\""),
-        )?;
-        let chunks = u64_list(
-            spec.get("chunks").unwrap_or(&Value::Null),
-            &format!("array {path}: \"chunks\""),
-        )?;
+        let shape = u64_list(spec.get("shape").unwrap_or(&Value::Null), &format!("array {path}: shape"), 0)?;
+        let chunks = u64_list(spec.get("chunks").unwrap_or(&Value::Null), &format!("array {path}: chunks"), 1)?;
         let data = spec
             .get("data")
             .ok_or_else(|| format!("array {path}: missing \"data\""))?;
-
-        // Create intermediate groups ("grp/i64" needs a group at "grp"),
-        // matching what zarr-python produces.
-        let segments: Vec<&str> = path.split('/').collect();
-        for depth in 1..segments.len() {
-            let ancestor = segments[..depth].join("/");
-            if groups.insert(ancestor.clone()) {
-                GroupBuilder::new()
-                    .build(storage.clone(), &format!("/{ancestor}"))
-                    .map_err(|e| format!("cannot create group {ancestor}: {e}"))?
-                    .store_metadata()
-                    .map_err(|e| format!("cannot store group {ancestor} metadata: {e}"))?;
-            }
-        }
-
-        let data_type = DataType::from_metadata(&MetadataV3::new(dtype_name))
-            .map_err(|e| format!("array {path}: unsupported dtype {dtype_name}: {e}"))?;
-        let element_size = data_type
-            .fixed_size()
-            .ok_or_else(|| format!("array {path}: dtype {dtype_name} is not fixed-size"))?;
-        // Sensible per-dtype default fill value: all-zero bytes are
-        // 0 / false / 0.0 for the portable dtypes. The payload always
-        // writes every element, so the fill value never shows in data.
-        let fill_value = FillValue::new(vec![0u8; element_size]);
-
-        let array = ArrayBuilder::new(shape.clone(), chunks, data_type.clone(), fill_value)
-            .array_to_bytes_codec(Arc::new(JsonCodec::new()))
-            .build(storage.clone(), &format!("/{path}"))
-            .map_err(|e| format!("array {path}: cannot create: {e}"))?;
-        array
-            .store_metadata()
-            .map_err(|e| format!("array {path}: cannot store metadata: {e}"))?;
-
-        // Convert nested payload data to native bytes elementwise via the
-        // fill_value-from-JSON machinery (the same machinery the json codec
-        // uses to decode chunks).
-        let mut flat = Vec::new();
-        flatten(data, &shape, &mut flat).map_err(|e| format!("array {path}: {e}"))?;
-        let mut bytes = Vec::with_capacity(flat.len() * element_size);
-        for value in flat {
-            let metadata: FillValueMetadata = serde_json::from_value(value.clone())
-                .map_err(|e| format!("array {path}: bad scalar {value}: {e}"))?;
-            let scalar = data_type
-                .fill_value_v3(&metadata)
-                .map_err(|e| format!("array {path}: bad scalar {value}: {e}"))?;
-            let element = scalar.as_ne_bytes();
-            if element.len() != element_size {
-                return Err(format!(
-                    "array {path}: scalar {value} decoded to {} bytes, expected {element_size}",
-                    element.len()
-                ));
-            }
-            bytes.extend_from_slice(element);
-        }
+        let array = create_array(&store, &storage, path, dtype_name, shape.clone(), chunks)?;
+        let bytes = to_native(&array, data, &shape).map_err(|e| format!("array {path}: {e}"))?;
         array
             .store_array_subset(&array.subset_all(), ArrayBytes::new_flen(bytes))
             .map_err(|e| format!("array {path}: cannot write data: {e}"))?;
     }
-
     Ok(store.to_json_string())
 }
 
@@ -199,9 +201,6 @@ fn read(document_value: &Value) -> Result<String, String> {
     let Value::Object(document) = document_value else {
         return Err("input must be a JSON object".to_string());
     };
-
-    // Discover array paths from the raw document: keys "<path>/zarr.json"
-    // whose object value has "node_type": "array" (excluding the root).
     let mut paths: Vec<String> = document
         .iter()
         .filter(|(key, value)| {
@@ -212,17 +211,12 @@ fn read(document_value: &Value) -> Result<String, String> {
         .filter_map(|(key, _)| key.strip_suffix("/zarr.json").map(str::to_string))
         .collect();
     paths.sort();
-
-    let document: Document = document.clone();
-    let store = Arc::new(
-        ZarrJsonStore::from_document(document).map_err(|e| format!("invalid document: {e}"))?,
-    );
+    let store = new_store(Some(document_value)).map_err(|e| e.replace("initial document", "document"))?;
 
     let mut arrays: Vec<Value> = Vec::new();
     for path in paths {
         let array = Array::open(store.clone(), &format!("/{path}"))
             .map_err(|e| format!("array {path}: cannot open: {e}"))?;
-
         let ArrayMetadata::V3(metadata) = array.metadata() else {
             return Err(format!("array {path}: not Zarr v3 metadata"));
         };
@@ -234,125 +228,50 @@ fn read(document_value: &Value) -> Result<String, String> {
             .iter()
             .map(|d| d.get())
             .collect();
-
-        let data_type = array.data_type().clone();
-        let element_size = data_type
-            .fixed_size()
-            .ok_or_else(|| format!("array {path}: dtype {dtype_name} is not fixed-size"))?;
-
-        let bytes: ArrayBytes = array
+        let bytes = array
             .retrieve_array_subset(&array.subset_all())
             .map_err(|e| format!("array {path}: cannot read data: {e}"))?;
-        let raw = bytes
-            .into_fixed()
-            .map_err(|e| format!("array {path}: variable-length data unsupported: {e}"))?;
-
-        // Elementwise fill_value scalar serialization.
-        let mut flat = Vec::with_capacity(raw.len() / element_size.max(1));
-        for element in raw.chunks_exact(element_size) {
-            let scalar = FillValue::new(element.to_vec());
-            let metadata = data_type
-                .metadata_fill_value(&scalar)
-                .map_err(|e| format!("array {path}: cannot serialize scalar: {e}"))?;
-            let value = serde_json::to_value(&metadata)
-                .map_err(|e| format!("array {path}: cannot serialize scalar: {e}"))?;
-            flat.push(value);
-        }
-        let data = nest(&flat, &shape).map_err(|e| format!("array {path}: {e}"))?;
+        let data = to_json(&array, bytes, &shape).map_err(|e| format!("array {path}: {e}"))?;
 
         let mut entry = Map::new();
         entry.insert("path".to_string(), Value::String(path));
         entry.insert("dtype".to_string(), Value::String(dtype_name));
-        entry.insert(
-            "shape".to_string(),
-            Value::Array(shape.into_iter().map(Value::from).collect()),
-        );
-        entry.insert(
-            "chunks".to_string(),
-            Value::Array(chunk_shape.into_iter().map(Value::from).collect()),
-        );
+        entry.insert("shape".to_string(), Value::Array(shape.into_iter().map(Value::from).collect()));
+        entry.insert("chunks".to_string(), Value::Array(chunk_shape.into_iter().map(Value::from).collect()));
         entry.insert("data".to_string(), data);
         arrays.push(Value::Object(entry));
     }
-
     let mut payload = Map::new();
     payload.insert("arrays".to_string(), Value::Array(arrays));
-    // Canonical serialization: float scalars in payload data use the same
-    // ES number text as canonical documents.
     Ok(canonical_to_string(&Value::Object(payload)))
 }
 
-fn region_subset(operation: &Value, index: usize) -> Result<ArraySubset, String> {
-    let origin = u64_list(
-        operation.get("origin").unwrap_or(&Value::Null),
-        &format!("operation {index}: origin"),
-    )?;
-    let shape = u64_list(
-        operation.get("shape").unwrap_or(&Value::Null),
-        &format!("operation {index}: shape"),
-    )?;
-    ArraySubset::new_with_start_shape(origin, shape)
-        .map_err(|e| format!("operation {index}: invalid region: {e}"))
-}
-
-fn payload_bytes(array: &Array<ZarrJsonStore>, data: &Value, shape: &[u64]) -> Result<Vec<u8>, String> {
-    let data_type = array.data_type();
-    let element_size = data_type
-        .fixed_size()
-        .ok_or_else(|| "trace only supports fixed-size dtypes".to_string())?;
-    let mut flat = Vec::new();
-    flatten(data, shape, &mut flat)?;
-    let mut bytes = Vec::with_capacity(flat.len() * element_size);
-    for value in flat {
-        let metadata: FillValueMetadata = serde_json::from_value(value.clone())
-            .map_err(|e| format!("bad scalar {value}: {e}"))?;
-        let scalar = data_type
-            .fill_value_v3(&metadata)
-            .map_err(|e| format!("bad scalar {value}: {e}"))?;
-        bytes.extend_from_slice(scalar.as_ne_bytes());
+/// Validate a region against the array (DESIGN 6.3): same rank, every
+/// extent >= 1, and origin + shape within the array shape.
+fn region<S: ?Sized>(operation: &Value, array: &Array<S>, index: usize) -> Result<ArraySubset, String> {
+    let origin = u64_list(operation.get("origin").unwrap_or(&Value::Null), &format!("operation {index}: origin"), 0)?;
+    let shape = u64_list(operation.get("shape").unwrap_or(&Value::Null), &format!("operation {index}: shape"), 1)?;
+    let extents = array.shape();
+    if origin.len() != extents.len() || shape.len() != extents.len() {
+        return Err(format!("operation {index}: region dimensionality mismatch"));
     }
-    Ok(bytes)
-}
-
-fn region_json(array: &Array<ZarrJsonStore>, subset: &ArraySubset) -> Result<Value, String> {
-    let data_type = array.data_type();
-    let element_size = data_type
-        .fixed_size()
-        .ok_or_else(|| "trace only supports fixed-size dtypes".to_string())?;
-    let bytes = array
-        .retrieve_array_subset::<ArrayBytes>(subset)
-        .map_err(|e| format!("cannot read region: {e}"))?
-        .into_fixed()
-        .map_err(|e| format!("variable-length data unsupported: {e}"))?;
-    let mut flat = Vec::with_capacity(bytes.len() / element_size.max(1));
-    for element in bytes.chunks_exact(element_size) {
-        let scalar = FillValue::new(element.to_vec());
-        let metadata = data_type
-            .metadata_fill_value(&scalar)
-            .map_err(|e| format!("cannot serialize scalar: {e}"))?;
-        flat.push(
-            serde_json::to_value(&metadata)
-                .map_err(|e| format!("cannot serialize scalar: {e}"))?,
-        );
+    for (axis, ((start, size), extent)) in origin.iter().zip(&shape).zip(extents).enumerate() {
+        let end = start.checked_add(*size).ok_or_else(|| format!("operation {index}: region overflows"))?;
+        if end > *extent {
+            return Err(format!(
+                "operation {index}: region [{start}, {end}) exceeds array extent {extent} on axis {axis}"
+            ));
+        }
     }
-    nest(&flat, subset.shape())
+    ArraySubset::new_with_start_shape(origin, shape).map_err(|e| format!("operation {index}: invalid region: {e}"))
 }
 
-/// Execute the JSON operation-trace protocol from DESIGN.md section 6.3.
 fn trace(payload: &Value) -> Result<String, String> {
     let operations = payload
         .get("operations")
         .and_then(Value::as_array)
         .ok_or_else(|| "trace payload needs an operations array".to_string())?;
-    zarrs::config::global_config_mut().set_include_zarrs_metadata(false);
-    let store = match payload.get("document") {
-        None => Arc::new(ZarrJsonStore::new()),
-        Some(Value::Object(document)) => Arc::new(
-            ZarrJsonStore::from_document(document.clone())
-                .map_err(|e| format!("invalid initial document: {e}"))?,
-        ),
-        Some(_) => return Err("trace document must be an object".to_string()),
-    };
+    let store = new_store(payload.get("document"))?;
     let storage: ReadableWritableListableStorage = store.clone();
     let mut reads = Vec::new();
 
@@ -366,78 +285,36 @@ fn trace(payload: &Value) -> Result<String, String> {
             .and_then(Value::as_str)
             .filter(|path| !path.is_empty())
             .ok_or_else(|| format!("operation {index}: path must be non-empty"))?;
-        if op == "create_array" {
-            let dtype_name = operation
-                .get("dtype")
-                .and_then(Value::as_str)
-                .ok_or_else(|| format!("operation {index}: create_array needs dtype"))?;
-            let shape = u64_list(
-                operation.get("shape").unwrap_or(&Value::Null),
-                &format!("operation {index}: shape"),
-            )?;
-            let chunks = u64_list(
-                operation.get("chunks").unwrap_or(&Value::Null),
-                &format!("operation {index}: chunks"),
-            )?;
-
-            if !store.document().contains_key("zarr.json") {
-                GroupBuilder::new()
-                    .build(storage.clone(), "/")
-                    .map_err(|e| format!("cannot create root group: {e}"))?
-                    .store_metadata()
-                    .map_err(|e| format!("cannot store root metadata: {e}"))?;
-            }
-            let segments: Vec<&str> = path.split('/').collect();
-            for depth in 1..segments.len() {
-                let ancestor = segments[..depth].join("/");
-                if !store
-                    .document()
-                    .contains_key(&format!("{ancestor}/zarr.json"))
-                {
-                    GroupBuilder::new()
-                        .build(storage.clone(), &format!("/{ancestor}"))
-                        .map_err(|e| format!("cannot create group {ancestor}: {e}"))?
-                        .store_metadata()
-                        .map_err(|e| format!("cannot store group {ancestor}: {e}"))?;
-                }
-            }
-
-            let data_type = DataType::from_metadata(&MetadataV3::new(dtype_name))
-                .map_err(|e| format!("unsupported dtype {dtype_name}: {e}"))?;
-            let element_size = data_type
-                .fixed_size()
-                .ok_or_else(|| format!("dtype {dtype_name} is not fixed-size"))?;
-            let array = ArrayBuilder::new(
-                shape,
-                chunks,
-                data_type,
-                FillValue::new(vec![0u8; element_size]),
-            )
-            .array_to_bytes_codec(Arc::new(JsonCodec::new()))
-            .build(storage.clone(), &format!("/{path}"))
-            .map_err(|e| format!("cannot create array {path}: {e}"))?;
-            array
-                .store_metadata()
-                .map_err(|e| format!("cannot store array {path}: {e}"))?;
-            continue;
-        }
-
-        let array = Array::open(store.clone(), &format!("/{path}"))
-            .map_err(|e| format!("operation {index}: cannot open array {path}: {e}"))?;
-        let subset = region_subset(operation, index)?;
         match op {
-            "write_region" => {
-                let data = operation
-                    .get("data")
-                    .ok_or_else(|| format!("operation {index}: write_region needs data"))?;
-                let bytes = payload_bytes(&array, data, subset.shape())?;
-                array
-                    .store_array_subset(&subset, ArrayBytes::new_flen(bytes))
-                    .map_err(|e| format!("operation {index}: cannot write region: {e}"))?;
+            "create_array" => {
+                let dtype_name = operation
+                    .get("dtype")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| format!("operation {index}: create_array needs dtype"))?;
+                let shape = u64_list(operation.get("shape").unwrap_or(&Value::Null), &format!("operation {index}: shape"), 0)?;
+                let chunks = u64_list(operation.get("chunks").unwrap_or(&Value::Null), &format!("operation {index}: chunks"), 1)?;
+                create_array(&store, &storage, path, dtype_name, shape, chunks)
+                    .map_err(|e| format!("operation {index}: {e}"))?;
             }
-            "read_region" => {
-                let data = region_json(&array, &subset)?;
-                reads.push(serde_json::json!({"operation": index, "data": data}));
+            "write_region" | "read_region" => {
+                let array = Array::open(store.clone(), &format!("/{path}"))
+                    .map_err(|e| format!("operation {index}: cannot open array {path}: {e}"))?;
+                let subset = region(operation, &array, index)?;
+                if op == "write_region" {
+                    let data = operation
+                        .get("data")
+                        .ok_or_else(|| format!("operation {index}: write_region needs data"))?;
+                    let bytes = to_native(&array, data, subset.shape()).map_err(|e| format!("operation {index}: {e}"))?;
+                    array
+                        .store_array_subset(&subset, ArrayBytes::new_flen(bytes))
+                        .map_err(|e| format!("operation {index}: cannot write region: {e}"))?;
+                } else {
+                    let bytes = array
+                        .retrieve_array_subset(&subset)
+                        .map_err(|e| format!("operation {index}: cannot read region: {e}"))?;
+                    let data = to_json(&array, bytes, subset.shape()).map_err(|e| format!("operation {index}: {e}"))?;
+                    reads.push(serde_json::json!({"operation": index, "data": data}));
+                }
             }
             _ => return Err(format!("operation {index}: unknown op {op:?}")),
         }
@@ -458,7 +335,6 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-
     let mut input = String::new();
     if let Err(e) = std::io::stdin().read_to_string(&mut input) {
         eprintln!("failed to read stdin: {e}");
@@ -471,7 +347,6 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-
     let result = match mode.as_str() {
         "write" => write(&parsed),
         "read" => read(&parsed),
@@ -480,7 +355,6 @@ fn main() -> ExitCode {
     };
     match result {
         Ok(output) => {
-            // Compact, UTF-8 (non-ASCII unescaped).
             print!("{output}");
             ExitCode::SUCCESS
         }
@@ -558,5 +432,78 @@ mod tests {
     #[test]
     fn read_rejects_non_object_input() {
         assert!(read(&serde_json::json!([1, 2])).is_err());
+    }
+
+    fn trace_payload(text: &str) -> Value {
+        serde_json::from_str(text).unwrap()
+    }
+
+    #[test]
+    fn trace_round_trips_across_chunk_boundaries() {
+        let result: Value = serde_json::from_str(
+            &trace(&trace_payload(
+                r#"{"operations": [
+                    {"op": "create_array", "path": "grp/a", "dtype": "uint8", "shape": [3, 4], "chunks": [2, 2]},
+                    {"op": "write_region", "path": "grp/a", "origin": [1, 1], "shape": [2, 2], "data": [[1, 2], [3, 4]]},
+                    {"op": "read_region", "path": "grp/a", "origin": [0, 0], "shape": [3, 4]}]}"#,
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            result["reads"][0]["data"],
+            serde_json::json!([[0, 0, 0, 0], [0, 1, 2, 0], [0, 3, 4, 0]])
+        );
+        assert_eq!(result["document"]["grp/zarr.json"]["node_type"], "group");
+    }
+
+    #[test]
+    fn trace_rejects_out_of_bounds_region() {
+        let err = trace(&trace_payload(
+            r#"{"operations": [
+                {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [3, 4], "chunks": [2, 2]},
+                {"op": "read_region", "path": "a", "origin": [2, 2], "shape": [3, 4]}]}"#,
+        ))
+        .unwrap_err();
+        assert!(err.contains("exceeds array extent"), "{err}");
+    }
+
+    #[test]
+    fn trace_rejects_float_token_for_integer_dtype() {
+        let err = trace(&trace_payload(
+            r#"{"operations": [
+                {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2], "chunks": [2]},
+                {"op": "write_region", "path": "a", "origin": [0], "shape": [2], "data": [1.0, 2]}]}"#,
+        ))
+        .unwrap_err();
+        assert!(err.contains("operation 1"), "{err}");
+    }
+
+    #[test]
+    fn trace_rejects_invalid_initial_document() {
+        let err = trace(&trace_payload(r#"{"document": {"bad/c/0": 123}, "operations": []}"#)).unwrap_err();
+        assert!(err.contains("invalid initial document"), "{err}");
+    }
+
+    #[test]
+    fn trace_refuses_to_create_under_an_array() {
+        let err = trace(&trace_payload(
+            r#"{"operations": [
+                {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2], "chunks": [2]},
+                {"op": "create_array", "path": "a/b", "dtype": "uint8", "shape": [2], "chunks": [2]}]}"#,
+        ))
+        .unwrap_err();
+        assert!(err.contains("is not a group"), "{err}");
+    }
+
+    #[test]
+    fn trace_rejects_ragged_region_data() {
+        let err = trace(&trace_payload(
+            r#"{"operations": [
+                {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2, 2], "chunks": [2, 2]},
+                {"op": "write_region", "path": "a", "origin": [0, 0], "shape": [2, 2], "data": [[1, 2, 3], [4]]}]}"#,
+        ))
+        .unwrap_err();
+        assert!(err.contains("operation 1"), "{err}");
     }
 }

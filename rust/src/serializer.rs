@@ -122,13 +122,18 @@ fn flatten(nested: &Value, shape: &[u64], out: &mut Vec<Value>) -> Result<(), Co
 /// For float data types, whether the native-endian element bytes hold a
 /// finite value. Non-float types (or unknown widths) are trivially finite.
 fn float_element_is_finite(type_name: &str, element: &[u8]) -> bool {
+    let f64_finite = |b: &[u8]| f64::from_ne_bytes(b.try_into().unwrap()).is_finite();
+    let f32_finite = |b: &[u8]| f32::from_ne_bytes(b.try_into().unwrap()).is_finite();
     match (type_name, element.len()) {
-        ("float64", 8) => f64::from_ne_bytes(element.try_into().unwrap()).is_finite(),
-        ("float32", 4) => f32::from_ne_bytes(element.try_into().unwrap()).is_finite(),
+        ("float64", 8) => f64_finite(element),
+        ("float32", 4) => f32_finite(element),
         // IEEE binary16: exponent bits 0x7C00 all set => inf/NaN.
         ("float16", 2) => u16::from_ne_bytes(element.try_into().unwrap()) & 0x7C00 != 0x7C00,
         // bfloat16: exponent bits 0x7F80 all set => inf/NaN.
         ("bfloat16", 2) => u16::from_ne_bytes(element.try_into().unwrap()) & 0x7F80 != 0x7F80,
+        // Complex types are two float lanes; both must be finite.
+        ("complex128", 16) => f64_finite(&element[..8]) && f64_finite(&element[8..]),
+        ("complex64", 8) => f32_finite(&element[..4]) && f32_finite(&element[4..]),
         _ => true,
     }
 }
@@ -245,7 +250,13 @@ impl ArrayToBytesCodecTraits for JsonCodec {
             // SPEC 9.2: a finite JSON number that overflows the target float
             // type's finite range is out of range (a codec error); non-finite
             // values are representable only through the explicit strings.
-            let numeric_input = value.is_number();
+            // A JSON number, or (for complex) a [re, im] pair of JSON numbers:
+            // inputs whose conversion must stay finite (the string forms are
+            // the only way to write non-finite values).
+            let numeric_input = value.is_number()
+                || value
+                    .as_array()
+                    .is_some_and(|parts| parts.iter().all(Value::is_number));
             let value_text = value.to_string();
             let metadata: FillValueMetadata = serde_json::from_value(value)
                 .map_err(|e| CodecError::Other(format!("json codec: {e}")))?;
@@ -329,6 +340,8 @@ mod tests {
             (data_type::float32(), "[1e39]".to_string()),
             (data_type::float64(), big_int),
             (data_type::float16(), "[70000]".to_string()),
+            (data_type::complex64(), "[[1e39,0]]".to_string()),
+            (data_type::complex128(), format!("[[0,1{}]]", "0".repeat(400))),
         ] {
             let err = codec
                 .decode(

@@ -4,6 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { strictParse } from "../codec.js";
 import { read, write, type Payload } from "../crosscheck.js";
 
 const CLI = path.resolve(
@@ -61,7 +62,12 @@ const PAYLOAD: Payload = {
 };
 
 test("write produces a document read reproduces the payload from", async () => {
-	const document = await write(PAYLOAD);
+	// Payload data keeps its JSON number sort via integersAsBigInt parsing,
+	// exactly as the CLI does (a JS number literal would be a float token).
+	const payload = strictParse(JSON.stringify(PAYLOAD), {
+		integersAsBigInt: true,
+	}) as Payload;
+	const document = await write(payload);
 	// Root group, one group per intermediate path, one metadata + chunk keys
 	// per array; the json codec makes chunks real JSON arrays.
 	assert.ok("zarr.json" in document);

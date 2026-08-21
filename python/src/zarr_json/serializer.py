@@ -112,6 +112,41 @@ def _check_finite(value: Any, scalar: Any, native: np.dtype[Any]) -> None:
         )
 
 
+def encode_chunk(nd: Any, zdtype: Any) -> bytes:
+    """Encode a native array as canonical JSON chunk bytes (SPEC 9.1).
+
+    The synchronous core of the codec; also used by the crosscheck harness so
+    that harness conversions are definitionally the codec's conversions.
+    """
+    nd = np.asarray(nd)
+    flat = [zdtype.to_json_scalar(v, zarr_format=3) for v in nd.ravel()]
+    return canonical_dumps(_nest(flat, tuple(nd.shape))).encode("utf-8")
+
+
+def decode_chunk(data: bytes, shape: tuple[int, ...], zdtype: Any) -> Any:
+    """Decode canonical JSON chunk bytes into a native array (SPEC 9.2):
+    strict parse, shape-driven nesting, strict scalar sorts, finite range.
+    """
+    # SPEC 9.2: chunk bytes are strict-parsed (no NaN/Infinity tokens, no
+    # float64 overflow literals).
+    nested = strict_loads(data)
+    flat = _flatten(nested, tuple(shape))
+    native = zdtype.to_native_dtype()
+    for v in flat:
+        _check_scalar_sort(v, native)
+    scalars = []
+    for v in flat:
+        try:
+            scalar = zdtype.from_json_scalar(v, zarr_format=3)
+        except OverflowError as exc:  # e.g. a 400-digit integer token -> float
+            raise ValueError(
+                f"json codec: {native} value {v!r} is out of range: {exc}"
+            ) from exc
+        _check_finite(v, scalar, native)
+        scalars.append(scalar)
+    return np.asarray(scalars, dtype=native).reshape(tuple(shape))
+
+
 @dataclass(frozen=True)
 class JsonSerializer(ArrayBytesCodec):
     """Array->bytes codec encoding chunks as canonical UTF-8 JSON arrays."""
@@ -135,35 +170,14 @@ class JsonSerializer(ArrayBytesCodec):
     async def _encode_single(
         self, chunk_array: NDBuffer, chunk_spec: ArraySpec
     ) -> Buffer:
-        zdtype = chunk_spec.dtype
-        nd = chunk_array.as_ndarray_like()
-        flat = [zdtype.to_json_scalar(v, zarr_format=3) for v in nd.ravel()]
-        text = canonical_dumps(_nest(flat, tuple(nd.shape)))
-        return chunk_spec.prototype.buffer.from_bytes(text.encode("utf-8"))
+        data = encode_chunk(chunk_array.as_ndarray_like(), chunk_spec.dtype)
+        return chunk_spec.prototype.buffer.from_bytes(data)
 
     async def _decode_single(
         self, chunk_bytes: Buffer, chunk_spec: ArraySpec
     ) -> NDBuffer:
-        zdtype = chunk_spec.dtype
-        # SPEC 9.2: chunk bytes are strict-parsed (no NaN/Infinity tokens,
-        # no float64 overflow literals).
-        nested = strict_loads(chunk_bytes.to_bytes())
-        flat = _flatten(nested, tuple(chunk_spec.shape))
-        native = zdtype.to_native_dtype()
-        for v in flat:
-            _check_scalar_sort(v, native)
-        scalars = []
-        for v in flat:
-            try:
-                scalar = zdtype.from_json_scalar(v, zarr_format=3)
-            except OverflowError as exc:  # e.g. a 400-digit integer token -> float
-                raise ValueError(
-                    f"json codec: {native} value {v!r} is out of range: {exc}"
-                ) from exc
-            _check_finite(v, scalar, native)
-            scalars.append(scalar)
-        arr = np.asarray(scalars, dtype=zdtype.to_native_dtype()).reshape(
-            chunk_spec.shape
+        arr = decode_chunk(
+            chunk_bytes.to_bytes(), tuple(chunk_spec.shape), chunk_spec.dtype
         )
         return chunk_spec.prototype.nd_buffer.from_ndarray_like(arr)
 

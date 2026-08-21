@@ -93,12 +93,16 @@ def _run(cmd: list[str], mode: str, payload: dict) -> dict:
     return json.loads(proc.stdout)
 
 
-@pytest.mark.parametrize("writer", sorted(HARNESSES))
-@pytest.mark.parametrize("reader", sorted(HARNESSES))
-def test_writer_reader_matrix(writer, reader):
+def _require_all_harnesses() -> None:
     if len(HARNESSES) < 3:
         missing = {"python", "typescript", "rust"} - set(HARNESSES)
         _unavailable(f"crosscheck harnesses unavailable: {sorted(missing)}")
+
+
+@pytest.mark.parametrize("writer", sorted(HARNESSES))
+@pytest.mark.parametrize("reader", sorted(HARNESSES))
+def test_writer_reader_matrix(writer, reader):
+    _require_all_harnesses()
     document = _run(HARNESSES[writer], "write", PAYLOAD)
     result = _run(HARNESSES[reader], "read", document)
     assert result == PAYLOAD, f"{writer}->{reader} mismatch"
@@ -107,9 +111,7 @@ def test_writer_reader_matrix(writer, reader):
 def test_all_implementations_read_the_ome_zarr_example():
     """zarr-python, zarrita, and zarrs all open the shipped OME-Zarr 0.5
     example and read identical values from it."""
-    if len(HARNESSES) < 3:
-        missing = {"python", "typescript", "rust"} - set(HARNESSES)
-        _unavailable(f"crosscheck harnesses unavailable: {sorted(missing)}")
+    _require_all_harnesses()
     example = REPO / "examples" / "valid" / "ome_zarr_0.5_image.json"
     document = json.loads(example.read_text())
     results = {
@@ -133,12 +135,6 @@ TRACE = {
 }
 
 
-def _require_all_harnesses() -> None:
-    if len(HARNESSES) < 3:
-        missing = {"python", "typescript", "rust"} - set(HARNESSES)
-        _unavailable(f"crosscheck harnesses unavailable: {sorted(missing)}")
-
-
 def test_operation_trace_writer_reader_matrix():
     """Every implementation can resume a trace from every emitted store."""
     _require_all_harnesses()
@@ -159,15 +155,19 @@ def _one_dimensional_trace(draw):
     """A compact stateful trace that frequently crosses chunk boundaries."""
     length = draw(st.integers(1, 10))
     chunks = draw(st.integers(1, 6))
-    dtype = draw(st.sampled_from(["bool", "uint8", "int32"]))
-    scalar = (
-        st.booleans()
-        if dtype == "bool"
-        else st.integers(0, 255)
-        if dtype == "uint8"
-        else st.integers(-(2**31), 2**31 - 1)
-    )
-    model = [False if dtype == "bool" else 0 for _ in range(length)]
+    dtype = draw(st.sampled_from(["bool", "uint8", "int32", "int64", "float64"]))
+    scalar = {
+        "bool": st.booleans(),
+        "uint8": st.integers(0, 255),
+        "int32": st.integers(-(2**31), 2**31 - 1),
+        "int64": st.integers(-(2**63), 2**63 - 1),
+        # Half-integers: exactly representable and canonical text is identical
+        # in all three languages ("NaN" etc. strings are covered by the fixed
+        # vectors).
+        "float64": st.integers(-(2**20), 2**20).map(lambda n: n + 0.5),
+    }[dtype]
+    zero = {"bool": False, "float64": 0.0}.get(dtype, 0)
+    model = [zero for _ in range(length)]
     writes = []
     for _ in range(2):
         start = draw(st.integers(0, length - 1))
@@ -213,3 +213,59 @@ def test_generated_operation_traces(case):
             assert [item["data"] for item in result["reads"]] == expected, (
                 f"{writer}->{reader} generated trace mismatch for {case!r}"
             )
+
+
+INVALID_TRACES = {
+    "out_of_bounds_region": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [3, 4], "chunks": [2, 2]},
+        {"op": "read_region", "path": "a", "origin": [2, 2], "shape": [3, 4]}]},
+    "zero_extent_region": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [3], "chunks": [2]},
+        {"op": "read_region", "path": "a", "origin": [0], "shape": [0]}]},
+    "rank_mismatch": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [3], "chunks": [2]},
+        {"op": "read_region", "path": "a", "origin": [0, 0], "shape": [1, 1]}]},
+    "float_token_for_integer_dtype": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2], "chunks": [2]},
+        {"op": "write_region", "path": "a", "origin": [0], "shape": [2], "data": [1.0, 2]}]},
+    "bool_for_integer_dtype": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "int32", "shape": [1], "chunks": [1]},
+        {"op": "write_region", "path": "a", "origin": [0], "shape": [1], "data": [True]}]},
+    "float32_overflow": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "float32", "shape": [1], "chunks": [1]},
+        {"op": "write_region", "path": "a", "origin": [0], "shape": [1], "data": [1e39]}]},
+    "ragged_data": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2, 2], "chunks": [2, 2]},
+        {"op": "write_region", "path": "a", "origin": [0, 0], "shape": [2, 2],
+         "data": [[1, 2, 3], [4]]}]},
+    "invalid_initial_document": {"document": {"bad/c/0": 123}, "operations": []},
+    "missing_operations": {"document": {}},
+    "create_under_array": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2], "chunks": [2]},
+        {"op": "create_array", "path": "a/b", "dtype": "uint8", "shape": [2], "chunks": [2]}]},
+    "create_existing_node": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2], "chunks": [2]},
+        {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2], "chunks": [2]}]},
+    "unsupported_dtype": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "no-such-dtype", "shape": [2], "chunks": [2]}]},
+    "unknown_op": {"operations": [
+        {"op": "resize", "path": "a", "shape": [4]}]},
+}
+
+
+@pytest.mark.parametrize("name", sorted(INVALID_TRACES))
+def test_invalid_traces_are_rejected_by_every_implementation(name):
+    """The trace input contract (DESIGN 6.3): a trace outside it is refused
+    by all three harnesses, never half-honored differently by each."""
+    _require_all_harnesses()
+    payload = INVALID_TRACES[name]
+    for impl, cmd in HARNESSES.items():
+        proc = subprocess.run(
+            [*cmd, "trace"],
+            input=json.dumps(payload).encode("utf-8"),
+            capture_output=True,
+            timeout=120,
+        )
+        assert proc.returncode != 0, (
+            f"{impl} accepted invalid trace {name!r}: {proc.stdout[:200]!r}"
+        )

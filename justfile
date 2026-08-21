@@ -41,17 +41,16 @@ build-harnesses: setup-python setup-typescript
 cross-conformance: build-harnesses
     cd python && ZARR_JSON_REQUIRE_HARNESSES=1 uv run pytest -q tests/test_conformance_property.py
 
-# Run the whole-array writer x reader matrix and OME fixture.
+# Run the whole-array writer x reader matrix and OME fixture (every
+# crosscheck test that is not a trace test, so new tests are never skipped).
 cross-arrays: build-harnesses
     cd python && ZARR_JSON_REQUIRE_HARNESSES=1 uv run pytest -q \
-      tests/test_crosscheck.py::test_writer_reader_matrix \
-      tests/test_crosscheck.py::test_all_implementations_read_the_ome_zarr_example
+      tests/test_crosscheck.py -k "not trace"
 
-# Run fixed and generated serialized operation traces.
+# Run fixed, generated, and must-reject serialized operation traces.
 cross-traces: build-harnesses
     cd python && ZARR_JSON_REQUIRE_HARNESSES=1 uv run pytest -q --hypothesis-show-statistics \
-      tests/test_crosscheck.py::test_operation_trace_writer_reader_matrix \
-      tests/test_crosscheck.py::test_generated_operation_traces
+      tests/test_crosscheck.py -k "trace"
 
 # Run all cross-implementation conformance phases.
 cross: cross-conformance cross-arrays cross-traces

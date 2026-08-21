@@ -212,14 +212,11 @@ dtype-driven decoding) interprets numbers by context, not token sort.
 ## 6. Strict parsing
 
 *Strict-parse* is a JSON-text parser and may return **any** JSON value. It is
-not the same operation as reading a zarr-json document. Reading a document
-first strict-parses the text and then requires the result to be an object;
-embedded parses deliberately accept the value type required by their caller
-(an object for metadata bytes, an array for the byte-key inlining check, and
-any shape-appropriate JSON value for chunk bytes). Implementations SHOULD
-expose or internally maintain separate `strict_parse_json` and
-`parse_document` operations so the document-only top-level check cannot be
-accidentally applied to embedded arrays or scalars.
+not the same operation as reading a zarr-json document: reading a document
+first strict-parses the text and then requires the result to be an object,
+while embedded parses accept the value type their caller requires (an object
+for metadata bytes, an array for the byte-key inlining check, and any
+shape-appropriate JSON value for chunk bytes).
 
 Reading a document, and every embedded parse this specification calls for
 (metadata bytes in §7.2, chunk bytes in §9.2), MUST use the following
@@ -277,8 +274,8 @@ if parsed succeeded AND parsed is array
 return canonical_base64(bytes)
 ```
 
-Calling the document parser here is incorrect: its object-only top-level
-check would make every array miss the inlining branch.
+(The object-only top-level check of document reading does not apply here:
+the inlining branch must accept arrays.)
 
 The inlining rule is lossless by construction: whatever the bytes were,
 decoding the stored value reproduces them exactly.
