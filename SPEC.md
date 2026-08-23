@@ -323,6 +323,13 @@ RECOMMENDED default for readers.
   yields the host store interface's key-not-found condition.
 - `delete` of any key, present or not, is permitted; deleting the last
   key leaves the valid empty document.
+- Stores SHOULD offer a `set_json(key, value)` convenience defined as
+  `set(key, canonical_serialization(value))`, restricted to the value type
+  R2 permits at the key (object at metadata keys, array at byte keys).
+  Because canonical bytes always satisfy the inlining check, the value is
+  guaranteed to land in the document as its inline JSON representation —
+  callers get the legible form without producing canonical text
+  themselves.
 
 For example, a lenient store constructed from
 `{"bad/c/0":1,"ok/c/0":"AAEC"}` MUST report the R2 issue for

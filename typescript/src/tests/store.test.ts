@@ -273,3 +273,25 @@ test("lenient mode treats invalid entries as absent until rewritten", async () =
 	assert.equal(await store.has("/bad/c/0"), true);
 	assert.deepEqual([...(await store.list())].sort(), ["bad/c/0", "ok/c/0"]);
 });
+
+test("setJson stores inline canonical values", async () => {
+	const backing = new MemoryBacking({});
+	const store = new ZarrJsonStore(backing);
+	await store.setJson("/zarr.json", { zarr_format: 3, node_type: "group", x: 1.0 });
+	await store.setJson("/a/c/0", [1.5, -0, 2, "NaN"]);
+	const doc = backing.load();
+	// Inline representations, canonicalized (1.0 -> 1, -0 -> 0).
+	assert.deepEqual(doc["zarr.json"], { zarr_format: 3, node_type: "group", x: 1 });
+	assert.deepEqual(doc["a/c/0"], [1.5, 0, 2, "NaN"]);
+	assert.equal(
+		new TextDecoder().decode(await store.get("/a/c/0")),
+		'[1.5,0,2,"NaN"]',
+	);
+});
+
+test("setJson rejects wrong shapes and non-canonicalizable values", async () => {
+	const store = new ZarrJsonStore(new MemoryBacking({}));
+	await assert.rejects(() => store.setJson("/zarr.json", [1, 2]), /takes a JSON object/);
+	await assert.rejects(() => store.setJson("/a/c/0", { x: 1 }), /takes a JSON array/);
+	await assert.rejects(() => store.setJson("/a/c/0", [Number.NaN]), /non-finite/);
+});

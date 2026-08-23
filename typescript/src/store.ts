@@ -10,8 +10,15 @@
 
 import type { AbsolutePath, AsyncMutable, RangeQuery } from "@zarrita/storage";
 import { toNullPrototype, type Backing, type Document } from "./backing.js";
-import { decodeValue, encodeValue } from "./codec.js";
+import {
+	canonicalStringify,
+	decodeValue,
+	encodeValue,
+	isMetadataKey,
+} from "./codec.js";
 import { checkKey, validate, type ValidationIssue } from "./validator.js";
+
+const UTF8_ENCODER = new TextEncoder();
 
 export interface ZarrJsonStoreOptions {
 	/** Refuse set/delete when true. Default false. */
@@ -125,6 +132,34 @@ export class ZarrJsonStore implements AsyncMutable {
 	}
 
 	async set(key: AbsolutePath, value: Uint8Array): Promise<void> {
+		return this.#setBytes(key, value);
+	}
+
+	/**
+	 * Store a JSON value at `key`, canonicalized first. Equivalent to
+	 * `set(key, utf8(canonicalStringify(value)))` — the value is guaranteed
+	 * to land in the document as its inline JSON representation, so callers
+	 * need not produce canonical text themselves. The value must fit the
+	 * key's representation (R2): a JSON object at a metadata key, a JSON
+	 * array at a byte key.
+	 */
+	async setJson(key: AbsolutePath, value: unknown): Promise<void> {
+		const docKey = this.#docKey(key);
+		if (isMetadataKey(docKey)) {
+			if (typeof value !== "object" || value === null || Array.isArray(value)) {
+				throw new Error(
+					`setJson: metadata key ${JSON.stringify(docKey)} takes a JSON object`,
+				);
+			}
+		} else if (!Array.isArray(value)) {
+			throw new Error(
+				`setJson: byte key ${JSON.stringify(docKey)} takes a JSON array`,
+			);
+		}
+		return this.#setBytes(key, UTF8_ENCODER.encode(canonicalStringify(value)));
+	}
+
+	async #setBytes(key: AbsolutePath, value: Uint8Array): Promise<void> {
 		this.#checkWritable();
 		// The Zarr v3 spec defines well-formed store keys; rejecting the rest
 		// here keeps every document this store produces valid (R1). The check

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import warnings
 from collections.abc import AsyncIterator, Iterable
+from typing import Any
 
 from zarr.abc.store import (
     ByteRequest,
@@ -16,7 +17,7 @@ from zarr.abc.store import (
 from zarr.core.buffer import Buffer, BufferPrototype
 
 from zarr_json.backing import Backing
-from zarr_json.codec import decode_value, encode_value
+from zarr_json.codec import canonical_dumps, decode_value, encode_value, is_metadata_key
 from zarr_json.validator import Strictness, check_key, validate
 
 
@@ -126,13 +127,35 @@ class ZarrJsonStore(Store):
         return results
 
     async def set(self, key: str, value: Buffer) -> None:
+        await self._set_bytes(key, value.to_bytes())
+
+    async def set_json(self, key: str, value: Any) -> None:
+        """Store a JSON value at ``key``, canonicalized first.
+
+        Equivalent to ``set(key, canonical_dumps(value).encode())`` — the
+        value is guaranteed to land in the document as its inline JSON
+        representation (the canonical bytes always pass the lossless-inlining
+        check), so callers need not produce canonical text themselves. The
+        value must fit the key's representation (R2): a JSON object at a
+        metadata key, a JSON array at a byte key.
+        """
+        if is_metadata_key(key):
+            if not isinstance(value, dict):
+                raise ValueError(
+                    f"set_json: metadata key {key!r} takes a JSON object"
+                )
+        elif not isinstance(value, list):
+            raise ValueError(f"set_json: byte key {key!r} takes a JSON array")
+        await self._set_bytes(key, canonical_dumps(value).encode("utf-8"))
+
+    async def _set_bytes(self, key: str, data: bytes) -> None:
         self._check_writable()
         # The Zarr v3 spec defines well-formed store keys; rejecting the rest
         # here keeps every document this store produces valid (R1).
         issue = check_key(key)
         if issue is not None:
             raise ValueError(f"invalid store key {key!r}: {issue.message}")
-        encoded = encode_value(key, value.to_bytes())
+        encoded = encode_value(key, data)
         async with self._lock:
             # A failed set MUST leave the document unchanged (SPEC 8.2): if
             # persist raises, restore the previous entry before re-raising.

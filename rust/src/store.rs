@@ -104,6 +104,35 @@ impl ZarrJsonStore {
         }
     }
 
+    /// Store a JSON value at `key`, canonicalized first.
+    ///
+    /// Equivalent to `set(key, canonical_to_string(value).into_bytes())` —
+    /// the value is guaranteed to land in the document as its inline JSON
+    /// representation (canonical bytes always pass the lossless-inlining
+    /// check), so callers need not produce canonical text themselves. The
+    /// value must fit the key's representation (R2): a JSON object at a
+    /// metadata key, a JSON array at a byte key.
+    ///
+    /// # Errors
+    /// Returns an error for malformed keys, wrong value shapes, or when the
+    /// store rejects the write.
+    pub fn set_json(&self, key: &StoreKey, value: &Value) -> Result<(), StorageError> {
+        if crate::is_metadata_key(key.as_str()) {
+            if !value.is_object() {
+                return Err(StorageError::Other(format!(
+                    "set_json: metadata key {:?} takes a JSON object",
+                    key.as_str()
+                )));
+            }
+        } else if !value.is_array() {
+            return Err(StorageError::Other(format!(
+                "set_json: byte key {:?} takes a JSON array",
+                key.as_str()
+            )));
+        }
+        self.set(key, canonical_to_string(value).into_bytes().into())
+    }
+
     /// Reject writes to keys that fail the validator's R1 rule.
     ///
     /// zarrs's `StoreKey` is laxer than R1 (it accepts `a/./b` and `..`), so
@@ -500,6 +529,38 @@ mod tests {
         let writes: OffsetBytesIterator = Box::new(vec![(1u64, Bytes::from_static(&[7]))].into_iter());
         store.set_partial_many(&key("bad/c/0"), writes).unwrap();
         assert_eq!(store.get(&key("bad/c/0")).unwrap().unwrap().as_ref(), &[0, 7]);
+    }
+
+    #[test]
+    fn set_json_stores_inline_canonical_values() {
+        let store = ZarrJsonStore::new();
+        store
+            .set_json(&key("zarr.json"), &json!({"zarr_format": 3, "node_type": "group", "x": 1.0}))
+            .unwrap();
+        store
+            .set_json(&key("a/c/0"), &json!([1.5, -0.0, 2, "NaN"]))
+            .unwrap();
+        let document = store.document();
+        // Inline representations; decoded bytes are canonical (1.0 -> 1, -0.0 -> 0).
+        assert!(document["zarr.json"].is_object());
+        assert!(document["a/c/0"].is_array());
+        assert_eq!(
+            store.get(&key("a/c/0")).unwrap().unwrap().as_ref(),
+            b"[1.5,0,2,\"NaN\"]"
+        );
+        assert_eq!(
+            store.get(&key("zarr.json")).unwrap().unwrap().as_ref(),
+            br#"{"zarr_format":3,"node_type":"group","x":1}"#
+        );
+    }
+
+    #[test]
+    fn set_json_rejects_wrong_shape_for_key_class() {
+        let store = ZarrJsonStore::new();
+        let err = store.set_json(&key("zarr.json"), &json!([1, 2])).unwrap_err();
+        assert!(err.to_string().contains("takes a JSON object"), "{err}");
+        let err = store.set_json(&key("a/c/0"), &json!({"x": 1})).unwrap_err();
+        assert!(err.to_string().contains("takes a JSON array"), "{err}");
     }
 
     #[test]

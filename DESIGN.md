@@ -238,6 +238,10 @@ All three share one internal shape:
   R1-malformed keys on `set`, and runs the validator on construction.
   Partial reads apply byte ranges to the decoded bytes; Rust's partial
   writes are a read-modify-write under a single lock acquisition. A
+  `set_json` convenience (Python/TS `setJson`/Rust alike) canonicalizes a
+  JSON value and stores it through the normal set path, guaranteeing the
+  inline representation — the canonical form as a service the store
+  provides rather than a burden callers carry. A
   failed `set` or `delete` (e.g. the backing's persist throws) restores
   the previous entry, so the document is never left half-mutated. In
   lenient mode, invalid entries behave as absent — `get` is not-found,

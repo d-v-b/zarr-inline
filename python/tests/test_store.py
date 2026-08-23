@@ -303,3 +303,39 @@ async def test_lenient_mode_treats_invalid_entries_as_absent_until_rewritten():
     await store.set("bad/c/0", proto.buffer.from_bytes(b"\x07"))
     assert await store.exists("bad/c/0")
     assert sorted([k async for k in store.list()]) == ["bad/c/0", "ok/c/0"]
+
+
+async def test_set_json_stores_inline_canonical_values():
+    from zarr_json import MemoryBacking, ZarrJsonStore
+
+    backing = MemoryBacking({})
+    store = ZarrJsonStore(backing)
+    await store.set_json("zarr.json", {"zarr_format": 3, "node_type": "group", "x": 1.0})
+    await store.set_json("a/c/0", [1.5, float("-0.0"), 2, "NaN"])
+    doc = backing.load()
+    # Inline representations, canonicalized (1.0 -> 1, -0.0 -> 0).
+    assert doc["zarr.json"] == {"zarr_format": 3, "node_type": "group", "x": 1}
+    assert doc["a/c/0"] == [1.5, 0, 2, "NaN"]
+    # Equivalent to set(key, canonical bytes): decoded bytes are canonical.
+    from zarr.core.buffer import default_buffer_prototype
+
+    proto = default_buffer_prototype()
+    assert (await store.get("a/c/0", proto)).to_bytes() == b'[1.5,0,2,"NaN"]'
+
+
+async def test_set_json_rejects_wrong_shape_for_key_class():
+    from zarr_json import MemoryBacking, ZarrJsonStore
+
+    store = ZarrJsonStore(MemoryBacking({}))
+    with pytest.raises(ValueError, match="takes a JSON object"):
+        await store.set_json("zarr.json", [1, 2])
+    with pytest.raises(ValueError, match="takes a JSON array"):
+        await store.set_json("a/c/0", {"not": "an array"})
+
+
+async def test_set_json_rejects_non_canonicalizable_values():
+    from zarr_json import MemoryBacking, ZarrJsonStore
+
+    store = ZarrJsonStore(MemoryBacking({}))
+    with pytest.raises(ValueError, match="non-finite"):
+        await store.set_json("a/c/0", [float("nan")])
