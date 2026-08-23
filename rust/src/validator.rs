@@ -78,11 +78,11 @@ fn check_value_type(key: &str, value: &Value) -> Option<ValidationIssue> {
                 message: "metadata key must map to a JSON object".to_string(),
             });
         }
-    } else if !value.is_string() && !value.is_array() {
+    } else if !value.is_string() && !value.is_array() && !value.is_object() {
         return Some(ValidationIssue {
             rule: "R2",
             key: key.to_string(),
-            message: "byte key must map to a base64 string or JSON array".to_string(),
+            message: "byte key must map to a base64 string or a JSON array or object".to_string(),
         });
     }
     None
@@ -158,11 +158,16 @@ mod tests {
 
     #[test]
     fn byte_key_with_invalid_value_reports_r2() {
-        for value in [json!({"a/c/0": {"not": "a string"}}), json!({"a/c/0": 3})] {
+        for value in [json!({"a/c/0": 3}), json!({"a/c/0": true}), json!({"a/c/0": null})] {
             let issues = validate(&doc(value));
             assert_eq!(issues.len(), 1);
             assert_eq!(issues[0].rule, "R2");
         }
+    }
+
+    #[test]
+    fn byte_key_with_inline_object_is_valid() {
+        assert!(validate(&doc(json!({"a/c/0": {"an": "inline object"}}))).is_empty());
     }
 
     #[test]

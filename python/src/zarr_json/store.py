@@ -137,15 +137,17 @@ class ZarrJsonStore(Store):
         representation (the canonical bytes always pass the lossless-inlining
         check), so callers need not produce canonical text themselves. The
         value must fit the key's representation (R2): a JSON object at a
-        metadata key, a JSON array at a byte key.
+        metadata key, a JSON array or object at a byte key.
         """
         if is_metadata_key(key):
             if not isinstance(value, dict):
                 raise ValueError(
                     f"set_json: metadata key {key!r} takes a JSON object"
                 )
-        elif not isinstance(value, list):
-            raise ValueError(f"set_json: byte key {key!r} takes a JSON array")
+        elif not isinstance(value, (list, dict)):
+            raise ValueError(
+                f"set_json: byte key {key!r} takes a JSON array or object"
+            )
         await self._set_bytes(key, canonical_dumps(value).encode("utf-8"))
 
     async def _set_bytes(self, key: str, data: bytes) -> None:

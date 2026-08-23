@@ -54,8 +54,28 @@ test("decode metadata value rejects non-object", () => {
 	assert.throws(() => decodeValue("zarr.json", null), /JSON object/);
 });
 
-test("decode byte value rejects non-string non-array", () => {
-	assert.throws(() => decodeValue("a/c/0", 123), /base64 string or JSON array/);
+test("decode byte value rejects scalar values", () => {
+	assert.throws(() => decodeValue("a/c/0", 123), /base64 string or a JSON array or object/);
+	assert.throws(() => decodeValue("a/c/0", true), /base64 string or a JSON array or object/);
+});
+
+test("decode byte value serializes inline objects canonically", () => {
+	assert.deepEqual(
+		decodeValue("a/c/0", { a: 1, b: [2.5, "x"] }),
+		new TextEncoder().encode('{"a":1,"b":[2.5,"x"]}'),
+	);
+});
+
+test("encode byte value inlines canonical objects, never strings", () => {
+	assert.deepEqual(
+		encodeValue("a/c/0", new TextEncoder().encode('{"a":1}')),
+		{ a: 1 },
+	);
+	// Non-canonical object bytes stay base64.
+	const spaced = new TextEncoder().encode('{"a": 1}');
+	assert.equal(typeof encodeValue("a/c/0", spaced), "string");
+	// A canonical top-level string is still bytes (the base64 channel).
+	assert.equal(typeof encodeValue("a/c/0", new TextEncoder().encode('"hi"')), "string");
 });
 
 test("decode byte value rejects invalid base64", () => {

@@ -124,9 +124,9 @@ impl ZarrJsonStore {
                     key.as_str()
                 )));
             }
-        } else if !value.is_array() {
+        } else if !value.is_array() && !value.is_object() {
             return Err(StorageError::Other(format!(
-                "set_json: byte key {:?} takes a JSON array",
+                "set_json: byte key {:?} takes a JSON array or object",
                 key.as_str()
             )));
         }
@@ -559,8 +559,8 @@ mod tests {
         let store = ZarrJsonStore::new();
         let err = store.set_json(&key("zarr.json"), &json!([1, 2])).unwrap_err();
         assert!(err.to_string().contains("takes a JSON object"), "{err}");
-        let err = store.set_json(&key("a/c/0"), &json!({"x": 1})).unwrap_err();
-        assert!(err.to_string().contains("takes a JSON array"), "{err}");
+        let err = store.set_json(&key("a/c/0"), &json!("raw")).unwrap_err();
+        assert!(err.to_string().contains("takes a JSON array or object"), "{err}");
     }
 
     #[test]

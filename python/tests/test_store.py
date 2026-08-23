@@ -329,8 +329,8 @@ async def test_set_json_rejects_wrong_shape_for_key_class():
     store = ZarrJsonStore(MemoryBacking({}))
     with pytest.raises(ValueError, match="takes a JSON object"):
         await store.set_json("zarr.json", [1, 2])
-    with pytest.raises(ValueError, match="takes a JSON array"):
-        await store.set_json("a/c/0", {"not": "an array"})
+    with pytest.raises(ValueError, match="takes a JSON array or object"):
+        await store.set_json("a/c/0", "not json-representable")
 
 
 async def test_set_json_rejects_non_canonicalizable_values():

@@ -57,11 +57,15 @@ function checkValueType(key: string, value: unknown): ValidationIssue | undefine
 		if (typeof value !== "object" || value === null || Array.isArray(value)) {
 			return { rule: "R2", key, message: "metadata key must map to a JSON object" };
 		}
-	} else if (typeof value !== "string" && !Array.isArray(value)) {
+	} else if (
+		typeof value !== "string" &&
+		!Array.isArray(value) &&
+		(typeof value !== "object" || value === null)
+	) {
 		return {
 			rule: "R2",
 			key,
-			message: "byte key must map to a base64 string or JSON array",
+			message: "byte key must map to a base64 string or a JSON array or object",
 		};
 	}
 	return undefined;

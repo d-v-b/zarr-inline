@@ -55,8 +55,8 @@ the vocabulary of tagged-union encodings:
 | sectioned `{"metadata": {…}, "data": {…}}` | position | document stops mirroring the key space |
 
 **Structural discrimination** is adopted: for a given key class, the JSON
-type of the value determines its meaning — object = metadata, string =
-bytes, array = data values. For every plain Zarr store this yields the
+type of the value determines its meaning — string = bytes, array/object =
+inline JSON (at metadata keys, an object is required). For every plain Zarr store this yields the
 same document as the key convention would (metadata documents are
 objects, chunks are strings), but it makes the container total over byte
 stores, keeps Zarr-naming knowledge out of the container except for the
@@ -134,9 +134,12 @@ errors, never coercions.
 
 The store API is `str → bytes`; `set` receives bare bytes and cannot be
 told whether they are "really" JSON. The store decides from the bytes
-alone: it inlines a byte value as an array **iff** the bytes strict-parse
-to a JSON array whose canonical re-serialization is byte-identical to the
-input. This is lossless regardless of what the bytes actually are — even
+alone, by one rule: **anything that losslessly round-trips as byte-stable
+(canonical) JSON of a self-describing type — array or object — is written
+inline as JSON; everything else is base64.** A top-level JSON string can
+never inline: the string type is the base64 channel, and that single
+reservation is what keeps every value decodable. Scalars (number,
+boolean, null) remain reserved as R2's forward-compatibility space. This is lossless regardless of what the bytes actually are — even
 a compressed chunk that coincidentally passed the check would round-trip
 byte-exactly — so the store never consults metadata and never guesses
 wrong in a way that matters. The `json` codec emits canonical output, so

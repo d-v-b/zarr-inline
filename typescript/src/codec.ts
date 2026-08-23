@@ -328,12 +328,13 @@ export function decodeValue(key: string, value: unknown): Uint8Array {
 		}
 		return UTF8_ENCODER.encode(canonicalStringify(value));
 	}
-	if (Array.isArray(value)) {
+	if (Array.isArray(value) || isPlainObject(value)) {
 		return UTF8_ENCODER.encode(canonicalStringify(value));
 	}
 	if (typeof value !== "string") {
 		throw new Error(
-			`byte key ${JSON.stringify(key)} must map to a base64 string or JSON array`,
+			`byte key ${JSON.stringify(key)} must map to a base64 string or a ` +
+				"JSON array or object",
 		);
 	}
 	return base64Decode(value);
@@ -358,22 +359,28 @@ export function encodeValue(key: string, data: Uint8Array): unknown {
 		}
 		return parsed;
 	}
-	const inlined = tryInlineArray(data);
+	const inlined = tryInlineJson(data);
 	if (inlined !== undefined) {
 		return inlined;
 	}
 	return base64Encode(data);
 }
 
-/** Return the parsed JSON array if inlining `data` is lossless, else undefined. */
-function tryInlineArray(data: Uint8Array): unknown[] | undefined {
+/**
+ * Return the parsed array/object if inlining `data` is lossless, else
+ * undefined. Anything that losslessly round-trips as byte-stable
+ * (canonical) JSON of a self-describing type — array or object — is
+ * written inline; a top-level JSON *string* can never be inlined (the
+ * string type is the base64 channel).
+ */
+function tryInlineJson(data: Uint8Array): unknown[] | Record<string, unknown> | undefined {
 	try {
 		// strictParse rejects NaN/Infinity tokens and float64 overflow, and
 		// parses big integer literals as bigint — so bytes like
 		// "[9007199254740993]" inline losslessly instead of falling back to
 		// base64, while "[NaN]" and "[1e400]" fall through to base64.
 		const parsed: unknown = strictParse(UTF8_DECODER.decode(data));
-		if (!Array.isArray(parsed)) {
+		if (!Array.isArray(parsed) && !isPlainObject(parsed)) {
 			return undefined;
 		}
 		// canonicalStringify must stay inside the try: bytes that parse as

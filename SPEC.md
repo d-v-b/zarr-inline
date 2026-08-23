@@ -16,11 +16,11 @@ NOT RECOMMENDED are to be interpreted as described in RFC 2119.
 A Zarr v3 store is an association of *keys* to *byte strings*. zarr-json
 encodes such a store as one JSON object whose member names are the store
 keys and whose values carry the bytes in one of three forms: metadata
-documents as inline JSON objects, opaque bytes as base64 strings, and —
-for arrays encoded with the `json` codec (§9) — chunk data as inline JSON
-arrays of the decoded values. For a given key class, the value's JSON type
-determines its meaning: object = metadata, string = bytes, array = data
-values.
+documents as inline JSON objects, opaque bytes as base64 strings, and any
+payload that IS byte-stable canonical JSON — such as chunks encoded with
+the `json` codec (§9) — as an inline JSON array or object. For a given key
+class, the value's JSON type determines its meaning: string = bytes,
+array/object = inline JSON.
 
 ```json
 {
@@ -40,7 +40,8 @@ values.
   intended to hold Zarr v3 store keys (but see §3.3).
 - **metadata key** — a key that names a Zarr v3 metadata document (§3.2).
 - **byte key** — any key that is not a metadata key.
-- **inline array** — a JSON array appearing as the value of a byte key.
+- **inline value** — a JSON array or object appearing as the value of a
+  byte key.
 - **canonical serialization** — the byte-exact JSON text form defined in §5.
 - **decoded bytes** — the byte string a key's value denotes (§7.1).
 - **strict-parse** — the parsing discipline defined in §6.
@@ -79,13 +80,14 @@ hierarchy would produce.
 By key class:
 
 - The value of a **metadata key** MUST be a JSON object.
-- The value of a **byte key** MUST be either a JSON string (base64-encoded
-  bytes, §4.1) or a JSON array (inline data values, §4.2).
+- The value of a **byte key** MUST be a JSON string (base64-encoded
+  bytes, §4.1), or a JSON array or object (inline values, §4.2).
 
-Any other value type is a validity issue (§8). Future revisions of this
-specification may assign meaning to currently-invalid value types; R2 is
-the format's extension point, and lenient readers (§8) therefore skip,
-rather than fail on, values they do not recognize.
+Any other value type (a number, boolean, or null at any key; a string or
+array at a metadata key) is a validity issue (§8). Future revisions of
+this specification may assign meaning to currently-invalid value types;
+R2 is the format's extension point, and lenient readers (§8) therefore
+skip, rather than fail on, values they do not recognize.
 
 ### 4.1 Byte strings (base64)
 
@@ -105,14 +107,19 @@ denotes the single byte `0x00`).
 A string value that does not meet the grammar is a *decode error* for
 that key (§8.3); it is not a validity issue.
 
-### 4.2 Inline arrays
+### 4.2 Inline values
 
-A byte-key array value denotes the UTF-8 bytes of its canonical
-serialization (§5). Any JSON array whose canonical serialization is
+A byte-key array or object value denotes the UTF-8 bytes of its canonical
+serialization (§5). Any array or object whose canonical serialization is
 defined is permitted; in practice inline arrays are produced by the
-`json` codec (§9) and hold chunk data. An array value whose canonical
-serialization fails (e.g. it contains a lone surrogate) is a *decode
-error* for that key.
+`json` codec (§9) and hold chunk data, and inline objects arise from
+payloads that are themselves canonical JSON documents. A value whose
+canonical serialization fails (e.g. it contains a lone surrogate) is a
+*decode error* for that key.
+
+A top-level JSON **string** can never be an inline value: the string type
+is the base64 channel (§4.1), and that reservation is what keeps every
+value decodable.
 
 ## 5. Canonical JSON serialization
 
@@ -246,7 +253,7 @@ document SHOULD NOT begin with a byte-order mark; readers MAY reject one.
 
 - metadata key → the canonical serialization (§5) of its object, as UTF-8.
 - byte key, string value → the base64-decoded bytes (§4.1).
-- byte key, array value → the canonical serialization of the array, as
+- byte key, array or object value → its canonical serialization, as
   UTF-8.
 
 Failures (bad base64, canonicalization errors) are *decode errors*,
@@ -259,16 +266,18 @@ Writers (e.g. a store's `set`) MUST proceed:
 - metadata key: strict-parse the bytes; the result MUST be a JSON object;
   store it inline. Anything else is a *codec error*, and the document
   MUST be left unchanged.
-- byte key: if the bytes strict-parse to a JSON **array** whose canonical
-  serialization is byte-identical to the input, store that array
+- byte key: anything that losslessly round-trips as byte-stable
+  (canonical) JSON of a self-describing type is written inline — if the
+  bytes strict-parse to a JSON **array or object** whose canonical
+  serialization is byte-identical to the input, store that value
   (*lossless inlining*); otherwise store the canonical base64 of the
-  bytes.
+  bytes. (A top-level string never inlines; see §4.2.)
 
 In pseudocode, the byte-key branch is:
 
 ```text
 parsed = try strict_parse_json(bytes)  # accepts any JSON top-level type
-if parsed succeeded AND parsed is array
+if parsed succeeded AND parsed is array or object
                     AND utf8(canonical_serialize(parsed)) == bytes:
     return parsed
 return canonical_base64(bytes)
@@ -325,7 +334,8 @@ RECOMMENDED default for readers.
   key leaves the valid empty document.
 - Stores SHOULD offer a `set_json(key, value)` convenience defined as
   `set(key, canonical_serialization(value))`, restricted to the value type
-  R2 permits at the key (object at metadata keys, array at byte keys).
+  R2 permits at the key (object at metadata keys, array or object at
+  byte keys).
   Because canonical bytes always satisfy the inlining check, the value is
   guaranteed to land in the document as its inline JSON representation —
   callers get the legible form without producing canonical text
@@ -424,8 +434,8 @@ Element parsing MUST be strict, by the number sorts of §5.1:
   with sharding is legal per Zarr v3 but produces illegible shards and is
   NOT RECOMMENDED.
 - A **rank-0** chunk encodes as its element's scalar JSON form alone
-  (not nested). When that form is not an array (every family except
-  complex), §7.2 stores the chunk base64-encoded; a rank-0 complex
+  (not nested). When that form is not an array or object (every family
+  except complex), §7.2 stores the chunk base64-encoded; a rank-0 complex
   chunk's `[re, im]` form is itself an array and is inlined.
 
 ### 9.4 Conformance vectors

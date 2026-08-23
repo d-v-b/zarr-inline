@@ -268,12 +268,12 @@ pub fn decode_value(key: &str, value: &Value) -> Result<Vec<u8>, ZarrJsonError> 
         return Ok(canonical_to_string(value).into_bytes());
     }
     match value {
-        Value::Array(_) => Ok(canonical_to_string(value).into_bytes()),
+        Value::Array(_) | Value::Object(_) => Ok(canonical_to_string(value).into_bytes()),
         Value::String(s) => BASE64_STANDARD_STRICT
             .decode(s)
             .map_err(|e| ZarrJsonError(format!("invalid base64 for byte key {key:?}: {e}"))),
         _ => Err(ZarrJsonError(format!(
-            "byte key {key:?} must map to a base64 string or JSON array"
+            "byte key {key:?} must map to a base64 string or a JSON array or object"
         ))),
     }
 }
@@ -295,18 +295,24 @@ pub fn encode_value(key: &str, data: &[u8]) -> Result<Value, ZarrJsonError> {
         }
         return Ok(parsed);
     }
-    if let Some(inlined) = try_inline_array(data) {
+    if let Some(inlined) = try_inline_json(data) {
         return Ok(inlined);
     }
     Ok(Value::String(BASE64_STANDARD_STRICT.encode(data)))
 }
 
 /// Return the parsed JSON array if inlining `data` is lossless, else None.
-fn try_inline_array(data: &[u8]) -> Option<Value> {
+/// Anything that losslessly round-trips as byte-stable (canonical) JSON of
+/// a self-describing type — array or object — is written inline; a
+/// top-level JSON *string* can never be inlined (the string type is the
+/// base64 channel, which keeps values decodable).
+fn try_inline_json(data: &[u8]) -> Option<Value> {
     // Not JSON, not UTF-8, NaN/Infinity tokens, or float64 overflow ->
     // parse error -> base64 fallback.
     let parsed: Value = strict_from_slice(data).ok()?;
-    if parsed.is_array() && canonical_to_string(&parsed).as_bytes() == data {
+    if (parsed.is_array() || parsed.is_object())
+        && canonical_to_string(&parsed).as_bytes() == data
+    {
         Some(parsed)
     } else {
         None
@@ -462,10 +468,18 @@ mod tests {
     }
 
     #[test]
-    fn decode_value_byte_key_rejects_other_types() {
-        assert!(decode_value("x/c/0", &json!({"a": 1})).is_err());
+    fn decode_value_byte_key_rejects_scalar_types() {
         assert!(decode_value("x/c/0", &json!(3)).is_err());
         assert!(decode_value("x/c/0", &json!(null)).is_err());
+        assert!(decode_value("x/c/0", &json!(true)).is_err());
+    }
+
+    #[test]
+    fn decode_value_byte_key_serializes_inline_objects_canonically() {
+        assert_eq!(
+            decode_value("x/c/0", &json!({"a": 1, "b": [2.5, "x"]})).unwrap(),
+            br#"{"a":1,"b":[2.5,"x"]}"#.to_vec()
+        );
     }
 
     #[test]
@@ -516,11 +530,18 @@ mod tests {
     }
 
     #[test]
-    fn encode_value_non_array_json_bytes_stay_base64() {
-        // A canonical JSON object at a byte key is stored as base64, not inline.
+    fn encode_value_inlines_canonical_objects_never_strings() {
+        // Byte-stable canonical objects inline.
         let v = encode_value("x/c/0", b"{\"a\":1}").unwrap();
+        assert_eq!(v, json!({"a": 1}));
+        // Non-canonical object bytes stay base64.
+        let v = encode_value("x/c/0", b"{\"a\": 1}").unwrap();
         assert!(v.is_string());
-        assert_eq!(decode_value("x/c/0", &v).unwrap(), b"{\"a\":1}".to_vec());
+        assert_eq!(decode_value("x/c/0", &v).unwrap(), b"{\"a\": 1}".to_vec());
+        // A canonical top-level string is still bytes (the base64 channel).
+        let v = encode_value("x/c/0", b"\"hi\"").unwrap();
+        assert!(v.is_string());
+        assert_eq!(decode_value("x/c/0", &v).unwrap(), b"\"hi\"".to_vec());
     }
 
     #[test]

@@ -151,9 +151,12 @@ export class ZarrJsonStore implements AsyncMutable {
 					`setJson: metadata key ${JSON.stringify(docKey)} takes a JSON object`,
 				);
 			}
-		} else if (!Array.isArray(value)) {
+		} else if (
+			!Array.isArray(value) &&
+			(typeof value !== "object" || value === null)
+		) {
 			throw new Error(
-				`setJson: byte key ${JSON.stringify(docKey)} takes a JSON array`,
+				`setJson: byte key ${JSON.stringify(docKey)} takes a JSON array or object`,
 			);
 		}
 		return this.#setBytes(key, UTF8_ENCODER.encode(canonicalStringify(value)));

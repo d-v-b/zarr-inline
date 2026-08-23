@@ -292,6 +292,6 @@ test("setJson stores inline canonical values", async () => {
 test("setJson rejects wrong shapes and non-canonicalizable values", async () => {
 	const store = new ZarrJsonStore(new MemoryBacking({}));
 	await assert.rejects(() => store.setJson("/zarr.json", [1, 2]), /takes a JSON object/);
-	await assert.rejects(() => store.setJson("/a/c/0", { x: 1 }), /takes a JSON array/);
+	await assert.rejects(() => store.setJson("/a/c/0", "raw"), /takes a JSON array or object/);
 	await assert.rejects(() => store.setJson("/a/c/0", [Number.NaN]), /non-finite/);
 });

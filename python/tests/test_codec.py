@@ -120,3 +120,25 @@ def test_strict_loads_rejects_float_overflow_literal():
 
     with pytest.raises(ValueError, match="overflows float64"):
         strict_loads('{"a/c/0": [1e999]}')
+
+
+def test_encode_byte_value_inlines_canonical_json_object():
+    data = b'{"a":1,"b":[2.5,"x"]}'
+    assert encode_value("a/c/0", data) == {"a": 1, "b": [2.5, "x"]}
+    assert decode_value("a/c/0", {"a": 1, "b": [2.5, "x"]}) == data
+
+
+def test_encode_byte_value_keeps_non_canonical_object_as_base64():
+    data = b'{"a": 1}'
+    out = encode_value("a/c/0", data)
+    assert isinstance(out, str)
+    assert decode_value("a/c/0", out) == data
+
+
+def test_encode_byte_value_never_inlines_top_level_strings():
+    # A canonical JSON string is still bytes: the string type is the base64
+    # channel and can never be inlined.
+    data = b'"hello"'
+    out = encode_value("a/c/0", data)
+    assert isinstance(out, str)
+    assert decode_value("a/c/0", out) == data

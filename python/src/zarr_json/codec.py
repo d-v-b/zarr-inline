@@ -135,43 +135,52 @@ def decode_value(key: str, value: Any) -> bytes:
     """Convert a stored zarr-json value into the bytes Zarr expects.
 
     Metadata keys hold a JSON object -> serialize to UTF-8 JSON bytes.
-    Byte keys hold a base64 string -> base64-decode to raw bytes, or a JSON
-    array -> canonical-serialize to UTF-8 JSON bytes.
+    Byte keys hold a base64 string -> base64-decode to raw bytes, or an
+    inline JSON array/object -> canonical-serialize to UTF-8 JSON bytes.
     """
     if is_metadata_key(key):
         if not isinstance(value, dict):
             raise ValueError(f"metadata key {key!r} must map to a JSON object")
         return canonical_dumps(value).encode("utf-8")
-    if isinstance(value, list):
+    if isinstance(value, (list, dict)):
         return canonical_dumps(value).encode("utf-8")
     if not isinstance(value, str):
-        raise ValueError(f"byte key {key!r} must map to a base64 string or JSON array")
+        raise ValueError(
+            f"byte key {key!r} must map to a base64 string or an inline JSON "
+            "array or object"
+        )
     return base64.b64decode(value, validate=True)
 
 
 def encode_value(key: str, data: bytes) -> Any:
     """Convert Zarr's bytes into the value stored in a zarr-json document.
 
-    Metadata keys: parse bytes as JSON, require a JSON object.
-    Byte keys: inline as a JSON array if the bytes are exactly the canonical
-    serialization of one (lossless by construction); otherwise base64-encode.
+    Metadata keys: parse bytes as JSON, require a JSON object (value-level
+    losslessness: stock Zarr writers do not emit canonical text).
+    Byte keys: anything that losslessly round-trips as byte-stable
+    (canonical) JSON of a self-describing type — array or object — is
+    written inline as JSON; everything else is base64-encoded. A top-level
+    JSON *string* can never be inlined: the string type is the base64
+    channel, and that reservation is what keeps values decodable.
     """
     if is_metadata_key(key):
         parsed = strict_loads(data)
         if not isinstance(parsed, dict):
             raise ValueError(f"metadata key {key!r} requires a JSON object value")
         return parsed
-    inlined = _try_inline_array(data)
+    inlined = _try_inline_json(data)
     if inlined is not None:
         return inlined
     return base64.b64encode(data).decode("ascii")
 
 
-def _try_inline_array(data: bytes) -> list[Any] | None:
-    """Return the parsed JSON array if inlining `data` is lossless, else None."""
+def _try_inline_json(data: bytes) -> list[Any] | dict[str, Any] | None:
+    """Return the parsed array/object if inlining `data` is lossless, else None."""
     try:
         parsed = strict_loads(data)
-        if isinstance(parsed, list) and canonical_dumps(parsed).encode("utf-8") == data:
+        if isinstance(parsed, (list, dict)) and (
+            canonical_dumps(parsed).encode("utf-8") == data
+        ):
             return parsed
     except ValueError:
         # Not JSON, not UTF-8, or contains NaN/Infinity tokens (allow_nan=False).

@@ -21,10 +21,8 @@ def test_metadata_key_with_non_object_value_reports_r2():
     assert errors[0].key == "zarr.json"
 
 
-def test_byte_key_with_non_string_value_reports_r2():
-    errors = validate({"a/c/0": {"not": "a string"}})
-    assert len(errors) == 1
-    assert errors[0].rule == "R2"
+def test_byte_key_with_inline_object_is_valid():
+    assert validate({"a/c/0": {"an": "inline object"}}) == []
 
 
 def test_leading_slash_key_reports_r1():

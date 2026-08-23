@@ -129,6 +129,8 @@ METADATA_VALUE = st.dictionaries(OBJ_KEY, JSON_VALUE, max_size=4)
 BYTE_VALUE = st.one_of(
     st.binary(max_size=24).map(lambda b: base64.b64encode(b).decode("ascii")),
     st.lists(JSON_VALUE, max_size=4),
+    # Inline objects: anything byte-stable round-trips inline (SPEC 7.2).
+    st.dictionaries(OBJ_KEY, JSON_VALUE, max_size=3),
 )
 
 VALID_ENTRY = st.one_of(
@@ -146,7 +148,7 @@ BAD_KEY = st.sampled_from(["/x", "x/", "a//b", "a/./b", "..", "a/../b", ""])
 BAD_ENTRY = st.one_of(
     st.tuples(BAD_KEY, st.one_of(METADATA_VALUE, BYTE_VALUE)),
     st.tuples(METADATA_KEY, st.one_of(st.lists(JSON_VALUE, max_size=2), SAFE_SCALAR)),
-    st.tuples(DATA_KEY, st.one_of(SAFE_INT, st.booleans(), st.none(), METADATA_VALUE)),
+    st.tuples(DATA_KEY, st.one_of(SAFE_INT, st.booleans(), st.none())),
     st.tuples(DATA_KEY, DUBIOUS_TEXT),
 )
 

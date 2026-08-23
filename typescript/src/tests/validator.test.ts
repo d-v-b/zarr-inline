@@ -42,10 +42,8 @@ test("metadata key with null value reports R2", () => {
 	assert.equal(issues[0].rule, "R2");
 });
 
-test("byte key with object value reports R2", () => {
-	const issues = validate({ "a/c/0": { not: "a string" } });
-	assert.equal(issues.length, 1);
-	assert.equal(issues[0].rule, "R2");
+test("byte key with inline object value is valid", () => {
+	assert.deepEqual(validate({ "a/c/0": { an: "inline object" } }), []);
 });
 
 test("byte key with number value reports R2", () => {
