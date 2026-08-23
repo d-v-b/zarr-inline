@@ -358,7 +358,7 @@ a report on stdout:
 | Rust | `cd rust && cargo build` | `rust/target/debug/conformance` |
 
 `python/tests/test_conformance_property.py` generates documents with
-Hypothesis — metadata objects, base64 byte values, inline arrays,
+Hypothesis — metadata objects, base64 byte values, inline arrays/objects,
 dubious strings at byte keys, malformed keys and type violations; floats
 across the float64-safe range including integral values, negative zero,
 exponent forms, and subnormals; integers to ±10^30 — runs the Python
@@ -385,7 +385,8 @@ document through the host library (root group, arrays at `path` with the
 `<harness> read` opens every `<path>/zarr.json` array node in a document,
 sorted by path, and emits a payload. Invocations mirror the table above
 with `crosscheck` in place of `conformance` and a `write` or `read`
-argument.
+argument. Paths and dimension lists use the portable domain defined for
+traces below.
 
 `python/tests/test_crosscheck.py` runs the full writer × reader matrix
 (nine combinations) over a fixed payload — every portable dtype, edge
@@ -437,14 +438,19 @@ must refuse:
 
 - `document`, when given, must be a *valid* zarr-json document; harnesses
   load it strictly. `operations` is required and must be an array.
+- `path` is a non-empty relative Zarr node path. It has no empty segment;
+  no segment begins with reserved `__`; and no segment consists entirely
+  of periods. This deliberately rejects host-library path normalization.
 - `create_array` creates the root and any missing ancestor groups, refuses
   to place a node beneath an array or to overwrite an existing node (like
   zarr-python), uses the `json` codec with no compressors, and writes the
-  dtype's zero value (`0` / `false` / `0.0`) as an explicit `fill_value`. A
-  dtype the host library or the harness cannot represent is an error, never
-  a `null` fill. `chunks` extents must be ≥ 1.
+  dtype's zero value (`0` / `false` / `0.0`) as an explicit `fill_value`.
+  `dtype` must be one of the portable §6.2 set; every other dtype is an
+  error. Shape-like fields contain integer tokens in `[0, 2^53 − 1]`, with
+  `chunks` extents ≥ 1.
 - `write_region` / `read_region` take a zero-based `origin` and a `shape`
-  whose rank equals the array rank, every extent ≥ 1, and
+  of integer tokens in `[0, 2^53 − 1]` whose rank equals the array rank,
+  every shape extent ≥ 1, and
   `origin + shape ≤ array shape` on every axis; anything else is an error
   (host libraries would otherwise clamp or fill silently, each differently).
 - `data` is nested by the region shape in C order and is interpreted by the
@@ -474,12 +480,12 @@ language-specific test dependency.
 Portable documents (SPEC §10) stay within bounds where all three
 implementations provably agree. What lies outside, and why:
 
-- **Integer-like object member names** (`"0"`, `"10"`) inside metadata:
-  JavaScript's native objects enumerate them numerically first, so an
-  implementation built on `JSON.parse` cannot preserve document member
-  order for them, and canonical bytes diverge. This is the one remaining
-  item the property test must avoid. (Store keys are unaffected — they
-  contain `/`.)
+- **Integer-like object member names** (`"0"`, `"10"`) anywhere inside a
+  document value, including byte-key inline objects: JavaScript's native
+  objects enumerate them numerically first, so an implementation built on
+  `JSON.parse` cannot preserve member order for them, and canonical bytes
+  diverge. This is the one remaining item the property test must avoid.
+  (Store keys are unaffected — they contain `/`.)
 - **`transpose` + `json`** is not interoperable pending the zarrita
   upstream fix (§3.3); cross-reads fail loudly on shape mismatch.
 - **Negative-zero sign** is lost (RFC 8785). **NaN payloads** are not

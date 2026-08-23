@@ -240,6 +240,27 @@ INVALID_TRACES = {
          "data": [[1, 2, 3], [4]]}]},
     "invalid_initial_document": {"document": {"bad/c/0": 123}, "operations": []},
     "missing_operations": {"document": {}},
+    "float_token_for_shape": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8",
+         "shape": [1.0], "chunks": [1]}]},
+    "unsafe_integer_dimension": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8",
+         "shape": [9007199254740993], "chunks": [1]}]},
+    "leading_slash_path": {"operations": [
+        {"op": "create_array", "path": "/a", "dtype": "uint8",
+         "shape": [1], "chunks": [1]}]},
+    "empty_path_segment": {"operations": [
+        {"op": "create_array", "path": "a//b", "dtype": "uint8",
+         "shape": [1], "chunks": [1]}]},
+    "reserved_path_segment": {"operations": [
+        {"op": "create_array", "path": "a/__private", "dtype": "uint8",
+         "shape": [1], "chunks": [1]}]},
+    "all_period_path_segment": {"operations": [
+        {"op": "create_array", "path": "a/...", "dtype": "uint8",
+         "shape": [1], "chunks": [1]}]},
+    "nonportable_dtype": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "complex64",
+         "shape": [1], "chunks": [1]}]},
     "create_under_array": {"operations": [
         {"op": "create_array", "path": "a", "dtype": "uint8", "shape": [2], "chunks": [2]},
         {"op": "create_array", "path": "a/b", "dtype": "uint8", "shape": [2], "chunks": [2]}]},

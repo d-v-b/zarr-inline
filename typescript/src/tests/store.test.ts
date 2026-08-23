@@ -295,3 +295,21 @@ test("setJson rejects wrong shapes and non-canonicalizable values", async () => 
 	await assert.rejects(() => store.setJson("/a/c/0", "raw"), /takes a JSON array or object/);
 	await assert.rejects(() => store.setJson("/a/c/0", [Number.NaN]), /non-finite/);
 });
+
+test("setJson rejects nested non-JSON values without mutation", async () => {
+	const backing = new MemoryBacking({});
+	const store = new ZarrJsonStore(backing);
+	await assert.rejects(() => store.setJson("/a/c/0", [undefined]), /JSON-serializable/);
+	await assert.rejects(
+		() => store.setJson("/zarr.json", { x: undefined }),
+		/JSON-serializable/,
+	);
+	assert.deepEqual(Object.keys(backing.load()), []);
+});
+
+test("setJson rejects non-plain host objects without mutation", async () => {
+	const backing = new MemoryBacking({});
+	const store = new ZarrJsonStore(backing);
+	await assert.rejects(() => store.setJson("/a/c/0", new Date(0)), /plain JSON object/);
+	assert.deepEqual(Object.keys(backing.load()), []);
+});

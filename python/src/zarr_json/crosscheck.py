@@ -23,6 +23,34 @@ from zarr_json.serializer import JsonSerializer, decode_chunk, encode_chunk
 from zarr_json.store import ZarrJsonStore
 from zarr_json.validator import Strictness
 
+PORTABLE_DTYPES = frozenset(
+    {"bool", "uint8", "int32", "int64", "float32", "float64"}
+)
+MAX_SAFE_DIMENSION = 2**53 - 1
+
+
+def _path(value: Any, what: str) -> str:
+    """Return a portable relative Zarr node path shared by all harnesses."""
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{what} must be a non-empty string")
+    segments = value.split("/")
+    if any(
+        not segment or segment.startswith("__") or set(segment) == {"."}
+        for segment in segments
+    ):
+        raise ValueError(
+            f"{what} must be a portable relative Zarr node path "
+            "(no empty, reserved '__', or all-period segments)"
+        )
+    return value
+
+
+def _dtype(value: Any, what: str) -> str:
+    if not isinstance(value, str) or value not in PORTABLE_DTYPES:
+        allowed = ", ".join(sorted(PORTABLE_DTYPES))
+        raise ValueError(f"{what} must be one of: {allowed}")
+    return value
+
 
 def _to_native(data: Any, shape: tuple[int, ...], zdtype: Any) -> Any:
     """Payload JSON -> native array, via the codec's decoder.
@@ -66,8 +94,11 @@ def write(payload: dict[str, Any]) -> dict[str, Any]:
     backing = MemoryBacking({})
     store = ZarrJsonStore(backing)
     for spec in payload["arrays"]:
-        shape = tuple(spec["shape"])
-        arr = _create_array(store, spec["path"], spec["dtype"], shape, tuple(spec["chunks"]))
+        path = _path(spec.get("path"), "array path")
+        dtype = _dtype(spec.get("dtype"), f"array {path}: dtype")
+        shape = _int_list(spec.get("shape"), f"array {path}: shape", min_value=0)
+        chunks = _int_list(spec.get("chunks"), f"array {path}: chunks", min_value=1)
+        arr = _create_array(store, path, dtype, shape, chunks)
         arr[...] = _to_native(spec["data"], shape, arr.metadata.data_type)
     return backing.load()
 
@@ -99,9 +130,15 @@ def read(document: dict[str, Any]) -> dict[str, Any]:
 
 def _int_list(value: Any, what: str, *, min_value: int) -> tuple[int, ...]:
     if not isinstance(value, list) or not all(
-        isinstance(v, int) and not isinstance(v, bool) and v >= min_value for v in value
+        isinstance(v, int)
+        and not isinstance(v, bool)
+        and min_value <= v <= MAX_SAFE_DIMENSION
+        for v in value
     ):
-        raise ValueError(f"{what} must be a list of integers >= {min_value}")
+        raise ValueError(
+            f"{what} must be a list of integer tokens in "
+            f"[{min_value}, {MAX_SAFE_DIMENSION}]"
+        )
     return tuple(value)
 
 
@@ -145,13 +182,9 @@ def trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     for index, operation in enumerate(operations):
         op = operation.get("op")
-        path = operation.get("path")
-        if not isinstance(path, str) or not path:
-            raise ValueError(f"operation {index}: path must be a non-empty string")
+        path = _path(operation.get("path"), f"operation {index}: path")
         if op == "create_array":
-            dtype = operation.get("dtype")
-            if not isinstance(dtype, str):
-                raise ValueError(f"operation {index}: create_array needs dtype")
+            dtype = _dtype(operation.get("dtype"), f"operation {index}: dtype")
             shape = _int_list(operation.get("shape"), f"operation {index}: shape", min_value=0)
             chunks = _int_list(
                 operation.get("chunks"), f"operation {index}: chunks", min_value=1

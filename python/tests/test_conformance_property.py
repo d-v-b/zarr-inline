@@ -10,8 +10,8 @@ floats — including integral values, negative zero, exponent forms, and
 subnormals — are portable and generated freely within the float64-safe
 magnitude range, and integers are generated to +/-10^30. The generated
 value space avoids only the one residual divergence documented in
-DESIGN.md section 7: integer-like JSON object member names (JavaScript
-objects reorder them).
+DESIGN.md section 7: integer-like member names in any JSON object
+(JavaScript objects reorder them).
 """
 
 from __future__ import annotations
@@ -129,7 +129,8 @@ METADATA_VALUE = st.dictionaries(OBJ_KEY, JSON_VALUE, max_size=4)
 BYTE_VALUE = st.one_of(
     st.binary(max_size=24).map(lambda b: base64.b64encode(b).decode("ascii")),
     st.lists(JSON_VALUE, max_size=4),
-    # Inline objects: anything byte-stable round-trips inline (SPEC 7.2).
+    # Inline objects use the same non-integer-like member-name portability
+    # restriction as metadata objects (SPEC 10).
     st.dictionaries(OBJ_KEY, JSON_VALUE, max_size=3),
 )
 

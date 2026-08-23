@@ -111,7 +111,7 @@ impl ZarrJsonStore {
     /// representation (canonical bytes always pass the lossless-inlining
     /// check), so callers need not produce canonical text themselves. The
     /// value must fit the key's representation (R2): a JSON object at a
-    /// metadata key, a JSON array at a byte key.
+    /// metadata key, a JSON array or object at a byte key.
     ///
     /// # Errors
     /// Returns an error for malformed keys, wrong value shapes, or when the

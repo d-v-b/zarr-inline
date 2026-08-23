@@ -3,7 +3,7 @@
 //! R1 — well-formed keys: every key is a non-empty string with no leading or
 //!      trailing `/`, no empty segments, and no `.` or `..` segments.
 //! R2 — per-value type: metadata keys map to a JSON object; byte keys map to
-//!      a base64 string or an inline JSON array.
+//!      a base64 string or an inline JSON array or object.
 //!
 //! At most one issue is reported per key; R1 takes precedence (the value-type
 //! check on a malformed key is not meaningful).

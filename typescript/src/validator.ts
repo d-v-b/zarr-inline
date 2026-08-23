@@ -4,7 +4,7 @@
  * R1 — well-formed keys: every key is a non-empty string with no leading or
  *      trailing "/", no empty segments, and no "." or ".." segments.
  * R2 — per-value type: metadata keys map to a JSON object; byte keys map to a
- *      base64 string or an inline JSON array.
+ *      base64 string or an inline JSON array or object.
  */
 
 import { isMetadataKey } from "./codec.js";

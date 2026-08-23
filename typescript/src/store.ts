@@ -141,7 +141,7 @@ export class ZarrJsonStore implements AsyncMutable {
 	 * to land in the document as its inline JSON representation, so callers
 	 * need not produce canonical text themselves. The value must fit the
 	 * key's representation (R2): a JSON object at a metadata key, a JSON
-	 * array at a byte key.
+	 * array or object at a byte key.
 	 */
 	async setJson(key: AbsolutePath, value: unknown): Promise<void> {
 		const docKey = this.#docKey(key);

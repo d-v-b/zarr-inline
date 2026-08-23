@@ -25,6 +25,9 @@ use zarrs::storage::ReadableWritableListableStorage;
 
 use zarr_json::{canonical_to_string, is_metadata_key, Document, JsonCodec, ZarrJsonStore};
 
+const PORTABLE_DTYPES: &[&str] = &["bool", "uint8", "int32", "int64", "float32", "float64"];
+const MAX_SAFE_DIMENSION: u64 = 9_007_199_254_740_991;
+
 fn u64_list(value: &Value, what: &str, min_value: u64) -> Result<Vec<u64>, String> {
     let Value::Array(items) = value else {
         return Err(format!("{what} must be a list of integers >= {min_value}"));
@@ -33,10 +36,38 @@ fn u64_list(value: &Value, what: &str, min_value: u64) -> Result<Vec<u64>, Strin
         .iter()
         .map(|v| {
             v.as_u64()
-                .filter(|n| *n >= min_value)
-                .ok_or_else(|| format!("{what} must be a list of integers >= {min_value}"))
+                .filter(|n| (min_value..=MAX_SAFE_DIMENSION).contains(n))
+                .ok_or_else(|| {
+                    format!(
+                        "{what} must be a list of integer tokens in [{min_value}, {MAX_SAFE_DIMENSION}]"
+                    )
+                })
         })
         .collect()
+}
+
+fn portable_path<'a>(value: &'a Value, what: &str) -> Result<&'a str, String> {
+    let path = value
+        .as_str()
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| format!("{what} must be a non-empty string"))?;
+    if path.split('/').any(|segment| {
+        segment.is_empty()
+            || segment.starts_with("__")
+            || segment.chars().all(|character| character == '.')
+    }) {
+        return Err(format!(
+            "{what} must be a portable relative Zarr node path (no empty, reserved '__', or all-period segments)"
+        ));
+    }
+    Ok(path)
+}
+
+fn portable_dtype<'a>(value: &'a Value, what: &str) -> Result<&'a str, String> {
+    value
+        .as_str()
+        .filter(|dtype| PORTABLE_DTYPES.contains(dtype))
+        .ok_or_else(|| format!("{what} must be one of: {}", PORTABLE_DTYPES.join(", ")))
 }
 
 fn nonzero_shape(shape: &[u64], what: &str) -> Result<Vec<NonZeroU64>, String> {
@@ -173,15 +204,11 @@ fn write(payload: &Value) -> Result<String, String> {
     let storage: ReadableWritableListableStorage = store.clone();
 
     for spec in specs {
-        let path = spec
-            .get("path")
-            .and_then(Value::as_str)
-            .filter(|p| !p.is_empty())
-            .ok_or_else(|| "array spec needs a non-empty \"path\" string".to_string())?;
-        let dtype_name = spec
-            .get("dtype")
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("array {path}: missing \"dtype\""))?;
+        let path = portable_path(spec.get("path").unwrap_or(&Value::Null), "array path")?;
+        let dtype_name = portable_dtype(
+            spec.get("dtype").unwrap_or(&Value::Null),
+            &format!("array {path}: dtype"),
+        )?;
         let shape = u64_list(spec.get("shape").unwrap_or(&Value::Null), &format!("array {path}: shape"), 0)?;
         let chunks = u64_list(spec.get("chunks").unwrap_or(&Value::Null), &format!("array {path}: chunks"), 1)?;
         let data = spec
@@ -280,17 +307,16 @@ fn trace(payload: &Value) -> Result<String, String> {
             .get("op")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("operation {index}: missing op"))?;
-        let path = operation
-            .get("path")
-            .and_then(Value::as_str)
-            .filter(|path| !path.is_empty())
-            .ok_or_else(|| format!("operation {index}: path must be non-empty"))?;
+        let path = portable_path(
+            operation.get("path").unwrap_or(&Value::Null),
+            &format!("operation {index}: path"),
+        )?;
         match op {
             "create_array" => {
-                let dtype_name = operation
-                    .get("dtype")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| format!("operation {index}: create_array needs dtype"))?;
+                let dtype_name = portable_dtype(
+                    operation.get("dtype").unwrap_or(&Value::Null),
+                    &format!("operation {index}: dtype"),
+                )?;
                 let shape = u64_list(operation.get("shape").unwrap_or(&Value::Null), &format!("operation {index}: shape"), 0)?;
                 let chunks = u64_list(operation.get("chunks").unwrap_or(&Value::Null), &format!("operation {index}: chunks"), 1)?;
                 create_array(&store, &storage, path, dtype_name, shape, chunks)

@@ -70,17 +70,15 @@ interface TracePayload {
  */
 const ZERO_FILL: Record<string, unknown> = {
 	bool: false,
-	int8: 0,
-	int16: 0,
 	int32: 0,
 	int64: 0,
 	uint8: 0,
-	uint16: 0,
-	uint32: 0,
-	uint64: 0,
 	float32: 0,
 	float64: 0,
 };
+
+const PORTABLE_DTYPES = new Set(Object.keys(ZERO_FILL));
+const MAX_SAFE_DIMENSION = BigInt(Number.MAX_SAFE_INTEGER);
 
 const UTF8_ENCODER = new TextEncoder();
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
@@ -234,19 +232,49 @@ async function createArray(
 	});
 }
 
-/** Validate a list of integers (bigint or number) with a lower bound. */
+/** Validate exact integer tokens before converting them to host-safe numbers. */
 function intList(value: unknown, what: string, minValue: number): number[] {
 	if (
 		!Array.isArray(value) ||
 		!value.every(
 			(v) =>
-				(typeof v === "bigint" && v >= BigInt(minValue)) ||
-				(typeof v === "number" && Number.isInteger(v) && v >= minValue),
+				typeof v === "bigint" &&
+				v >= BigInt(minValue) &&
+				v <= MAX_SAFE_DIMENSION,
 		)
 	) {
-		throw new Error(`${what} must be a list of integers >= ${minValue}`);
+		throw new Error(
+			`${what} must be a list of integer tokens in ` +
+				`[${minValue}, ${MAX_SAFE_DIMENSION}]`,
+		);
 	}
 	return value.map(Number);
+}
+
+function portablePath(value: unknown, what: string): string {
+	if (typeof value !== "string" || value.length === 0) {
+		throw new Error(`${what} must be a non-empty string`);
+	}
+	const invalid = value
+		.split("/")
+		.some(
+			(segment) =>
+				segment.length === 0 || segment.startsWith("__") || /^\.+$/.test(segment),
+		);
+	if (invalid) {
+		throw new Error(
+			`${what} must be a portable relative Zarr node path ` +
+				"(no empty, reserved '__', or all-period segments)",
+		);
+	}
+	return value;
+}
+
+function portableDtype(value: unknown, what: string): string {
+	if (typeof value !== "string" || !PORTABLE_DTYPES.has(value)) {
+		throw new Error(`${what} must be one of: ${[...PORTABLE_DTYPES].sort().join(", ")}`);
+	}
+	return value;
 }
 
 async function write(payload: Payload): Promise<Document> {
@@ -254,10 +282,12 @@ async function write(payload: Payload): Promise<Document> {
 	const store = new ZarrJsonStore(backing);
 	const root = zarr.root(store);
 	for (const spec of payload.arrays) {
-		const shape = intList(spec.shape, `array ${spec.path}: shape`, 0);
-		const chunks = intList(spec.chunks, `array ${spec.path}: chunks`, 1);
-		const arr = await createArray(backing, root, spec.path, spec.dtype, shape, chunks);
-		await setRegion(arr, null, spec.data, shape, spec.dtype);
+		const path = portablePath(spec.path, "array path");
+		const dtype = portableDtype(spec.dtype, `array ${path}: dtype`);
+		const shape = intList(spec.shape, `array ${path}: shape`, 0);
+		const chunks = intList(spec.chunks, `array ${path}: chunks`, 1);
+		const arr = await createArray(backing, root, path, dtype, shape, chunks);
+		await setRegion(arr, null, spec.data, shape, dtype);
 	}
 	return backing.load();
 }
@@ -305,11 +335,13 @@ function region(
 		throw new Error(`operation ${index}: region dimensionality mismatch`);
 	}
 	for (let axis = 0; axis < shape.length; axis++) {
-		const end = origin[axis] + shape[axis];
-		if (end > arr.shape[axis]) {
+		const start = origin[axis];
+		const size = shape[axis];
+		const extent = arr.shape[axis];
+		if (start > extent || size > extent - start) {
 			throw new Error(
-				`operation ${index}: region [${origin[axis]}, ${end}) exceeds array ` +
-					`extent ${arr.shape[axis]} on axis ${axis}`,
+				`operation ${index}: region starting at ${start} with size ${size} ` +
+					`exceeds array extent ${extent} on axis ${axis}`,
 			);
 		}
 	}
@@ -344,22 +376,18 @@ async function trace(
 
 	for (let index = 0; index < payload.operations.length; index++) {
 		const operation = payload.operations[index];
-		if (!operation || typeof operation.path !== "string" || operation.path.length === 0) {
-			throw new Error(`operation ${index}: path must be a non-empty string`);
-		}
+		const path = portablePath(operation?.path, `operation ${index}: path`);
 		if (operation.op === "create_array") {
-			if (typeof operation.dtype !== "string") {
-				throw new Error(`operation ${index}: create_array needs dtype`);
-			}
+			const dtype = portableDtype(operation.dtype, `operation ${index}: dtype`);
 			const shape = intList(operation.shape, `operation ${index}: shape`, 0);
 			const chunks = intList(operation.chunks, `operation ${index}: chunks`, 1);
-			await createArray(backing, root, operation.path, operation.dtype, shape, chunks);
+			await createArray(backing, root, path, dtype, shape, chunks);
 			continue;
 		}
 		if (operation.op !== "write_region" && operation.op !== "read_region") {
 			throw new Error(`operation ${index}: unknown op ${String(operation.op)}`);
 		}
-		const arr = await zarr.open.v3(root.resolve(operation.path), { kind: "array" });
+		const arr = await zarr.open.v3(root.resolve(path), { kind: "array" });
 		const { shape, selection } = region(operation, arr, index);
 		const dtype = arr.dtype as string;
 		if (operation.op === "write_region") {

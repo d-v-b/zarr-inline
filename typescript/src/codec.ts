@@ -4,14 +4,14 @@
  * A zarr-json value is one of:
  *
  * - metadata key (`zarr.json` or `*\/zarr.json`) -> inline JSON object
- * - byte key -> base64 string (opaque bytes), or a JSON array (inline data
- *   values, produced by the `json` array->bytes codec)
+ * - byte key -> base64 string (opaque bytes), or a JSON array/object (inline
+ *   canonical JSON; arrays are produced by the `json` array->bytes codec)
  *
- * Inline arrays use a canonical JSON serialization (no whitespace, no NaN /
+ * Inline arrays and objects use a canonical JSON serialization (no whitespace, no NaN /
  * Infinity tokens) so that parse -> re-serialize is byte-identical. That makes
  * the inlining rule in encodeValue lossless by construction: a byte value is
  * inlined only if its bytes are exactly the canonical serialization of a JSON
- * array, so decodeValue reproduces the original bytes no matter what they
+ * array or object, so decodeValue reproduces the original bytes no matter what they
  * actually were.
  */
 
@@ -101,14 +101,6 @@ function writeCanonicalNumber(value: number, parts: string[]): void {
 	parts.push(String(value));
 }
 
-function isUnserializable(value: unknown): boolean {
-	return (
-		value === undefined ||
-		typeof value === "function" ||
-		typeof value === "symbol"
-	);
-}
-
 function writeCanonical(value: unknown, parts: string[]): void {
 	if (value === null) {
 		parts.push("null");
@@ -141,23 +133,20 @@ function writeCanonical(value: unknown, parts: string[]): void {
 				parts.push(",");
 			}
 			const element: unknown = value[i];
-			// JSON.stringify emits null for unserializable array elements.
-			if (isUnserializable(element)) {
-				parts.push("null");
-			} else {
-				writeCanonical(element, parts);
-			}
+			// Canonical serialization accepts JSON values only. Unlike
+			// JSON.stringify, it must not silently turn undefined/functions/
+			// symbols or array holes into null.
+			writeCanonical(element, parts);
 		}
 		parts.push("]");
 		return;
 	}
+	if (!isPlainObject(value) || Object.getOwnPropertySymbols(value).length > 0) {
+		throw new Error("value is not a plain JSON object");
+	}
 	parts.push("{");
 	let first = true;
 	for (const [key, member] of Object.entries(value)) {
-		// JSON.stringify skips unserializable object members.
-		if (isUnserializable(member)) {
-			continue;
-		}
 		if (!first) {
 			parts.push(",");
 		}
@@ -306,7 +295,11 @@ export function base64Encode(bytes: Uint8Array): string {
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return false;
+	}
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
 }
 
 const UTF8_ENCODER = new TextEncoder();
@@ -319,7 +312,7 @@ const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
  *
  * Metadata keys hold a JSON object -> serialize to canonical UTF-8 JSON bytes.
  * Byte keys hold a base64 string -> base64-decode to raw bytes, or a JSON
- * array -> canonical-serialize to UTF-8 JSON bytes.
+ * array/object -> canonical-serialize to UTF-8 JSON bytes.
  */
 export function decodeValue(key: string, value: unknown): Uint8Array {
 	if (isMetadataKey(key)) {

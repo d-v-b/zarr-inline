@@ -3,14 +3,14 @@
 //! A zarr-json value is one of:
 //!
 //! - metadata key (`zarr.json` or `*/zarr.json`) -> inline JSON object
-//! - byte key -> base64 string (opaque bytes), or a JSON array (inline data
-//!   values, produced by the `json` array->bytes codec)
+//! - byte key -> base64 string (opaque bytes), or a JSON array/object (inline
+//!   canonical JSON; arrays are produced by the `json` array->bytes codec)
 //!
-//! Inline arrays use a canonical JSON serialization (no whitespace, no NaN /
+//! Inline arrays and objects use a canonical JSON serialization (no whitespace, no NaN /
 //! Infinity tokens) so that parse -> re-serialize is byte-identical. That
 //! makes the inlining rule in [`encode_value`] lossless by construction: a
 //! byte value is inlined only if its bytes are exactly the canonical
-//! serialization of a JSON array, so [`decode_value`] reproduces the original
+//! serialization of a JSON array or object, so [`decode_value`] reproduces the original
 //! bytes no matter what they actually were.
 
 use base64::alphabet;
@@ -257,7 +257,7 @@ pub fn canonical_to_string(value: &Value) -> String {
 ///
 /// Metadata keys hold a JSON object -> serialize to UTF-8 JSON bytes.
 /// Byte keys hold a base64 string -> base64-decode to raw bytes, or a JSON
-/// array -> canonical-serialize to UTF-8 JSON bytes.
+/// array/object -> canonical-serialize to UTF-8 JSON bytes.
 pub fn decode_value(key: &str, value: &Value) -> Result<Vec<u8>, ZarrJsonError> {
     if is_metadata_key(key) {
         if !value.is_object() {

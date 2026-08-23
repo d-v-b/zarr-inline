@@ -3,14 +3,14 @@
 A zarr-json value is one of:
 
 - metadata key (``zarr.json`` or ``*/zarr.json``) -> inline JSON object
-- byte key -> base64 string (opaque bytes), or a JSON array (inline data
-  values, produced by the ``json`` array->bytes codec)
+- byte key -> base64 string (opaque bytes), or a JSON array/object (inline
+  canonical JSON; arrays are produced by the ``json`` array->bytes codec)
 
-Inline arrays use a canonical JSON serialization (no whitespace, no NaN /
+Inline arrays and objects use a canonical JSON serialization (no whitespace, no NaN /
 Infinity tokens) so that parse -> re-serialize is byte-identical. That makes
 the inlining rule in encode_value lossless by construction: a byte value is
 inlined only if its bytes are exactly the canonical serialization of a JSON
-array, so decode_value reproduces the original bytes no matter what they
+array or object, so decode_value reproduces the original bytes no matter what they
 actually were.
 """
 

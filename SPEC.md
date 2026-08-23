@@ -1,7 +1,7 @@
 # zarr-json Specification
 
 **Version:** 0.2.0-draft
-**Date:** 2026-08-21
+**Date:** 2026-08-23
 **Status:** Draft (revised after adversarial spec review)
 
 zarr-json is a convention for storing a Zarr v3 hierarchy as a single JSON
@@ -222,7 +222,7 @@ dtype-driven decoding) interprets numbers by context, not token sort.
 not the same operation as reading a zarr-json document: reading a document
 first strict-parses the text and then requires the result to be an object,
 while embedded parses accept the value type their caller requires (an object
-for metadata bytes, an array for the byte-key inlining check, and any
+for metadata bytes, an array or object for the byte-key inlining check, and any
 shape-appropriate JSON value for chunk bytes).
 
 Reading a document, and every embedded parse this specification calls for
@@ -284,7 +284,7 @@ return canonical_base64(bytes)
 ```
 
 (The object-only top-level check of document reading does not apply here:
-the inlining branch must accept arrays.)
+the inlining branch must accept arrays and objects.)
 
 The inlining rule is lossless by construction: whatever the bytes were,
 decoding the stored value reproduces them exactly.
@@ -473,10 +473,11 @@ implementation-defined, not invalid):
   member names are not counted; the value of a key is depth ≥ 1).
 - No lone surrogates in any string; no leading BOM.
 - No hex-string float forms in chunk data (§9.1).
-- Object member names within metadata SHOULD NOT be integer-like strings
-  (`"0"`, `"42"`): JavaScript's native object semantics reorder such
-  names, and an implementation built on them cannot preserve §5.2 member
-  order for those documents. §5's determinism guarantee holds for
+- Object member names anywhere in the document data model — within metadata
+  or within an inline byte-key array/object — SHOULD NOT be integer-like
+  strings (`"0"`, `"42"`): JavaScript's native object semantics reorder
+  such names, and an implementation built on them cannot preserve §5.2
+  member order for those values. §5's determinism guarantee holds for
   portable documents.
 
 Numbers carry no portability constraints: integers of any size and the
