@@ -10,7 +10,8 @@ floats — including integral values, negative zero, exponent forms, and
 subnormals — are portable and generated freely within the float64-safe
 magnitude range, and integers are generated to +/-10^30. The generated
 value space avoids only the one residual divergence documented in
-DESIGN.md section 7: integer-like member names in any JSON object
+https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#7-constraints-and-known-limitations:
+integer-like member names in any JSON object
 (JavaScript objects reorder them).
 """
 

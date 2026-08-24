@@ -1,13 +1,15 @@
 /**
  * Cross-language array crosscheck harness (zarrita side).
  *
- * See DESIGN.md section 6.2 (write/read) and 6.3 (trace). All conversions
+ * See https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#62-crosscheck-protocol
+ * and https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#63-operation-trace-protocol.
+ * All conversions
  * between payload JSON and native arrays go through the json codec itself
  * (JsonSerializer.encode / decode), so what this harness accepts is
  * definitionally what the codec accepts: strict scalar sorts, finite ranges,
  * exact nesting. Harness-level rules (in-bounds regions, valid initial
  * documents, group-only parents, explicit zero fill, supported dtypes)
- * follow the trace input contract in DESIGN.md section 6.3.
+ * follow the documented trace input contract.
  *
  * Run: node dist/crosscheck.js write|read|trace  (reads stdin, writes stdout)
  */

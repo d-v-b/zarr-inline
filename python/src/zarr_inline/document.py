@@ -1,10 +1,11 @@
-"""Pure functions for parsing and encoding zarr-inline document values.
+"""Transform Zarr store entries into JSON object members and back.
 
-A zarr-inline value is one of:
-
-- metadata key (``zarr.json`` or ``*/zarr.json``) -> inline JSON object
-- byte key -> base64 string (opaque bytes), or a JSON array/object (inline
-  canonical JSON; arrays are produced by the ``json`` array->bytes codec)
+Encoding takes a ``(key: str, value: bytes)`` store entry and emits a
+``(key: str, value: JSON)`` document member. The input key selects the value
+representation: metadata bytes become an inline JSON object, while other
+bytes become either a base64 string or an inline canonical JSON array/object.
+Decoding applies the inverse transformation to recover the original store
+entry.
 
 Inline arrays and objects use a canonical JSON serialization (no whitespace, no NaN /
 Infinity tokens) so that parse -> re-serialize is byte-identical. That makes
@@ -16,12 +17,13 @@ actually were.
 
 import base64
 import json
-from typing import Any
+from typing import Never, cast
 
-METADATA_SUFFIX = "zarr.json"
+import rfc8785
+from zarr_metadata import JSONValue, ZARR_V3_ARRAY_METADATA_STORE_KEY
 
 
-def _reject_constant(token: str) -> Any:
+def _reject_constant(token: str) -> Never:
     raise ValueError(f"invalid JSON: {token} is not a JSON token")
 
 
@@ -32,7 +34,7 @@ def _finite_float(text: str) -> float:
     return value
 
 
-def strict_loads(text: str | bytes) -> Any:
+def strict_loads(text: str | bytes) -> object:
     """Parse JSON, rejecting what Python's json module is lenient about but
     other implementations are not: bare NaN/Infinity tokens (JavaScript's
     JSON.parse and Rust's serde_json reject them) and number literals that
@@ -43,44 +45,12 @@ def strict_loads(text: str | bytes) -> Any:
 
 def is_metadata_key(key: str) -> bool:
     """Return True if the key names a Zarr v3 metadata document."""
-    return key == METADATA_SUFFIX or key.endswith("/" + METADATA_SUFFIX)
+    return key == ZARR_V3_ARRAY_METADATA_STORE_KEY or key.endswith(
+        "/" + ZARR_V3_ARRAY_METADATA_STORE_KEY
+    )
 
 
-def es_number_str(value: float) -> str:
-    """Format a finite float per ECMAScript Number::toString, as required by
-    RFC 8785 (JCS) section 3.2.2.3. This is what makes canonical number text
-    identical across Python, JavaScript, and Rust: integral floats print
-    without a decimal point (1.0 -> "1"), negative zero prints "0", and
-    exponents are unpadded ("1e-7", not "1e-07"), switching to exponential
-    form only outside [1e-6, 1e21).
-    """
-    if value != value or value in (float("inf"), float("-inf")):
-        raise ValueError("canonical JSON cannot represent non-finite numbers")
-    if value == 0:
-        return "0"
-    if value < 0:
-        return "-" + es_number_str(-value)
-    from decimal import Decimal
-
-    _, digits, exponent = Decimal(repr(value)).as_tuple()
-    parts = list(digits)
-    while parts and parts[-1] == 0:
-        parts.pop()
-        exponent += 1
-    k = len(parts)
-    n = exponent + k
-    text = "".join(map(str, parts))
-    if k <= n <= 21:
-        return text + "0" * (n - k)
-    if 0 < n <= 21:
-        return text[:n] + "." + text[n:]
-    if -6 < n <= 0:
-        return "0." + "0" * (-n) + text
-    mantissa = text[0] + ("." + text[1:] if k > 1 else "")
-    return f"{mantissa}e{'+' if n - 1 >= 0 else '-'}{abs(n - 1)}"
-
-
-def _canonical_write(value: Any, out: list[str]) -> None:
+def _canonical_write(value: object, out: list[str]) -> None:
     if value is None:
         out.append("null")
     elif value is True:
@@ -90,7 +60,16 @@ def _canonical_write(value: Any, out: list[str]) -> None:
     elif isinstance(value, int):
         out.append(str(value))
     elif isinstance(value, float):
-        out.append(es_number_str(value))
+        try:
+            # Python's json module has no RFC 8785 / ECMAScript number mode:
+            # it emits spellings such as 1.0, -0.0, and 1e-07. Delegate the
+            # difficult scalar conversion to the RFC implementation. The
+            # surrounding writer remains local because zarr-inline preserves
+            # object member order and supports integers beyond the JCS safe
+            # integer domain.
+            out.append(rfc8785.dumps(value).decode("ascii"))
+        except rfc8785.CanonicalizationError as exc:
+            raise ValueError("canonical JSON cannot represent non-finite numbers") from exc
     elif isinstance(value, str):
         out.append(json.dumps(value, ensure_ascii=False))
     elif isinstance(value, (list, tuple)):
@@ -115,13 +94,13 @@ def _canonical_write(value: Any, out: list[str]) -> None:
         raise ValueError(f"value is not JSON-serializable: {type(value).__name__}")
 
 
-def canonical_dumps(value: Any) -> str:
+def canonical_dumps(value: object) -> str:
     """Serialize a JSON value in the canonical zarr-inline form.
 
     No whitespace; non-ASCII characters unescaped (UTF-8); object member
     order preserved (member names are NOT sorted — this deliberately departs
     from full RFC 8785); numbers per RFC 8785: floats via ECMAScript
-    Number::toString (es_number_str), integers as digits; non-finite numbers
+    Number::toString (via ``rfc8785``), integers as digits; non-finite numbers
     rejected (the fill_value convention represents them as strings like
     "NaN"). This form is shared by all zarr-inline implementations so that
     decoded bytes agree byte-for-byte across languages.
@@ -131,7 +110,7 @@ def canonical_dumps(value: Any) -> str:
     return "".join(out)
 
 
-def decode_value(key: str, value: Any) -> bytes:
+def decode_value(key: str, value: object) -> bytes:
     """Convert a stored zarr-inline value into the bytes Zarr expects.
 
     Metadata keys hold a JSON object -> serialize to UTF-8 JSON bytes.
@@ -152,7 +131,7 @@ def decode_value(key: str, value: Any) -> bytes:
     return base64.b64decode(value, validate=True)
 
 
-def encode_value(key: str, data: bytes) -> Any:
+def encode_value(key: str, data: bytes) -> JSONValue:
     """Convert Zarr's bytes into the value stored in a zarr-inline document.
 
     Metadata keys: parse bytes as JSON, require a JSON object (value-level
@@ -167,21 +146,23 @@ def encode_value(key: str, data: bytes) -> Any:
         parsed = strict_loads(data)
         if not isinstance(parsed, dict):
             raise ValueError(f"metadata key {key!r} requires a JSON object value")
-        return parsed
+        return cast(dict[str, JSONValue], parsed)
     inlined = _try_inline_json(data)
     if inlined is not None:
         return inlined
     return base64.b64encode(data).decode("ascii")
 
 
-def _try_inline_json(data: bytes) -> list[Any] | dict[str, Any] | None:
+def _try_inline_json(
+    data: bytes,
+) -> list[JSONValue] | dict[str, JSONValue] | None:
     """Return the parsed array/object if inlining `data` is lossless, else None."""
     try:
         parsed = strict_loads(data)
         if isinstance(parsed, (list, dict)) and (
             canonical_dumps(parsed).encode("utf-8") == data
         ):
-            return parsed
+            return cast(list[JSONValue] | dict[str, JSONValue], parsed)
     except ValueError:
         # Not JSON, not UTF-8, or contains NaN/Infinity tokens (allow_nan=False).
         pass

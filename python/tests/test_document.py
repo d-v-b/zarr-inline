@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from zarr_inline.document import decode_value, encode_value, is_metadata_key
+from zarr_inline.document import canonical_dumps, decode_value, encode_value, is_metadata_key
 
 
 def test_root_zarr_inline_is_metadata_key():
@@ -101,6 +101,29 @@ def test_decode_byte_value_serializes_inline_array_canonically():
     assert decode_value("a/c/0", [1.5, "NaN", -0.0, 2.0, 1e-7]) == (
         b'[1.5,"NaN",0,2,1e-7]'
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0.0, "0"),
+        (-0.0, "0"),
+        (1.0, "1"),
+        (1e-6, "0.000001"),
+        (1e-7, "1e-7"),
+        (1e20, "100000000000000000000"),
+        (1e21, "1e+21"),
+        (5e-324, "5e-324"),
+    ],
+)
+def test_canonical_dumps_uses_rfc8785_number_format(value, expected):
+    assert canonical_dumps(value) == expected
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_canonical_dumps_rejects_non_finite_numbers(value):
+    with pytest.raises(ValueError, match="non-finite"):
+        canonical_dumps(value)
 
 
 def test_round_trip_inline_array():

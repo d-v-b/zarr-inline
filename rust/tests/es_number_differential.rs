@@ -1,5 +1,6 @@
 //! Randomized differential test of [`zarr_inline::es_number_str`] against the
-//! Python reference implementation (`zarr_inline.document.es_number_str`).
+//! Python reference implementation's canonical serializer (backed by the
+//! `rfc8785` package for floating-point formatting).
 //!
 //! Generates a few hundred deterministic f64 bit patterns, formats them in
 //! Rust, and compares against one batch `uv run python` subprocess reading
@@ -27,11 +28,11 @@ fn python_dir() -> PathBuf {
 
 const PYTHON_SCRIPT: &str = r"
 import struct, sys
-from zarr_inline.document import es_number_str
+from zarr_inline.document import canonical_dumps
 for line in sys.stdin:
     line = line.strip()
     if line:
-        print(es_number_str(struct.unpack('>d', bytes.fromhex(line))[0]))
+        print(canonical_dumps(struct.unpack('>d', bytes.fromhex(line))[0]))
 ";
 
 #[test]

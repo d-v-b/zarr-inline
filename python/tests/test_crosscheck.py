@@ -3,7 +3,7 @@
 Each implementation's crosscheck harness turns a payload into a zarr-inline
 document (write) and a document back into a payload (read); every
 (writer, reader) pair must reproduce the input payload exactly. See
-DESIGN.md section 6.2.
+https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#62-crosscheck-protocol
 """
 
 from __future__ import annotations

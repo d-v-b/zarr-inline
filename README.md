@@ -4,16 +4,15 @@ A convention for storing Zarr v3 hierarchies in JSON documents. The goal is
 simple interchange of small Zarr hierarchies: one portable,
 human-inspectable, hand-editable file.
 
+Read the [project documentation](docs/index.md) or go directly to the
+[specification](docs/specification.md) and [design guide](docs/how-it-works.md).
+
 The project is licensed under the [MIT License](LICENSE).
 
-- **[SPEC.md](SPEC.md)** — the specification.
 - `python/`, `typescript/`, `rust/` — reference implementations targeting
   zarr-python, zarrita, and zarrs.
 - `examples/` — shared conformance fixtures, including an
   [OME-Zarr 0.5 multiscale image](examples/valid/ome_zarr_0.5_image.json).
-- **[DESIGN.md](DESIGN.md)** — how it works: the model, design rationale,
-  implementation architecture, conformance and crosscheck protocols, and
-  known limitations.
 
 ## Development
 

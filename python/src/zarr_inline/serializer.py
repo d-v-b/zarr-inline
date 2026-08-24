@@ -20,12 +20,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Self
 
 import numpy as np
 from zarr.abc.codec import ArrayBytesCodec
 from zarr.core.common import JSON
+from zarr.core.dtype import ZDType
 from zarr.registry import register_codec
+from zarr_metadata import JSONValue
 
 from zarr_inline.document import canonical_dumps, strict_loads
 
@@ -34,7 +36,7 @@ if TYPE_CHECKING:
     from zarr.core.buffer import Buffer, NDBuffer
 
 
-def _nest(flat: list[Any], shape: tuple[int, ...]) -> Any:
+def _nest(flat: list[JSONValue], shape: tuple[int, ...]) -> JSONValue:
     if len(shape) == 0:
         return flat[0]
     if len(shape) == 1:
@@ -43,7 +45,7 @@ def _nest(flat: list[Any], shape: tuple[int, ...]) -> Any:
     return [_nest(flat[i * step : (i + 1) * step], shape[1:]) for i in range(shape[0])]
 
 
-def _flatten(nested: Any, shape: tuple[int, ...]) -> list[Any]:
+def _flatten(nested: object, shape: tuple[int, ...]) -> list[object]:
     # Shape-driven: a scalar's JSON form may itself be a list (complex ->
     # [re, im]), so recursion must stop at the last dimension, not at
     # non-list values.
@@ -53,7 +55,7 @@ def _flatten(nested: Any, shape: tuple[int, ...]) -> list[Any]:
         raise ValueError(f"json codec: chunk JSON does not match chunk shape {shape}")
     if len(shape) == 1:
         return list(nested)
-    out: list[Any] = []
+    out: list[object] = []
     for sub in nested:
         out.extend(_flatten(sub, shape[1:]))
     return out
@@ -62,7 +64,7 @@ def _flatten(nested: Any, shape: tuple[int, ...]) -> list[Any]:
 _NON_FINITE = ("NaN", "Infinity", "-Infinity")
 
 
-def _is_float_sort(v: Any) -> bool:
+def _is_float_sort(v: object) -> bool:
     return (isinstance(v, (int, float)) and not isinstance(v, bool)) or v in _NON_FINITE
 
 
@@ -82,7 +84,7 @@ _FLOAT_DATA_TYPES = frozenset({"float16", "float32", "float64", "bfloat16"})
 _COMPLEX_DATA_TYPES = frozenset({"complex64", "complex128"})
 
 
-def _data_type_name(zdtype: Any) -> str | None:
+def _data_type_name(zdtype: ZDType[object, object]) -> str | None:
     """Return a v3 data-type name, including names in extension objects."""
     metadata = zdtype.to_json(zarr_format=3)
     if isinstance(metadata, str):
@@ -92,7 +94,7 @@ def _data_type_name(zdtype: Any) -> str | None:
     return None
 
 
-def _check_scalar_sort(value: Any, zdtype: Any) -> None:
+def _check_scalar_sort(value: object, zdtype: ZDType[object, object]) -> None:
     """Enforce SPEC 9.2 element sorts before delegating to zarr-python's
     lenient from_json_scalar (which accepts 1.0, true, and "1" for int32,
     and 1 for bool). Integer dtypes take integer tokens only; bool takes
@@ -119,7 +121,9 @@ def _check_scalar_sort(value: Any, zdtype: Any) -> None:
         )
 
 
-def _check_finite(value: Any, scalar: Any, zdtype: Any) -> None:
+def _check_finite(
+    value: object, scalar: object, zdtype: ZDType[object, object]
+) -> None:
     """SPEC 9.2: a finite JSON number that overflows the target float type's
     finite range is out of range (a codec error), never Infinity; non-finite
     values are representable only through the explicit strings.
@@ -139,7 +143,7 @@ def _check_finite(value: Any, scalar: Any, zdtype: Any) -> None:
         )
 
 
-def encode_chunk(nd: Any, zdtype: Any) -> bytes:
+def encode_chunk(nd: object, zdtype: ZDType[object, object]) -> bytes:
     """Encode a native array as canonical JSON chunk bytes (SPEC 9.1).
 
     The synchronous core of the codec; also used by the crosscheck harness so
@@ -150,7 +154,9 @@ def encode_chunk(nd: Any, zdtype: Any) -> bytes:
     return canonical_dumps(_nest(flat, tuple(nd.shape))).encode("utf-8")
 
 
-def decode_chunk(data: bytes, shape: tuple[int, ...], zdtype: Any) -> Any:
+def decode_chunk(
+    data: bytes, shape: tuple[int, ...], zdtype: ZDType[object, object]
+) -> object:
     """Decode canonical JSON chunk bytes into a native array (SPEC 9.2):
     strict parse, shape-driven nesting, strict scalar sorts, finite range.
     """

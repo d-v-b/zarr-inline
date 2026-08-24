@@ -8,6 +8,18 @@ default:
 setup-python:
     cd python && uv sync
 
+# Install the documentation environment.
+setup-docs:
+    cd python && uv sync --group docs
+
+# Build the project documentation with warnings treated as errors.
+docs-check: setup-docs
+    cd python && uv run --group docs mkdocs build --strict --clean --config-file ../mkdocs.yml
+
+# Serve the project documentation locally.
+docs-serve: setup-docs
+    cd python && uv run --group docs mkdocs serve --config-file ../mkdocs.yml
+
 # Install the locked TypeScript environment.
 setup-typescript:
     cd typescript && npm ci
@@ -64,4 +76,4 @@ check-release-artifacts: setup-python setup-typescript
     cd rust && crate_version="$(cargo metadata --no-deps --format-version=1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')" && cargo test --manifest-path "target/package/zarr-inline-$crate_version/Cargo.toml"
 
 # Run every local, cross-implementation, and release-artifact check.
-check: test-python test-typescript test-rust lint-rust build-rust-conformance-minimal cross check-release-artifacts
+check: docs-check test-python test-typescript test-rust lint-rust build-rust-conformance-minimal cross check-release-artifacts

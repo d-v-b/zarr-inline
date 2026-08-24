@@ -12,8 +12,8 @@ report on stdout:
 
 The TypeScript and Rust implementations ship the same harness; the Python
 property test in tests/test_conformance_property.py generates documents and
-requires the three reports to agree. See
-DESIGN.md section 6.1.
+requires the three reports to agree. See the `conformance harness protocol
+<https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#61-conformance-harness-protocol>`_.
 """
 
 from __future__ import annotations
@@ -21,17 +21,17 @@ from __future__ import annotations
 import base64
 import json
 import sys
-from typing import Any
 
+from zarr_inline.backing import Document
 from zarr_inline.document import decode_value, encode_value
 from zarr_inline.validator import validate
 
 
-def run(document: dict[str, Any]) -> dict[str, Any]:
+def run(document: Document) -> dict[str, object]:
     issues = validate(document)
     issue_keys = {i.key for i in issues}
     decoded: dict[str, str] = {}
-    reencoded: dict[str, Any] = {}
+    reencoded: dict[str, object] = {}
     errors: list[str] = []
     for key, value in document.items():
         if key in issue_keys:

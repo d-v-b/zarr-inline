@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import warnings
 from collections.abc import AsyncIterator, Iterable
-from typing import Any
 
 from zarr.abc.store import (
     ByteRequest,
@@ -129,7 +128,7 @@ class ZarrInlineStore(Store):
     async def set(self, key: str, value: Buffer) -> None:
         await self._set_bytes(key, value.to_bytes())
 
-    async def set_json(self, key: str, value: Any) -> None:
+    async def set_json(self, key: str, value: object) -> None:
         """Store a JSON value at ``key``, canonicalized first.
 
         Equivalent to ``set(key, canonical_dumps(value).encode())`` — the

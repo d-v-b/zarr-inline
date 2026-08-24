@@ -1,6 +1,6 @@
 # zarr-inline: How It Works
 
-This document explains the design behind [SPEC.md](SPEC.md): the model, the
+This document explains the design behind the [specification](specification.md): the model, the
 reasoning behind its central choices, how the three implementations are
 built, how they are tested against each other, and the constraints and
 limitations that shape all of it. The spec is normative; this document is
@@ -531,8 +531,9 @@ implementations provably agree. What lies outside, and why:
 ## 8. Repository layout
 
 ```
-SPEC.md                  normative specification
-DESIGN.md                this document
+docs/specification.md    normative specification
+docs/how-it-works.md     this document
+mkdocs.yml               documentation-site configuration
 examples/                shared fixtures (valid/, invalid/, MANIFEST.json)
 python/                  zarr-python implementation; owns the cross-implementation tests
 typescript/              zarrita implementation

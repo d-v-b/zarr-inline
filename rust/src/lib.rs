@@ -1,8 +1,8 @@
 //! zarr-inline: store a Zarr v3 hierarchy as a single JSON object.
 //!
 //! Rust reference implementation. See the project
-//! [specification](https://github.com/d-v-b/zarr-inline/blob/main/SPEC.md) and
-//! [design document](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md).
+//! [specification](https://github.com/d-v-b/zarr-inline/blob/main/docs/specification.md) and
+//! [design guide](https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md).
 
 pub mod document;
 pub mod validator;

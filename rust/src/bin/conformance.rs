@@ -12,7 +12,7 @@
 //!
 //! The Python and TypeScript implementations ship the same harness; the
 //! Python property test generates documents and requires the reports to
-//! agree. See DESIGN.md section 6.1.
+//! agree. See <https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#61-conformance-harness-protocol>.
 //!
 //! This binary uses only the document encoding and validator modules, which are
 //! independent of zarrs.

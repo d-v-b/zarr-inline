@@ -8,8 +8,8 @@ keys (`zarr.json` or `*/zarr.json`) hold inline JSON metadata; all other
 keys hold base64-encoded bytes or byte-stable inline JSON arrays or objects.
 For arrays using the `json` codec, chunks are inline arrays of decoded values.
 
-See the project [specification](https://github.com/d-v-b/zarr-inline/blob/main/SPEC.md)
-and [design document](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md).
+See the project [specification](https://github.com/d-v-b/zarr-inline/blob/main/docs/specification.md)
+and [design guide](https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md).
 
 ## Requirements
 
@@ -134,7 +134,7 @@ echo '{"zarr.json": {"a": 1}}' | node dist/conformance.js
 
 Reads a document on stdin, writes `{"issues", "decoded", "reencoded",
 "errors"}` on stdout per
-[DESIGN.md §6.1](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md#61-conformance-harness-protocol). Keys that
+[conformance harness protocol](https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#61-conformance-harness-protocol). Keys that
 pass validation but fail to decode (e.g. a byte key whose string is not
 valid base64) land in `"errors"`; documents containing number literals
 that overflow float64 (like `1e400`) are rejected outright, matching
@@ -159,7 +159,7 @@ node dist/crosscheck.js read < document.json   # document -> payload
 ```
 
 The array-layer harness from
-[DESIGN.md §6.2](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md#62-crosscheck-protocol): `write`
+[crosscheck protocol](https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#62-crosscheck-protocol): `write`
 drives zarrita over a `ZarrInlineStore` to build a hierarchy of json-codec
 arrays from a payload, `read` opens every array in a document and reports
 its values using the `fill_value` scalar serialization. The Python test

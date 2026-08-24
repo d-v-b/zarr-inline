@@ -9,8 +9,8 @@ inline JSON metadata; all other keys hold base64-encoded bytes or byte-stable
 inline JSON arrays or objects. For arrays using the `json` codec, chunks are
 inline arrays of decoded values.
 
-See the project [specification](https://github.com/d-v-b/zarr-inline/blob/main/SPEC.md)
-and [design document](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md).
+See the project [specification](https://github.com/d-v-b/zarr-inline/blob/main/docs/specification.md)
+and [design guide](https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md).
 
 ## Install
 
@@ -86,7 +86,7 @@ or inline JSON arrays or objects). `ZarrInlineStore::from_document` validates st
 ## Conformance harness
 
 `cargo build` produces `target/debug/zarr-inline-conformance`, the CLI described in
-[DESIGN.md §6.1](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md#61-conformance-harness-protocol): it reads a
+[conformance harness protocol](https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#61-conformance-harness-protocol): it reads a
 zarr-inline document on stdin and writes a report (validator issues, decoded
 bytes as base64, re-encoded values) on stdout. The harness uses only the
 codec and validator modules, which have no zarrs dependency; if zarrs ever

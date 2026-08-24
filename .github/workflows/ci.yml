@@ -24,6 +24,7 @@ jobs:
           just-version: "1.55.1"
       # Cross-implementation tests run in the `cross` job with all toolchains.
       - run: just test-python
+      - run: just docs-check
 
   typescript:
     name: TypeScript (zarrita)

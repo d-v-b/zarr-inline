@@ -8,21 +8,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
+
+from zarr_metadata import JSONValue
 
 from zarr_inline.document import strict_loads
 
-Document = dict[str, Any]
+type Document = dict[str, JSONValue]
 
 
-def require_document(value: Any) -> Document:
+def require_document(value: object) -> Document:
     """A document's top-level value must be a JSON object (SPEC 6)."""
     if not isinstance(value, dict):
         raise ValueError(
             "document error: top-level value must be a JSON object, "
             f"got {type(value).__name__}"
         )
-    return value
+    return cast(Document, value)
 
 
 @runtime_checkable

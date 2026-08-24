@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
+from zarr_inline.backing import Document
 from zarr_inline.document import is_metadata_key
 
 
@@ -53,7 +53,7 @@ def _check_key_well_formed(key: str) -> ValidationIssue | None:
     return None
 
 
-def _check_value_type(key: str, value: Any) -> ValidationIssue | None:
+def _check_value_type(key: str, value: object) -> ValidationIssue | None:
     if is_metadata_key(key):
         if not isinstance(value, dict):
             return ValidationIssue("R2", key, "metadata key must map to a JSON object")
@@ -73,7 +73,7 @@ def check_key(key: str) -> ValidationIssue | None:
 
 
 def validate(
-    document: dict[str, Any],
+    document: Document,
     strictness: Strictness = Strictness.LENIENT,
 ) -> list[ValidationIssue]:
     """Check a zarr-inline document. Returns the list of issues (empty if valid).
