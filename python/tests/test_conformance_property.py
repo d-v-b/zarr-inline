@@ -123,7 +123,10 @@ JSON_VALUE = st.recursive(
 METADATA_KEY = st.lists(SEGMENT, min_size=0, max_size=2).map(
     lambda segs: "/".join([*segs, "zarr.json"])
 )
-DATA_KEY = st.lists(SEGMENT, min_size=1, max_size=3).map("/".join)
+DATA_KEY = st.one_of(
+    st.just(""),
+    st.lists(SEGMENT, min_size=1, max_size=3).map("/".join),
+)
 
 METADATA_VALUE = st.dictionaries(OBJ_KEY, JSON_VALUE, max_size=4)
 BYTE_VALUE = st.one_of(
@@ -145,7 +148,7 @@ DUBIOUS_TEXT = st.text(
     alphabet=st.sampled_from(list("AbZ09+/=!. \n_-")), max_size=12
 )
 
-BAD_KEY = st.sampled_from(["/x", "x/", "a//b", "a/./b", "..", "a/../b", ""])
+BAD_KEY = st.sampled_from(["/x", "x/", "a//b", "a/./b", "..", "a/../b"])
 BAD_ENTRY = st.one_of(
     st.tuples(BAD_KEY, st.one_of(METADATA_VALUE, BYTE_VALUE)),
     st.tuples(METADATA_KEY, st.one_of(st.lists(JSON_VALUE, max_size=2), SAFE_SCALAR)),

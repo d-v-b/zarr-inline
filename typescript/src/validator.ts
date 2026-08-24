@@ -1,13 +1,13 @@
 /**
  * Validate a zarr-inline document against the two validity rules.
  *
- * R1 — well-formed keys: every key is a non-empty string with no leading or
+ * R1 — well-formed keys: the empty root key or a string with no leading or
  *      trailing "/", no empty segments, and no "." or ".." segments.
  * R2 — per-value type: metadata keys map to a JSON object; byte keys map to a
  *      base64 string or an inline JSON array or object.
  */
 
-import { isMetadataKey } from "./codec.js";
+import { isMetadataKey } from "./document.js";
 
 export interface ValidationIssue {
 	rule: "R1" | "R2";
@@ -35,9 +35,10 @@ export function checkKey(key: string): ValidationIssue | undefined {
 }
 
 function checkKeyWellFormed(key: string): ValidationIssue | undefined {
-	if (typeof key !== "string" || key === "") {
-		return { rule: "R1", key: String(key), message: "key must be a non-empty string" };
+	if (typeof key !== "string") {
+		return { rule: "R1", key: String(key), message: "key must be a string" };
 	}
+	if (key === "") return undefined;
 	if (key.startsWith("/") || key.endsWith("/")) {
 		return { rule: "R1", key, message: "key must not have a leading or trailing '/'" };
 	}

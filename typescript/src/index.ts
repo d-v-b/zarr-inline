@@ -11,7 +11,7 @@ export {
 	isMetadataKey,
 	METADATA_SUFFIX,
 	strictParse,
-} from "./codec.js";
+} from "./document.js";
 export {
 	validate,
 	ValidationError,

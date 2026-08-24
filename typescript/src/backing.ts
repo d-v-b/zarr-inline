@@ -11,7 +11,7 @@
  * Object.create(null) makes reads and writes own-property-only.
  */
 
-import { canonicalStringify, strictParse } from "./codec.js";
+import { canonicalStringify, strictParse } from "./document.js";
 
 export type Document = Record<string, unknown>;
 

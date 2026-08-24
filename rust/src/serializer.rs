@@ -8,7 +8,7 @@
 //! values become [re, im] pairs, and so on. zarrs exposes the serialization
 //! as `DataTypeTraits::metadata_fill_value` / `fill_value_v3`.
 //!
-//! Output is canonical JSON (see [`crate::codec::canonical_to_string`]),
+//! Output is canonical JSON (see [`crate::document::canonical_to_string`]),
 //! which is what lets [`crate::ZarrInlineStore`] inline these chunks as real
 //! JSON arrays in the document.
 //!
@@ -36,7 +36,7 @@ use zarrs::metadata::v3::MetadataV3;
 use zarrs::metadata::Configuration;
 use zarrs::plugin::{PluginCreateError, ZarrVersion};
 
-use crate::codec::canonical_to_string;
+use crate::document::canonical_to_string;
 
 /// The `json` array->bytes codec: encodes chunks as canonical UTF-8 JSON
 /// arrays using the Zarr v3 fill_value scalar serialization elementwise.
@@ -234,7 +234,7 @@ impl ArrayToBytesCodecTraits for JsonCodec {
         _options: &CodecOptions,
     ) -> Result<ArrayBytes<'a>, CodecError> {
         let element_size = fixed_size(data_type)?;
-        let nested: Value = crate::codec::strict_from_slice(&bytes)
+        let nested: Value = crate::document::strict_from_slice(&bytes)
             .map_err(|e| CodecError::Other(format!("json codec: chunk is not JSON: {e}")))?;
 
         let shape_u64: Vec<u64> = shape.iter().map(|d| d.get()).collect();

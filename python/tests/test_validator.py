@@ -9,6 +9,10 @@ def test_empty_document_is_valid():
     assert validate({}) == []
 
 
+def test_empty_root_key_is_valid():
+    assert validate({"": "AAEC"}) == []
+
+
 def test_valid_group_document_passes():
     doc = {"zarr.json": {"zarr_format": 3, "node_type": "group", "attributes": {}}}
     assert validate(doc) == []

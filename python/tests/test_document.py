@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from zarr_inline.codec import decode_value, encode_value, is_metadata_key
+from zarr_inline.document import decode_value, encode_value, is_metadata_key
 
 
 def test_root_zarr_inline_is_metadata_key():
@@ -109,14 +109,14 @@ def test_round_trip_inline_array():
 
 
 def test_strict_loads_rejects_bare_nan_token():
-    from zarr_inline.codec import strict_loads
+    from zarr_inline.document import strict_loads
 
     with pytest.raises(ValueError, match="not a JSON token"):
         strict_loads('{"a/c/0": [NaN]}')
 
 
 def test_strict_loads_rejects_float_overflow_literal():
-    from zarr_inline.codec import strict_loads
+    from zarr_inline.document import strict_loads
 
     with pytest.raises(ValueError, match="overflows float64"):
         strict_loads('{"a/c/0": [1e999]}')

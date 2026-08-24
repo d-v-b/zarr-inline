@@ -52,8 +52,9 @@ array/object = inline JSON.
 
 ### 3.1 Well-formed keys (rule R1)
 
-A key MUST be a non-empty string that does not begin or end with `/` and,
-when split on `/`, yields no segment that is empty, `.`, or `..`.
+A key MUST be a string. The empty string is well-formed and denotes the store's
+root resource. A non-empty key MUST NOT begin or end with `/` and, when split
+on `/`, MUST yield no segment that is empty, `.`, or `..`.
 
 Keys are compared by exact code-point sequence: no case folding and no
 Unicode normalization. Keys differing only in normalization form (e.g.
@@ -64,7 +65,7 @@ Unicode normalization. Keys differing only in normalization form (e.g.
 A key is a *metadata key* if and only if it is exactly `zarr.json` or its
 final `/`-separated segment is `zarr.json`. The comparison is exact and
 case-sensitive: `Zarr.json` and `xyzarr.json` are byte keys. Every other
-key is a *byte key*.
+key, including the empty key, is a *byte key*.
 
 ### 3.3 Relation to Zarr v3 (non-normative)
 

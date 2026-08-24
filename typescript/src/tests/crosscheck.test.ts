@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { strictParse } from "../codec.js";
+import { strictParse } from "../document.js";
 import { read, write, type Payload } from "../crosscheck.js";
 
 const CLI = path.resolve(

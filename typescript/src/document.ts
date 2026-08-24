@@ -1,5 +1,5 @@
 /**
- * Pure functions for classifying keys and encoding/decoding values.
+ * Pure functions for parsing and encoding zarr-inline document values.
  *
  * A zarr-inline value is one of:
  *

@@ -8,7 +8,7 @@ import {
 	encodeValue,
 	isMetadataKey,
 	strictParse,
-} from "../codec.js";
+} from "../document.js";
 
 const UTF8 = new TextEncoder();
 

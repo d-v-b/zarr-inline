@@ -27,7 +27,7 @@ import {
 	compareCodePoints,
 	decodeValue,
 	encodeValue,
-} from "./codec.js";
+} from "./document.js";
 import { validate } from "./validator.js";
 
 export interface ConformanceReport {

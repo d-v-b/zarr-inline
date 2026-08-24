@@ -18,7 +18,7 @@ use zarrs::storage::{
     WritableStorageTraits,
 };
 
-use crate::codec::{canonical_to_string, decode_value, encode_value};
+use crate::document::{canonical_to_string, decode_value, encode_value};
 use crate::validator::{check_key, validate, ValidationError, ValidationIssue};
 
 /// A zarr-inline document: one JSON object holding a whole Zarr hierarchy.
@@ -395,6 +395,20 @@ mod tests {
     }
 
     #[test]
+    fn empty_key_addresses_the_store_root_resource() {
+        let store = ZarrInlineStore::new();
+        store
+            .set(&StoreKey::root(), Bytes::from_static(&[0, 1, 2]))
+            .unwrap();
+        assert_eq!(store.document()[""], json!("AAEC"));
+        assert_eq!(
+            store.get(&StoreKey::root()).unwrap().unwrap().as_ref(),
+            &[0, 1, 2]
+        );
+        assert_eq!(store.list().unwrap(), vec![StoreKey::root()]);
+    }
+
+    #[test]
     fn set_metadata_key_with_non_object_bytes_errors() {
         let store = ZarrInlineStore::new();
         let result = store.set(&key("zarr.json"), Bytes::from_static(b"[1,2]"));
@@ -409,7 +423,7 @@ mod tests {
         // store must reject such keys itself; the document stays unchanged.
         let store = ZarrInlineStore::new();
         let mut exercised = Vec::new();
-        for bad in ["", "a/", "a//b", "a/./b", "a/../b", "..", "/a"] {
+        for bad in ["a/", "a//b", "a/./b", "a/../b", "..", "/a"] {
             let Ok(store_key) = StoreKey::new(bad) else {
                 continue; // zarrs itself refuses to construct this key
             };

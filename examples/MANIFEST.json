@@ -1,5 +1,6 @@
 {
   "valid/empty.json": { "valid": true, "rule": null },
+  "valid/empty_root_key.json": { "valid": true, "rule": null },
   "valid/group_only.json": { "valid": true, "rule": null },
   "valid/group_with_array_and_chunk.json": { "valid": true, "rule": null },
   "valid/array_with_inline_json_chunk.json": { "valid": true, "rule": null },

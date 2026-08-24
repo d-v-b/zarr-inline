@@ -227,7 +227,7 @@ and the host does all array reading and writing.
 
 All three share one internal shape:
 
-- **codec** — pure functions: key classification, canonical serialization,
+- **document encoding** — pure functions: key classification, canonical serialization,
   strict parsing, `decode_value` (document value → bytes) and
   `encode_value` (bytes → document value, with the inlining rule).
 - **validator** — R1 (well-formed keys) and R2 (value type by key class);

@@ -24,7 +24,7 @@ import {
 	compareCodePoints,
 	isMetadataKey,
 	strictParse,
-} from "./codec.js";
+} from "./document.js";
 import {
 	JsonSerializer,
 	cStrides,

@@ -39,6 +39,13 @@ def test_file_backing_load_missing_file_returns_empty_document(tmp_path):
     assert backing.load() == {}
 
 
+def test_file_backing_requires_a_path():
+    import pytest
+
+    with pytest.raises(TypeError):
+        FileBacking(None)  # type: ignore[arg-type]
+
+
 def test_all_backings_satisfy_backing_protocol():
     assert isinstance(MemoryBacking({}), Backing)
     assert isinstance(StringBacking("{}"), Backing)

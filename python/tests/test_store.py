@@ -55,6 +55,15 @@ async def test_set_then_get_round_trips_bytes():
     assert result.to_bytes() == b"\x00\xff\x10"
 
 
+async def test_empty_key_addresses_the_store_root_resource():
+    backing = MemoryBacking({})
+    store = ZarrInlineStore(backing)
+    await store.set("", buf(b"\x00\x01\x02"))
+    assert backing.load() == {"": "AAEC"}
+    assert (await store.get("", PROTOTYPE)).to_bytes() == b"\x00\x01\x02"
+    assert [key async for key in store.list()] == [""]
+
+
 async def test_get_with_range_byte_request():
     from zarr.abc.store import RangeByteRequest
 
@@ -238,7 +247,7 @@ async def test_set_rejects_malformed_store_key():
 
     store = ZarrInlineStore(MemoryBacking({}))
     buf = default_buffer_prototype().buffer.from_bytes(b"x")
-    for bad in ("", "/a", "a/", "a//b", "a/./b", "a/../b", ".."):
+    for bad in ("/a", "a/", "a//b", "a/./b", "a/../b", ".."):
         with pytest.raises(ValueError, match="invalid store key"):
             await store.set(bad, buf)
     assert MemoryBacking({}).load() == {}

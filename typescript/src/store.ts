@@ -15,7 +15,7 @@ import {
 	decodeValue,
 	encodeValue,
 	isMetadataKey,
-} from "./codec.js";
+} from "./document.js";
 import { checkKey, validate, type ValidationIssue } from "./validator.js";
 
 const UTF8_ENCODER = new TextEncoder();

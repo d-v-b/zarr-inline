@@ -9,7 +9,7 @@ values become [re, im] pairs, fixed-length bytes become base64 strings, and
 so on. zarr-python exposes the serialization as ZDType.to_json_scalar /
 from_json_scalar.
 
-Output is canonical JSON (see codec.canonical_dumps), which is what lets
+Output is canonical JSON (see document.canonical_dumps), which is what lets
 ZarrInlineStore inline these chunks as real JSON arrays in the document.
 
 A rank-0 chunk serializes to a bare JSON scalar; the store only inlines
@@ -27,7 +27,7 @@ from zarr.abc.codec import ArrayBytesCodec
 from zarr.core.common import JSON
 from zarr.registry import register_codec
 
-from zarr_inline.codec import canonical_dumps, strict_loads
+from zarr_inline.document import canonical_dumps, strict_loads
 
 if TYPE_CHECKING:
     from zarr.core.array_spec import ArraySpec
@@ -66,22 +66,48 @@ def _is_float_sort(v: Any) -> bool:
     return (isinstance(v, (int, float)) and not isinstance(v, bool)) or v in _NON_FINITE
 
 
-def _check_scalar_sort(value: Any, native: np.dtype[Any]) -> None:
+_INTEGER_DATA_TYPES = frozenset(
+    {
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    }
+)
+_FLOAT_DATA_TYPES = frozenset({"float16", "float32", "float64", "bfloat16"})
+_COMPLEX_DATA_TYPES = frozenset({"complex64", "complex128"})
+
+
+def _data_type_name(zdtype: Any) -> str | None:
+    """Return a v3 data-type name, including names in extension objects."""
+    metadata = zdtype.to_json(zarr_format=3)
+    if isinstance(metadata, str):
+        return metadata
+    if isinstance(metadata, dict) and isinstance(metadata.get("name"), str):
+        return metadata["name"]
+    return None
+
+
+def _check_scalar_sort(value: Any, zdtype: Any) -> None:
     """Enforce SPEC 9.2 element sorts before delegating to zarr-python's
     lenient from_json_scalar (which accepts 1.0, true, and "1" for int32,
     and 1 for bool). Integer dtypes take integer tokens only; bool takes
     booleans only; floats take integers, floats, or the non-finite strings;
     complex takes a [re, im] pair of float-sort values.
     """
-    kind = native.kind
+    data_type = _data_type_name(zdtype)
     ok = True
-    if kind in "iu":
+    if data_type in _INTEGER_DATA_TYPES:
         ok = isinstance(value, int) and not isinstance(value, bool)
-    elif kind == "b":
+    elif data_type == "bool":
         ok = isinstance(value, bool)
-    elif kind == "f":
+    elif data_type in _FLOAT_DATA_TYPES:
         ok = _is_float_sort(value)
-    elif kind == "c":
+    elif data_type in _COMPLEX_DATA_TYPES:
         ok = (
             isinstance(value, (list, tuple))
             and len(value) == 2
@@ -89,25 +115,26 @@ def _check_scalar_sort(value: Any, native: np.dtype[Any]) -> None:
         )
     if not ok:
         raise ValueError(
-            f"json codec: invalid {native} scalar {value!r}: wrong JSON number sort"
+            f"json codec: invalid {data_type} scalar {value!r}: wrong JSON number sort"
         )
 
 
-def _check_finite(value: Any, scalar: Any, native: np.dtype[Any]) -> None:
+def _check_finite(value: Any, scalar: Any, zdtype: Any) -> None:
     """SPEC 9.2: a finite JSON number that overflows the target float type's
     finite range is out of range (a codec error), never Infinity; non-finite
     values are representable only through the explicit strings.
     """
-    if native.kind not in "fc":
+    data_type = _data_type_name(zdtype)
+    if data_type not in _FLOAT_DATA_TYPES | _COMPLEX_DATA_TYPES:
         return
     numeric = (
         isinstance(value, (int, float)) and not isinstance(value, bool)
-        if native.kind == "f"
+        if data_type in _FLOAT_DATA_TYPES
         else all(isinstance(p, (int, float)) and not isinstance(p, bool) for p in value)
     )
     if numeric and not np.isfinite(scalar):
         raise ValueError(
-            f"json codec: {native} value {value!r} is out of range (not finite after "
+            f"json codec: {data_type} value {value!r} is out of range (not finite after "
             'conversion); use "NaN"/"Infinity"/"-Infinity" for non-finite values'
         )
 
@@ -133,7 +160,7 @@ def decode_chunk(data: bytes, shape: tuple[int, ...], zdtype: Any) -> Any:
     flat = _flatten(nested, tuple(shape))
     native = zdtype.to_native_dtype()
     for v in flat:
-        _check_scalar_sort(v, native)
+        _check_scalar_sort(v, zdtype)
     scalars = []
     for v in flat:
         try:
@@ -142,7 +169,7 @@ def decode_chunk(data: bytes, shape: tuple[int, ...], zdtype: Any) -> Any:
             raise ValueError(
                 f"json codec: {native} value {v!r} is out of range: {exc}"
             ) from exc
-        _check_finite(v, scalar, native)
+        _check_finite(v, scalar, zdtype)
         scalars.append(scalar)
     return np.asarray(scalars, dtype=native).reshape(tuple(shape))
 

@@ -4,7 +4,7 @@
  * Encoding is the Zarr v3 fill_value scalar serialization, applied elementwise
  * and nested by shape in C order: numbers as JSON numbers, NaN/Infinity as the
  * strings "NaN"/"Infinity"/"-Infinity", booleans as true/false. Output is
- * canonical JSON (see codec.canonicalStringify), which is what lets
+ * canonical JSON (see document.canonicalStringify), which is what lets
  * ZarrInlineStore inline these chunks as real JSON arrays in the document.
  *
  * int64/uint64 caveat: JS represents these as BigInt. Values within
@@ -18,7 +18,7 @@
 
 import { BoolArray, registry } from "zarrita";
 import type { Chunk, CodecMetadata, DataType, TypedArray } from "zarrita";
-import { canonicalStringify, strictParse } from "./codec.js";
+import { canonicalStringify, strictParse } from "./document.js";
 
 type ChunkMeta = {
 	dataType: DataType;

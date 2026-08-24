@@ -1,6 +1,6 @@
 //! Validate a zarr-inline document against the two validity rules.
 //!
-//! R1 — well-formed keys: every key is a non-empty string with no leading or
+//! R1 — well-formed keys: the empty root key or a string with no leading or
 //!      trailing `/`, no empty segments, and no `.` or `..` segments.
 //! R2 — per-value type: metadata keys map to a JSON object; byte keys map to
 //!      a base64 string or an inline JSON array or object.
@@ -10,7 +10,7 @@
 
 use serde_json::{Map, Value};
 
-use crate::codec::is_metadata_key;
+use crate::document::is_metadata_key;
 
 /// A single validity violation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +53,7 @@ fn check_key_well_formed(key: &str) -> Option<ValidationIssue> {
         })
     };
     if key.is_empty() {
-        return issue("key must be a non-empty string");
+        return None;
     }
     if key.starts_with('/') || key.ends_with('/') {
         return issue("key must not have a leading or trailing '/'");
@@ -139,6 +139,7 @@ mod tests {
         // Reasonable valid documents across both rules.
         for value in [
             json!({}),
+            json!({"": "AAEC"}),
             json!({"zarr.json": {"zarr_format": 3, "node_type": "group"}}),
             json!({"zarr.json": {}, "a/zarr.json": {}, "a/c/0": "AAEC"}),
             json!({"a/c/0/0": [1, 2, 3]}), // inline JSON array at a byte key
@@ -173,7 +174,6 @@ mod tests {
     #[test]
     fn malformed_keys_report_r1() {
         for value in [
-            json!({"": "x"}),
             json!({"/zarr.json": {}}),
             json!({"a/zarr.json/": {}}),
             json!({"a//zarr.json": {}}),

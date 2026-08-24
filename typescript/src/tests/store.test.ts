@@ -4,7 +4,7 @@ import { test } from "node:test";
 import * as zarr from "zarrita";
 
 import { MemoryBacking, StringBacking } from "../backing.js";
-import { isMetadataKey } from "../codec.js";
+import { isMetadataKey } from "../document.js";
 import { ZarrInlineStore } from "../store.js";
 import { ValidationError } from "../validator.js";
 
@@ -90,6 +90,15 @@ test("round trip through string backing", async () => {
 test("get returns undefined for a missing key", async () => {
 	const store = new ZarrInlineStore(new MemoryBacking({}));
 	assert.equal(await store.get("/nope"), undefined);
+});
+
+test("the root absolute path addresses the empty document key", async () => {
+	const backing = new MemoryBacking({});
+	const store = new ZarrInlineStore(backing);
+	await store.set("/", new Uint8Array([0, 1, 2]));
+	assert.deepEqual({ ...backing.load() }, { "": "AAEC" });
+	assert.deepEqual(await store.get("/"), new Uint8Array([0, 1, 2]));
+	assert.deepEqual(await store.list(), [""]);
 });
 
 test("getRange applies offset/length and suffixLength to decoded bytes", async () => {

@@ -76,8 +76,8 @@ test("standalone dotdot key reports R1", () => {
 	assert.ok(validate({ "..": {} }).some((i) => i.rule === "R1"));
 });
 
-test("empty key reports R1", () => {
-	assert.ok(validate({ "": "AAEC" }).some((i) => i.rule === "R1"));
+test("empty root key is valid", () => {
+	assert.deepEqual(validate({ "": "AAEC" }), []);
 });
 
 test("at most one issue per key: R1 takes precedence over R2", () => {

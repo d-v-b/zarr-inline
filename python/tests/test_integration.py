@@ -4,7 +4,7 @@ import numpy as np
 import zarr
 
 from zarr_inline import MemoryBacking, StringBacking, ZarrInlineStore
-from zarr_inline.codec import is_metadata_key
+from zarr_inline.document import is_metadata_key
 
 
 async def test_create_group_and_array_write_read_through_zarr_python():

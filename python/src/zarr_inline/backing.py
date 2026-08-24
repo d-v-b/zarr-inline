@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from zarr_inline.codec import strict_loads
+from zarr_inline.document import strict_loads
 
 Document = dict[str, Any]
 
@@ -71,7 +71,11 @@ class StringBacking:
 
 
 class FileBacking:
-    """Reads from / writes to a .json file on disk."""
+    """Reads from / writes to a .json file on disk.
+
+    ``path`` is required. A path that does not yet exist represents a new,
+    empty document; ``None`` is not a path and is not accepted.
+    """
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)

@@ -1,6 +1,6 @@
 """Validate a zarr-inline document against the two validity rules.
 
-R1 — well-formed keys: every key is a non-empty string with no leading or
+R1 — well-formed keys: the empty root key or a string with no leading or
      trailing "/", no empty segments, and no "." or ".." segments.
 R2 — per-value type: metadata keys map to a JSON object (dict); byte keys
      map to a base64 string (str) or an inline JSON array (list) or object
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from zarr_inline.codec import is_metadata_key
+from zarr_inline.document import is_metadata_key
 
 
 class Strictness(Enum):
@@ -38,8 +38,10 @@ class ValidationError(Exception):
 
 
 def _check_key_well_formed(key: str) -> ValidationIssue | None:
-    if not isinstance(key, str) or key == "":
-        return ValidationIssue("R1", str(key), "key must be a non-empty string")
+    if not isinstance(key, str):
+        return ValidationIssue("R1", str(key), "key must be a string")
+    if key == "":
+        return None
     if key.startswith("/") or key.endswith("/"):
         return ValidationIssue("R1", key, "key must not have a leading or trailing '/'")
     segments = key.split("/")

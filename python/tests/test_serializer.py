@@ -7,6 +7,7 @@ import pytest
 import zarr
 
 from zarr_inline import JsonSerializer, MemoryBacking, ZarrInlineStore
+from zarr_inline.serializer import decode_chunk
 
 CASES = [
     # (dtype, values, expected chunk JSON in the document)
@@ -172,3 +173,37 @@ async def test_decode_rejects_numbers_that_overflow_the_target_float_type(dtype,
         warnings.simplefilter("ignore")  # numpy overflow RuntimeWarning
         with pytest.raises(ValueError, match="out of range"):
             await JsonSerializer()._decode_single(proto.buffer.from_bytes(chunk_text), spec)
+
+
+class _SemanticDataType:
+    """Test double whose native NumPy kind deliberately contradicts v3 metadata."""
+
+    def __init__(self, name, native, convert=lambda value: value):
+        self.name = name
+        self.native = np.dtype(native)
+        self.convert = convert
+
+    def to_json(self, *, zarr_format):
+        assert zarr_format == 3
+        return self.name
+
+    def to_native_dtype(self):
+        return self.native
+
+    def from_json_scalar(self, value, *, zarr_format):
+        assert zarr_format == 3
+        return self.convert(value)
+
+
+def test_decode_dispatches_scalar_sort_on_zarr_data_type_not_numpy_kind():
+    bool_with_object_storage = _SemanticDataType("bool", "O")
+    with pytest.raises(ValueError, match="wrong JSON number sort"):
+        decode_chunk(b"[1]", (1,), bool_with_object_storage)
+
+
+def test_decode_does_not_impose_numpy_integer_rules_on_extension_data_types():
+    extension_with_integer_storage = _SemanticDataType(
+        "example.extension", "int32", convert=lambda value: len(value)
+    )
+    result = decode_chunk(b'["abc"]', (1,), extension_with_integer_storage)
+    assert result.tolist() == [3]

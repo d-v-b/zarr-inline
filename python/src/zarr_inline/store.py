@@ -17,7 +17,7 @@ from zarr.abc.store import (
 from zarr.core.buffer import Buffer, BufferPrototype
 
 from zarr_inline.backing import Backing
-from zarr_inline.codec import canonical_dumps, decode_value, encode_value, is_metadata_key
+from zarr_inline.document import canonical_dumps, decode_value, encode_value, is_metadata_key
 from zarr_inline.validator import Strictness, check_key, validate
 
 

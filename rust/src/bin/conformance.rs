@@ -14,7 +14,7 @@
 //! Python property test generates documents and requires the reports to
 //! agree. See DESIGN.md section 6.1.
 //!
-//! This binary uses only the codec and validator modules, which are
+//! This binary uses only the document encoding and validator modules, which are
 //! independent of zarrs.
 
 use std::collections::HashSet;
@@ -25,7 +25,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use serde_json::{json, Map, Value};
 
-use zarr_inline::codec::{canonical_to_string, decode_value, encode_value};
+use zarr_inline::document::{canonical_to_string, decode_value, encode_value};
 use zarr_inline::validator::validate;
 
 fn run(document: &Map<String, Value>) -> Result<Value, String> {

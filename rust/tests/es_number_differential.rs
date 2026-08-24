@@ -1,5 +1,5 @@
 //! Randomized differential test of [`zarr_inline::es_number_str`] against the
-//! Python reference implementation (`zarr_inline.codec.es_number_str`).
+//! Python reference implementation (`zarr_inline.document.es_number_str`).
 //!
 //! Generates a few hundred deterministic f64 bit patterns, formats them in
 //! Rust, and compares against one batch `uv run python` subprocess reading
@@ -27,7 +27,7 @@ fn python_dir() -> PathBuf {
 
 const PYTHON_SCRIPT: &str = r"
 import struct, sys
-from zarr_inline.codec import es_number_str
+from zarr_inline.document import es_number_str
 for line in sys.stdin:
     line = line.strip()
     if line:

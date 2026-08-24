@@ -19,7 +19,7 @@ import zarr
 from zarr.codecs import ShardingCodec
 
 from zarr_inline.backing import MemoryBacking
-from zarr_inline.codec import is_metadata_key, strict_loads
+from zarr_inline.document import is_metadata_key, strict_loads
 from zarr_inline.serializer import JsonSerializer, decode_chunk, encode_chunk
 from zarr_inline.store import ZarrInlineStore
 from zarr_inline.validator import Strictness

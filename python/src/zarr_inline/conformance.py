@@ -23,7 +23,7 @@ import json
 import sys
 from typing import Any
 
-from zarr_inline.codec import decode_value, encode_value
+from zarr_inline.document import decode_value, encode_value
 from zarr_inline.validator import validate
 
 
@@ -55,7 +55,7 @@ def run(document: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    from zarr_inline.codec import strict_loads
+    from zarr_inline.document import strict_loads
 
     try:
         document = strict_loads(sys.stdin.buffer.read())
