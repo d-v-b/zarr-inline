@@ -63,7 +63,7 @@ def _harnesses() -> dict[str, list[str]]:
         REPO / "typescript",
     ):
         out["typescript"] = ["node", str(ts)]
-    rs = REPO / "rust" / "target" / "debug" / "crosscheck"
+    rs = REPO / "rust" / "target" / "debug" / "zarr-inline-crosscheck"
     if _available("rust", rs, [["cargo", "build"]], REPO / "rust"):
         out["rust"] = [str(rs)]
     return out
@@ -73,9 +73,9 @@ HARNESSES = _harnesses()
 
 
 def _unavailable(message: str) -> None:
-    # In CI (ZARR_JSON_REQUIRE_HARNESSES=1) a missing harness is a failure,
+    # In CI (ZARR_INLINE_REQUIRE_HARNESSES=1) a missing harness is a failure,
     # not a silent skip.
-    if os.environ.get("ZARR_JSON_REQUIRE_HARNESSES") == "1":
+    if os.environ.get("ZARR_INLINE_REQUIRE_HARNESSES") == "1":
         pytest.fail(message)
     pytest.skip(message)
 

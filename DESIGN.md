@@ -314,7 +314,7 @@ integration test driving the host library through the store.
 CI (`.github/workflows/ci.yml`) runs each implementation's suite in its
 own job, then a `cross` job that builds the TypeScript and Rust harnesses
 and runs the property test and crosscheck matrix with
-`ZARR_JSON_REQUIRE_HARNESSES=1`, so a missing harness fails the build
+`ZARR_INLINE_REQUIRE_HARNESSES=1`, so a missing harness fails the build
 instead of silently skipping (locally, the same tests skip when a
 toolchain is absent).
 
@@ -355,7 +355,7 @@ a report on stdout:
 |---|---|---|
 | Python | `cd python && uv sync` | `uv run python -m zarr_inline.conformance` |
 | TypeScript | `cd typescript && npm install && npm run build` | `node typescript/dist/conformance.js` |
-| Rust | `cd rust && cargo build` | `rust/target/debug/conformance` |
+| Rust | `cd rust && cargo build` | `rust/target/debug/zarr-inline-conformance` |
 
 `python/tests/test_conformance_property.py` generates documents with
 Hypothesis — metadata objects, base64 byte values, inline arrays/objects,

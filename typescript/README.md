@@ -5,23 +5,24 @@ read-write [zarrita](https://github.com/manzt/zarrita.js) store (the
 `AsyncMutable` interface from `@zarrita/storage`, including `getRange`
 partial reads) whose entire contents live in one JSON document — metadata
 keys (`zarr.json` or `*/zarr.json`) hold inline JSON metadata; all other
-keys hold base64-encoded bytes or, for arrays using the `json` codec,
-inline JSON arrays of decoded values.
+keys hold base64-encoded bytes or byte-stable inline JSON arrays or objects.
+For arrays using the `json` codec, chunks are inline arrays of decoded values.
 
-See [SPEC.md](../SPEC.md) and [DESIGN.md](../DESIGN.md).
+See the project [specification](https://github.com/d-v-b/zarr-inline/blob/main/SPEC.md)
+and [design document](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md).
 
 ## Requirements
 
-Node >= 21: the implementation parses integer literals losslessly (integers
+Node >= 22: the implementation parses integer literals losslessly (integers
 beyond 2^53 become `BigInt`) via `JSON.parse` reviver source-text access, so
 int64/uint64 data and big metadata integers survive exactly, matching the
 Python and Rust implementations. `strictParse` throws a clear error on older
 Node versions.
 
-## Install / build
+## Install
 
 ```bash
-cd typescript && npm install && npm run build
+npm install zarr-inline zarrita
 ```
 
 ## Usage
@@ -84,7 +85,7 @@ await zarr.set(legible, null, {
 Supported dtypes: int8/16/32, uint8/16/32, float32/64, bool, and
 int64/uint64 (as BigInt) across their full ranges — values beyond 2^53
 serialize as exact integer digits and parse back losslessly via
-`strictParse` (Node >= 21). Decoding is strict, like zarr-python's
+`strictParse` (Node >= 22). Decoding is strict, like zarr-python's
 `from_json_scalar`: out-of-range or non-integer values for int dtypes,
 dtype-range violations for int64/uint64, and non-boolean bool values all
 throw; floats accept numbers plus the `"NaN"`/`"Infinity"`/`"-Infinity"`
@@ -123,7 +124,7 @@ validate(document, { strict: true });       // strict: throws ValidationError
 
 `validate` checks the two validity rules: **R1** well-formed keys and **R2**
 per-value type (metadata keys map to objects; byte keys map to base64
-strings or inline JSON arrays).
+strings or inline JSON arrays or objects).
 
 ## Conformance harness
 
@@ -133,7 +134,7 @@ echo '{"zarr.json": {"a": 1}}' | node dist/conformance.js
 
 Reads a document on stdin, writes `{"issues", "decoded", "reencoded",
 "errors"}` on stdout per
-`../DESIGN.md` §6.1. Keys that
+[DESIGN.md §6.1](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md#61-conformance-harness-protocol). Keys that
 pass validation but fail to decode (e.g. a byte key whose string is not
 valid base64) land in `"errors"`; documents containing number literals
 that overflow float64 (like `1e400`) are rejected outright, matching
@@ -158,7 +159,7 @@ node dist/crosscheck.js read < document.json   # document -> payload
 ```
 
 The array-layer harness from
-`../DESIGN.md` §6.2: `write`
+[DESIGN.md §6.2](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md#62-crosscheck-protocol): `write`
 drives zarrita over a `ZarrInlineStore` to build a hierarchy of json-codec
 arrays from a payload, `read` opens every array in a document and reports
 its values using the `fill_value` scalar serialization. The Python test

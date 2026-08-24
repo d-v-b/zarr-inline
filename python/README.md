@@ -3,15 +3,17 @@
 Store a Zarr v3 hierarchy as a single JSON object. `ZarrInlineStore` is a
 read-write `zarr.abc.store.Store` whose entire contents live in one JSON
 document — metadata keys (`zarr.json` or `*/zarr.json`) hold inline JSON
-metadata; all other keys hold base64-encoded bytes or, for arrays using the
-`json` codec, inline JSON arrays of decoded values.
+metadata; all other keys hold base64-encoded bytes or byte-stable inline JSON
+arrays or objects. For arrays using the `json` codec, chunks are inline arrays
+of decoded values.
 
-See [SPEC.md](../SPEC.md) and [DESIGN.md](../DESIGN.md).
+See the project [specification](https://github.com/d-v-b/zarr-inline/blob/main/SPEC.md)
+and [design document](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md).
 
 ## Install
 
 ```bash
-cd python && uv sync
+python -m pip install zarr-inline
 ```
 
 ## Usage
@@ -52,7 +54,7 @@ arr = root.create_array(
     serializer=JsonSerializer(), compressors=None,
 )
 arr[:] = [1.5, math.nan, math.inf, -0.0]
-# document now contains:  "legible/c/0": [1.5, "NaN", "Infinity", -0.0]
+# document now contains:  "legible/c/0": [1.5, "NaN", "Infinity", 0]
 ```
 
 `compressors=None` matters: zarr-python otherwise appends a default
@@ -75,7 +77,7 @@ validate(document, strictness=Strictness.STRICT)   # strict: raises ValidationEr
 
 `validate` checks the two validity rules: **R1** well-formed keys and **R2**
 per-value type (metadata keys map to objects; byte keys map to base64 strings
-or inline JSON arrays).
+or inline JSON arrays or objects).
 
 ## Tests
 

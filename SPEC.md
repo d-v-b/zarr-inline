@@ -483,7 +483,7 @@ implementation-defined, not invalid):
 Numbers carry no portability constraints: integers of any size and the
 full float64 range round-trip exactly.
 
-Interchange notes: the RECOMMENDED file extension is `.zarr.json`; where
+Interchange notes: the RECOMMENDED file extension is `.zarr-inline.json`; where
 a media type is needed, `application/zarr-inline+json` is suggested. A
 document does not self-identify — there is no version or magic member;
 whether JSON text is a zarr-inline document is established by context.

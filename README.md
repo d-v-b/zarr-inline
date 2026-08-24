@@ -1,8 +1,10 @@
-# Zarr JSON
+# zarr-inline
 
 A convention for storing Zarr v3 hierarchies in JSON documents. The goal is
 simple interchange of small Zarr hierarchies: one portable,
 human-inspectable, hand-editable file.
+
+The project is licensed under the [MIT License](LICENSE).
 
 - **[SPEC.md](SPEC.md)** — the specification.
 - `python/`, `typescript/`, `rust/` — reference implementations targeting

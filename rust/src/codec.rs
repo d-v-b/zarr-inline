@@ -36,15 +36,15 @@ pub(crate) const BASE64_STANDARD_STRICT: GeneralPurpose = GeneralPurpose::new(
 
 /// Error raised by [`decode_value`] / [`encode_value`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZarrJsonError(pub String);
+pub struct ZarrInlineError(pub String);
 
-impl std::fmt::Display for ZarrJsonError {
+impl std::fmt::Display for ZarrInlineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
 }
 
-impl std::error::Error for ZarrJsonError {}
+impl std::error::Error for ZarrInlineError {}
 
 /// Return true if the key names a Zarr v3 metadata document.
 ///
@@ -191,16 +191,16 @@ impl serde_json::ser::Formatter for CanonicalFormatter {
 /// serde_json accepts any number token, so the check runs as a post-parse
 /// walk. Integer literals are exact at any size in all implementations
 /// (Python natively, TypeScript via BigInt, Rust via the raw token).
-fn check_numbers(value: &Value) -> Result<(), ZarrJsonError> {
+fn check_numbers(value: &Value) -> Result<(), ZarrInlineError> {
     match value {
         Value::Number(n) => {
             let text = n.to_string();
             if !is_integer_literal(&text) {
                 let parsed: f64 = text.parse().map_err(|_| {
-                    ZarrJsonError(format!("invalid JSON number token {text:?}"))
+                    ZarrInlineError(format!("invalid JSON number token {text:?}"))
                 })?;
                 if !parsed.is_finite() {
-                    return Err(ZarrJsonError(format!(
+                    return Err(ZarrInlineError(format!(
                         "number literal {text} overflows float64"
                     )));
                 }
@@ -216,14 +216,14 @@ fn check_numbers(value: &Value) -> Result<(), ZarrJsonError> {
 /// Parse JSON like Python's `strict_loads`: NaN/Infinity tokens are
 /// rejected by serde_json's grammar, and number literals that overflow
 /// float64 are rejected by [`check_numbers`].
-pub fn strict_from_str(text: &str) -> Result<Value, ZarrJsonError> {
+pub fn strict_from_str(text: &str) -> Result<Value, ZarrInlineError> {
     strict_from_slice(text.as_bytes())
 }
 
 /// Byte-slice form of [`strict_from_str`].
-pub fn strict_from_slice(data: &[u8]) -> Result<Value, ZarrJsonError> {
+pub fn strict_from_slice(data: &[u8]) -> Result<Value, ZarrInlineError> {
     let parsed: Value = serde_json::from_slice(data)
-        .map_err(|e| ZarrJsonError(format!("invalid JSON: {e}")))?;
+        .map_err(|e| ZarrInlineError(format!("invalid JSON: {e}")))?;
     check_numbers(&parsed)?;
     Ok(parsed)
 }
@@ -258,10 +258,10 @@ pub fn canonical_to_string(value: &Value) -> String {
 /// Metadata keys hold a JSON object -> serialize to UTF-8 JSON bytes.
 /// Byte keys hold a base64 string -> base64-decode to raw bytes, or a JSON
 /// array/object -> canonical-serialize to UTF-8 JSON bytes.
-pub fn decode_value(key: &str, value: &Value) -> Result<Vec<u8>, ZarrJsonError> {
+pub fn decode_value(key: &str, value: &Value) -> Result<Vec<u8>, ZarrInlineError> {
     if is_metadata_key(key) {
         if !value.is_object() {
-            return Err(ZarrJsonError(format!(
+            return Err(ZarrInlineError(format!(
                 "metadata key {key:?} must map to a JSON object"
             )));
         }
@@ -271,8 +271,8 @@ pub fn decode_value(key: &str, value: &Value) -> Result<Vec<u8>, ZarrJsonError> 
         Value::Array(_) | Value::Object(_) => Ok(canonical_to_string(value).into_bytes()),
         Value::String(s) => BASE64_STANDARD_STRICT
             .decode(s)
-            .map_err(|e| ZarrJsonError(format!("invalid base64 for byte key {key:?}: {e}"))),
-        _ => Err(ZarrJsonError(format!(
+            .map_err(|e| ZarrInlineError(format!("invalid base64 for byte key {key:?}: {e}"))),
+        _ => Err(ZarrInlineError(format!(
             "byte key {key:?} must map to a base64 string or a JSON array or object"
         ))),
     }
@@ -283,13 +283,13 @@ pub fn decode_value(key: &str, value: &Value) -> Result<Vec<u8>, ZarrJsonError> 
 /// Metadata keys: parse bytes as JSON, require a JSON object.
 /// Byte keys: inline as a JSON array if the bytes are exactly the canonical
 /// serialization of one (lossless by construction); otherwise base64-encode.
-pub fn encode_value(key: &str, data: &[u8]) -> Result<Value, ZarrJsonError> {
+pub fn encode_value(key: &str, data: &[u8]) -> Result<Value, ZarrInlineError> {
     if is_metadata_key(key) {
         let parsed: Value = strict_from_slice(data).map_err(|e| {
-            ZarrJsonError(format!("metadata key {key:?} bytes are not JSON: {e}"))
+            ZarrInlineError(format!("metadata key {key:?} bytes are not JSON: {e}"))
         })?;
         if !parsed.is_object() {
-            return Err(ZarrJsonError(format!(
+            return Err(ZarrInlineError(format!(
                 "metadata key {key:?} requires a JSON object value"
             )));
         }
@@ -551,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn xyzarr_inline_is_a_byte_key() {
+    fn xyzarr_json_is_a_byte_key() {
         // Confirms end-to-end that xyzarr.json follows byte-key semantics.
         assert_eq!(encode_value("xyzarr.json", &[0, 1, 2]).unwrap(), json!("AAEC"));
     }

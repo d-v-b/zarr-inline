@@ -36,7 +36,7 @@ REPO = Path(__file__).resolve().parents[2]
 # In CI the harnesses are prebuilt and a missing one must be a failure,
 # not a silent skip; locally, skipping keeps `pytest` usable without every
 # toolchain installed.
-REQUIRE_HARNESSES = os.environ.get("ZARR_JSON_REQUIRE_HARNESSES") == "1"
+REQUIRE_HARNESSES = os.environ.get("ZARR_INLINE_REQUIRE_HARNESSES") == "1"
 
 
 def _unavailable(message: str) -> None:
@@ -72,11 +72,11 @@ def ts_harness() -> list[str]:
 
 @pytest.fixture(scope="session")
 def rust_harness() -> list[str]:
-    marker = REPO / "rust" / "target" / "debug" / "conformance"
+    marker = REPO / "rust" / "target" / "debug" / "zarr-inline-conformance"
     _build_or_skip(
         "Rust",
         marker,
-        [["cargo", "build", "--bin", "conformance"]],
+        [["cargo", "build", "--bin", "zarr-inline-conformance"]],
         REPO / "rust",
     )
     return [str(marker)]

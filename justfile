@@ -30,7 +30,7 @@ lint-rust:
 
 # Ensure the container conformance CLI builds without the zarrs feature.
 build-rust-conformance-minimal:
-    cd rust && cargo build --no-default-features --bin conformance
+    cd rust && cargo build --no-default-features --bin zarr-inline-conformance
 
 # Build every cross-implementation test harness.
 build-harnesses: setup-python setup-typescript
@@ -39,21 +39,29 @@ build-harnesses: setup-python setup-typescript
 
 # Compare validation, decoding, and encoding across implementations.
 cross-conformance: build-harnesses
-    cd python && ZARR_JSON_REQUIRE_HARNESSES=1 uv run pytest -q tests/test_conformance_property.py
+    cd python && ZARR_INLINE_REQUIRE_HARNESSES=1 uv run pytest -q tests/test_conformance_property.py
 
 # Run the whole-array writer x reader matrix and OME fixture (every
 # crosscheck test that is not a trace test, so new tests are never skipped).
 cross-arrays: build-harnesses
-    cd python && ZARR_JSON_REQUIRE_HARNESSES=1 uv run pytest -q \
+    cd python && ZARR_INLINE_REQUIRE_HARNESSES=1 uv run pytest -q \
       tests/test_crosscheck.py -k "not trace"
 
 # Run fixed, generated, and must-reject serialized operation traces.
 cross-traces: build-harnesses
-    cd python && ZARR_JSON_REQUIRE_HARNESSES=1 uv run pytest -q --hypothesis-show-statistics \
+    cd python && ZARR_INLINE_REQUIRE_HARNESSES=1 uv run pytest -q --hypothesis-show-statistics \
       tests/test_crosscheck.py -k "trace"
 
 # Run all cross-implementation conformance phases.
 cross: cross-conformance cross-arrays cross-traces
 
-# Run every local and cross-implementation check.
-check: test-python test-typescript test-rust lint-rust build-rust-conformance-minimal cross
+# Build and verify each standalone release artifact.
+check-release-artifacts: setup-python setup-typescript
+    python_dist_dir="$(mktemp -d /tmp/zarr-inline-python-dist.XXXXXX)" && cd python && uv build --out-dir "$python_dist_dir" && uv run --isolated --no-project --with "$python_dist_dir"/*.whl python -c "import zarr_inline"
+    cd typescript && npm publish --dry-run
+    package_smoke_dir="$(mktemp -d /tmp/zarr-inline-npm-smoke.XXXXXX)" && cd typescript && npm pack --pack-destination "$package_smoke_dir" && npm install --prefix "$package_smoke_dir/consumer" "$package_smoke_dir"/*.tgz && cd "$package_smoke_dir/consumer" && node --input-type=module -e 'import("zarr-inline").then((module) => { if (typeof module.ZarrInlineStore !== "function") process.exit(1) })'
+    cd rust && cargo package --allow-dirty
+    cd rust && crate_version="$(cargo metadata --no-deps --format-version=1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')" && cargo test --manifest-path "target/package/zarr-inline-$crate_version/Cargo.toml"
+
+# Run every local, cross-implementation, and release-artifact check.
+check: test-python test-typescript test-rust lint-rust build-rust-conformance-minimal cross check-release-artifacts

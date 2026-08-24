@@ -210,7 +210,7 @@ const INTEGER_LITERAL_RE = /^-?\d+$/;
 
 type ReviverContext = { source?: string };
 
-// JSON.parse reviver source-text access (Node >= 21 / V8's rawJSON
+// JSON.parse reviver source-text access (Node >= 22 / V8's rawJSON
 // proposal). Without it, integer literals beyond 2^53 are silently rounded
 // before user code can see them, so lossless integers are impossible.
 const HAS_REVIVER_SOURCE: boolean = (() => {
@@ -226,7 +226,7 @@ const HAS_REVIVER_SOURCE: boolean = (() => {
  * Parse JSON like Python's strict_loads, losslessly.
  *
  * - Integer literals (no ".", "e", "E") outside the float64-safe range parse
- *   as bigint, using the reviver's source-text access (Node >= 21), so
+ *   as bigint, using the reviver's source-text access (Node >= 22), so
  *   integers of any size survive exactly — JSON.parse alone would silently
  *   round them to the nearest double.
  * - Number literals that overflow float64 (e.g. 1e400) are rejected, like
@@ -245,7 +245,7 @@ export interface StrictParseOptions {
 export function strictParse(text: string, options: StrictParseOptions = {}): unknown {
 	if (!HAS_REVIVER_SOURCE) {
 		throw new Error(
-			"zarr-inline requires JSON.parse reviver source access (Node >= 21) " +
+			"zarr-inline requires JSON.parse reviver source access (Node >= 22) " +
 				"to parse integers losslessly",
 		);
 	}

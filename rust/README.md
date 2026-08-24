@@ -5,15 +5,17 @@ read-write store implementing `zarrs`'s storage traits
 (`ReadableStorageTraits` + `WritableStorageTraits` + `ListableStorageTraits`,
 and therefore `ReadableWritableListableStorageTraits`) whose entire contents
 live in one JSON document — metadata keys (`zarr.json` or `*/zarr.json`) hold
-inline JSON metadata; all other keys hold base64-encoded bytes or, for arrays
-using the `json` codec, inline JSON arrays of decoded values.
+inline JSON metadata; all other keys hold base64-encoded bytes or byte-stable
+inline JSON arrays or objects. For arrays using the `json` codec, chunks are
+inline arrays of decoded values.
 
-See [SPEC.md](../SPEC.md) and [DESIGN.md](../DESIGN.md).
+See the project [specification](https://github.com/d-v-b/zarr-inline/blob/main/SPEC.md)
+and [design document](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md).
 
-## Build
+## Install
 
 ```bash
-cd rust && cargo build
+cargo add zarr-inline zarrs
 ```
 
 ## Usage
@@ -58,7 +60,7 @@ let array = ArrayBuilder::new(vec![4], vec![4], data_type::float64(), 0.0f64)
     .build(storage.clone(), "/legible")?;
 array.store_metadata()?;
 array.store_chunk(&[0], vec![1.5f64, f64::NAN, f64::INFINITY, -0.0])?;
-// document now contains:  "legible/c/0": [1.5, "NaN", "Infinity", -0.0]
+// document now contains:  "legible/c/0": [1.5, "NaN", "Infinity", 0]
 ```
 
 The codec registers itself with `zarrs`'s codec plugin registry under the
@@ -78,13 +80,13 @@ validate_strict(&document)?;           // strict: errors on any issue
 
 `validate` checks the two validity rules: **R1** well-formed keys and **R2**
 per-value type (metadata keys map to objects; byte keys map to base64 strings
-or inline JSON arrays). `ZarrInlineStore::from_document` validates strictly;
+or inline JSON arrays or objects). `ZarrInlineStore::from_document` validates strictly;
 `from_document_lenient` returns the issues as diagnostics instead.
 
 ## Conformance harness
 
-`cargo build` produces `target/debug/conformance`, the CLI described in
-`../DESIGN.md` §6.1: it reads a
+`cargo build` produces `target/debug/zarr-inline-conformance`, the CLI described in
+[DESIGN.md §6.1](https://github.com/d-v-b/zarr-inline/blob/main/DESIGN.md#61-conformance-harness-protocol): it reads a
 zarr-inline document on stdin and writes a report (validator issues, decoded
 bytes as base64, re-encoded values) on stdout. The harness uses only the
 codec and validator modules, which have no zarrs dependency; if zarrs ever
@@ -97,6 +99,6 @@ harness.
 cd rust && cargo test
 ```
 
-This runs the unit tests, every shared fixture in `../examples` (via
-`MANIFEST.json`), and integration tests that drive `zarrs` itself through
-`ZarrInlineStore`.
+In a repository checkout this runs every shared fixture in `examples/` (via
+`MANIFEST.json`) in addition to unit and `zarrs` integration tests. The
+standalone crate package omits the repository-level fixtures.

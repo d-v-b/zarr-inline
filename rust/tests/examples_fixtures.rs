@@ -1,5 +1,5 @@
-//! Run every shared conformance fixture in ../examples (relative to this
-//! crate) through the validator and require the manifest's verdict.
+//! In a repository checkout, run every shared conformance fixture in
+//! ../examples through the validator and require the manifest's verdict.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -7,20 +7,25 @@ use std::path::PathBuf;
 use serde_json::Value;
 use zarr_inline::validate;
 
-fn examples_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples")
+fn examples_dir() -> Option<PathBuf> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    path.is_dir().then_some(path)
 }
 
 #[test]
 fn all_manifest_fixtures_get_expected_verdict() {
+    let Some(examples_dir) = examples_dir() else {
+        eprintln!("repository-level examples are not part of the standalone crate package");
+        return;
+    };
     let manifest_text =
-        std::fs::read_to_string(examples_dir().join("MANIFEST.json")).expect("read MANIFEST.json");
+        std::fs::read_to_string(examples_dir.join("MANIFEST.json")).expect("read MANIFEST.json");
     let manifest: BTreeMap<String, Value> =
         serde_json::from_str(&manifest_text).expect("parse MANIFEST.json");
     assert!(!manifest.is_empty(), "MANIFEST.json is empty");
 
     for (rel_path, expected) in &manifest {
-        let text = std::fs::read_to_string(examples_dir().join(rel_path))
+        let text = std::fs::read_to_string(examples_dir.join(rel_path))
             .unwrap_or_else(|e| panic!("read {rel_path}: {e}"));
         let document: Value =
             serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {rel_path}: {e}"));
