@@ -9,7 +9,7 @@
 //! as `DataTypeTraits::metadata_fill_value` / `fill_value_v3`.
 //!
 //! Output is canonical JSON (see [`crate::codec::canonical_to_string`]),
-//! which is what lets [`crate::ZarrJsonStore`] inline these chunks as real
+//! which is what lets [`crate::ZarrInlineStore`] inline these chunks as real
 //! JSON arrays in the document.
 //!
 //! A rank-0 chunk serializes to a bare JSON scalar; the store only inlines

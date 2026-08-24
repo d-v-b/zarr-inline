@@ -1,10 +1,10 @@
 /**
- * Pluggable backings: where the zarr-json object lives and how it persists.
+ * Pluggable backings: where the zarr-inline object lives and how it persists.
  *
  * A Backing has two operations: load() returns the document object, persist()
  * writes a document object. The store logic is identical regardless of backing.
  *
- * Documents are held as null-prototype objects: a zarr-json key is an
+ * Documents are held as null-prototype objects: a zarr-inline key is an
  * arbitrary string, and on a plain object assigning the key "__proto__" hits
  * the inherited Object.prototype setter instead of creating a property (a
  * silent-no-op write). Re-keying every accepted document onto
@@ -36,7 +36,7 @@ export function requireDocumentObject(value: unknown): Document {
 }
 
 /**
- * Where a zarr-json document lives and how it persists.
+ * Where a zarr-inline document lives and how it persists.
  *
  * The store calls `load()` exactly once to obtain the document, mutates that
  * document in place, then calls `persist()` after each mutation.

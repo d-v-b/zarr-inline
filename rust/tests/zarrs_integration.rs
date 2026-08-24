@@ -1,4 +1,4 @@
-//! Integration tests driving zarrs itself through `ZarrJsonStore`.
+//! Integration tests driving zarrs itself through `ZarrInlineStore`.
 #![cfg(feature = "zarrs")]
 
 use std::sync::Arc;
@@ -8,14 +8,14 @@ use zarrs::array::{data_type, ArrayBuilder};
 use zarrs::group::GroupBuilder;
 use zarrs::storage::ReadableWritableListableStorage;
 
-use zarr_json::{JsonCodec, ZarrJsonStore};
+use zarr_inline::{JsonCodec, ZarrInlineStore};
 
 /// Create a group and an array with default codecs, write a chunk, read it
 /// back, and check the document representation: metadata keys hold JSON
 /// objects and the (opaque `bytes`-codec) chunk is a base64 string.
 #[test]
 fn group_and_array_with_default_codecs() {
-    let store = Arc::new(ZarrJsonStore::new());
+    let store = Arc::new(ZarrInlineStore::new());
     let storage: ReadableWritableListableStorage = store.clone();
 
     GroupBuilder::new()
@@ -57,7 +57,7 @@ fn group_and_array_with_default_codecs() {
     );
 
     // The whole document round-trips through strict construction.
-    let store2 = ZarrJsonStore::from_document(document).unwrap();
+    let store2 = ZarrInlineStore::from_document(document).unwrap();
     let storage2: ReadableWritableListableStorage = Arc::new(store2);
     let reopened2 = zarrs::array::Array::open(storage2, "/data").unwrap();
     let read2: Vec<u16> = reopened2.retrieve_chunk(&[0, 0]).unwrap();
@@ -68,7 +68,7 @@ fn group_and_array_with_default_codecs() {
 /// the document (including NaN -> "NaN"), and reads back exactly.
 #[test]
 fn array_with_json_codec_inlines_chunks() {
-    let store = Arc::new(ZarrJsonStore::new());
+    let store = Arc::new(ZarrInlineStore::new());
     let storage: ReadableWritableListableStorage = store.clone();
 
     GroupBuilder::new()
@@ -122,7 +122,7 @@ fn array_with_json_codec_inlines_chunks() {
 /// The hierarchy is listable through zarrs.
 #[test]
 fn hierarchy_listing() {
-    let store = Arc::new(ZarrJsonStore::new());
+    let store = Arc::new(ZarrInlineStore::new());
     let storage: ReadableWritableListableStorage = store.clone();
 
     GroupBuilder::new()

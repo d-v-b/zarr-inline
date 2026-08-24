@@ -1,6 +1,6 @@
 //! Pure functions for classifying keys and encoding/decoding values.
 //!
-//! A zarr-json value is one of:
+//! A zarr-inline value is one of:
 //!
 //! - metadata key (`zarr.json` or `*/zarr.json`) -> inline JSON object
 //! - byte key -> base64 string (opaque bytes), or a JSON array/object (inline
@@ -126,7 +126,7 @@ fn is_integer_literal(text: &str) -> bool {
     !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// serde_json `Formatter` for the canonical zarr-json form: compact output
+/// serde_json `Formatter` for the canonical zarr-inline form: compact output
 /// with numbers per RFC 8785. With `arbitrary_precision`, every
 /// `serde_json::Number` carries its raw token text and serializes through
 /// `write_number_str`: integer literals pass through as exact digits at any
@@ -228,7 +228,7 @@ pub fn strict_from_slice(data: &[u8]) -> Result<Value, ZarrJsonError> {
     Ok(parsed)
 }
 
-/// Serialize a JSON value in the canonical zarr-json form.
+/// Serialize a JSON value in the canonical zarr-inline form.
 ///
 /// No whitespace (`,` / `:` separators); non-ASCII characters unescaped
 /// (UTF-8 output); object member order preserved as given (member names are
@@ -240,7 +240,7 @@ pub fn strict_from_slice(data: &[u8]) -> Result<Value, ZarrJsonError> {
 /// non-finite value (`Number::from_f64` returns `None` for them), so
 /// rejection of non-finite numbers is inherent — the fill_value convention
 /// represents them as strings like `"NaN"` instead. This form is shared by
-/// all zarr-json implementations so that decoded bytes agree byte-for-byte
+/// all zarr-inline implementations so that decoded bytes agree byte-for-byte
 /// across languages.
 pub fn canonical_to_string(value: &Value) -> String {
     use serde::Serialize as _;
@@ -253,7 +253,7 @@ pub fn canonical_to_string(value: &Value) -> String {
     String::from_utf8(out).expect("canonical JSON is UTF-8")
 }
 
-/// Convert a stored zarr-json value into the bytes Zarr expects.
+/// Convert a stored zarr-inline value into the bytes Zarr expects.
 ///
 /// Metadata keys hold a JSON object -> serialize to UTF-8 JSON bytes.
 /// Byte keys hold a base64 string -> base64-decode to raw bytes, or a JSON
@@ -278,7 +278,7 @@ pub fn decode_value(key: &str, value: &Value) -> Result<Vec<u8>, ZarrJsonError> 
     }
 }
 
-/// Convert Zarr's bytes into the value stored in a zarr-json document.
+/// Convert Zarr's bytes into the value stored in a zarr-inline document.
 ///
 /// Metadata keys: parse bytes as JSON, require a JSON object.
 /// Byte keys: inline as a JSON array if the bytes are exactly the canonical
@@ -551,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn xyzarr_json_is_a_byte_key() {
+    fn xyzarr_inline_is_a_byte_key() {
         // Confirms end-to-end that xyzarr.json follows byte-key semantics.
         assert_eq!(encode_value("xyzarr.json", &[0, 1, 2]).unwrap(), json!("AAEC"));
     }

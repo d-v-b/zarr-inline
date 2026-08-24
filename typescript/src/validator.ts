@@ -1,5 +1,5 @@
 /**
- * Validate a zarr-json document against the two validity rules.
+ * Validate a zarr-inline document against the two validity rules.
  *
  * R1 — well-formed keys: every key is a non-empty string with no leading or
  *      trailing "/", no empty segments, and no "." or ".." segments.
@@ -23,7 +23,7 @@ export class ValidationError extends Error {
 		const joined = issues
 			.map((i) => `[${i.rule}] ${i.key}: ${i.message}`)
 			.join("; ");
-		super(`invalid zarr-json document: ${joined}`);
+		super(`invalid zarr-inline document: ${joined}`);
 		this.name = "ValidationError";
 		this.issues = issues;
 	}
@@ -77,7 +77,7 @@ export interface ValidateOptions {
 }
 
 /**
- * Check a zarr-json document. Returns the list of issues (empty if valid).
+ * Check a zarr-inline document. Returns the list of issues (empty if valid).
  *
  * At most one issue is reported per key; R1 (well-formed key) takes
  * precedence — the value-type check on a malformed key is not meaningful.

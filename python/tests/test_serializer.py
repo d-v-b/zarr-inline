@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import zarr
 
-from zarr_json import JsonSerializer, MemoryBacking, ZarrJsonStore
+from zarr_inline import JsonSerializer, MemoryBacking, ZarrInlineStore
 
 CASES = [
     # (dtype, values, expected chunk JSON in the document)
@@ -25,7 +25,7 @@ CASES = [
 @pytest.mark.parametrize(("dtype", "values", "expected_json"), CASES)
 async def test_chunks_round_trip_and_appear_as_inline_json(dtype, values, expected_json):
     backing = MemoryBacking({})
-    store = ZarrJsonStore(backing)
+    store = ZarrInlineStore(backing)
     root = zarr.open_group(store=store, mode="w")
 
     expected = np.array(values, dtype=dtype)
@@ -45,7 +45,7 @@ async def test_chunks_round_trip_and_appear_as_inline_json(dtype, values, expect
     assert doc["data/zarr.json"]["codecs"] == [{"name": "json"}]
 
     # Read back through a fresh store over a JSON round-trip of the document.
-    store2 = ZarrJsonStore(MemoryBacking(json.loads(json.dumps(doc))))
+    store2 = ZarrInlineStore(MemoryBacking(json.loads(json.dumps(doc))))
     got = zarr.open_group(store=store2, mode="r")["data"][:]
     np.testing.assert_array_equal(got, expected)
 

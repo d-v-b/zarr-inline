@@ -1,6 +1,6 @@
 //! Conformance harness: shared cross-implementation behavior as a CLI.
 //!
-//! Reads a zarr-json document (a JSON object) on stdin and writes a JSON
+//! Reads a zarr-inline document (a JSON object) on stdin and writes a JSON
 //! report on stdout:
 //!
 //! - `"issues"`: validator issues, sorted by (key, rule).
@@ -25,8 +25,8 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use serde_json::{json, Map, Value};
 
-use zarr_json::codec::{canonical_to_string, decode_value, encode_value};
-use zarr_json::validator::validate;
+use zarr_inline::codec::{canonical_to_string, decode_value, encode_value};
+use zarr_inline::validator::validate;
 
 fn run(document: &Map<String, Value>) -> Result<Value, String> {
     let mut issues = validate(document);
@@ -72,7 +72,7 @@ fn main() -> ExitCode {
         eprintln!("failed to read stdin: {e}");
         return ExitCode::from(1);
     }
-    let parsed: Value = match zarr_json::strict_from_str(&input) {
+    let parsed: Value = match zarr_inline::strict_from_str(&input) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("input must be a JSON object: {e}");

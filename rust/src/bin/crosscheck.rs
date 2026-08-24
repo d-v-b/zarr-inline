@@ -23,7 +23,7 @@ use zarrs::group::GroupBuilder;
 use zarrs::metadata::v3::MetadataV3;
 use zarrs::storage::ReadableWritableListableStorage;
 
-use zarr_json::{canonical_to_string, is_metadata_key, Document, JsonCodec, ZarrJsonStore};
+use zarr_inline::{canonical_to_string, is_metadata_key, Document, JsonCodec, ZarrInlineStore};
 
 const PORTABLE_DTYPES: &[&str] = &["bool", "uint8", "int32", "int64", "float32", "float64"];
 const MAX_SAFE_DIMENSION: u64 = 9_007_199_254_740_991;
@@ -105,7 +105,7 @@ fn to_json<S: ?Sized>(array: &Array<S>, bytes: ArrayBytes, shape: &[u64]) -> Res
     let encoded = JsonCodec::new()
         .encode(bytes, &shape, array.data_type(), array.fill_value(), &CodecOptions::default())
         .map_err(|e| format!("{e}"))?;
-    zarr_json::strict_from_slice(&encoded).map_err(|e| format!("codec output is not JSON: {e}"))
+    zarr_inline::strict_from_slice(&encoded).map_err(|e| format!("codec output is not JSON: {e}"))
 }
 
 /// The node_type of the metadata document at `key`, if present.
@@ -124,7 +124,7 @@ fn node_type(document: &Document, key: &str) -> Option<String> {
 /// refusing (like zarr-python) to place a node beneath an array or to
 /// overwrite an existing node.
 fn ensure_parents(
-    store: &Arc<ZarrJsonStore>,
+    store: &Arc<ZarrInlineStore>,
     storage: &ReadableWritableListableStorage,
     path: &str,
 ) -> Result<(), String> {
@@ -157,7 +157,7 @@ fn ensure_parents(
 }
 
 fn create_array(
-    store: &Arc<ZarrJsonStore>,
+    store: &Arc<ZarrInlineStore>,
     storage: &ReadableWritableListableStorage,
     path: &str,
     dtype_name: &str,
@@ -181,20 +181,20 @@ fn create_array(
     Ok(array)
 }
 
-fn new_store(document: Option<&Value>) -> Result<Arc<ZarrJsonStore>, String> {
+fn new_store(document: Option<&Value>) -> Result<Arc<ZarrInlineStore>, String> {
     // Maximally standard metadata: no zarrs-specific "_zarrs" attribute.
     zarrs::config::global_config_mut().set_include_zarrs_metadata(false);
     match document {
-        None => Ok(Arc::new(ZarrJsonStore::new())),
+        None => Ok(Arc::new(ZarrInlineStore::new())),
         // The initial document MUST be valid (DESIGN 6.3).
-        Some(Value::Object(document)) => ZarrJsonStore::from_document(document.clone())
+        Some(Value::Object(document)) => ZarrInlineStore::from_document(document.clone())
             .map(Arc::new)
             .map_err(|e| format!("invalid initial document: {e}")),
         Some(_) => Err("trace document must be an object".to_string()),
     }
 }
 
-/// Write mode: payload in, zarr-json document out.
+/// Write mode: payload in, zarr-inline document out.
 fn write(payload: &Value) -> Result<String, String> {
     let specs = payload
         .get("arrays")
@@ -223,7 +223,7 @@ fn write(payload: &Value) -> Result<String, String> {
     Ok(store.to_json_string())
 }
 
-/// Read mode: zarr-json document in, payload out.
+/// Read mode: zarr-inline document in, payload out.
 fn read(document_value: &Value) -> Result<String, String> {
     let Value::Object(document) = document_value else {
         return Err("input must be a JSON object".to_string());
@@ -366,7 +366,7 @@ fn main() -> ExitCode {
         eprintln!("failed to read stdin: {e}");
         return ExitCode::from(1);
     }
-    let parsed: Value = match zarr_json::strict_from_str(&input) {
+    let parsed: Value = match zarr_inline::strict_from_str(&input) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("input must be JSON: {e}");

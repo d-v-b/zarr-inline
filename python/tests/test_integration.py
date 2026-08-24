@@ -3,20 +3,20 @@ import json
 import numpy as np
 import zarr
 
-from zarr_json import MemoryBacking, StringBacking, ZarrJsonStore
-from zarr_json.codec import is_metadata_key
+from zarr_inline import MemoryBacking, StringBacking, ZarrInlineStore
+from zarr_inline.codec import is_metadata_key
 
 
 async def test_create_group_and_array_write_read_through_zarr_python():
     backing = MemoryBacking({})
-    store = ZarrJsonStore(backing)
+    store = ZarrInlineStore(backing)
 
     root = zarr.open_group(store=store, mode="w")
     arr = root.create_array("data", shape=(8,), chunks=(4,), dtype="uint8")
     arr[:] = np.arange(8, dtype="uint8")
 
     # Read back through a fresh store over the same document.
-    store2 = ZarrJsonStore(MemoryBacking(backing.load()))
+    store2 = ZarrInlineStore(MemoryBacking(backing.load()))
     root2 = zarr.open_group(store=store2, mode="r")
     arr2 = root2["data"]
     np.testing.assert_array_equal(arr2[:], np.arange(8, dtype="uint8"))
@@ -24,7 +24,7 @@ async def test_create_group_and_array_write_read_through_zarr_python():
 
 async def test_document_shape_metadata_objects_and_base64_chunks():
     backing = MemoryBacking({})
-    store = ZarrJsonStore(backing)
+    store = ZarrInlineStore(backing)
     root = zarr.open_group(store=store, mode="w")
     arr = root.create_array("data", shape=(4,), chunks=(4,), dtype="uint8")
     arr[:] = np.arange(4, dtype="uint8")
@@ -42,14 +42,14 @@ async def test_document_shape_metadata_objects_and_base64_chunks():
 
 async def test_round_trip_through_string_backing():
     backing = MemoryBacking({})
-    store = ZarrJsonStore(backing)
+    store = ZarrInlineStore(backing)
     root = zarr.open_group(store=store, mode="w")
     arr = root.create_array("data", shape=(4,), chunks=(2,), dtype="int32")
     arr[:] = np.array([10, 20, 30, 40], dtype="int32")
 
     # Serialize the whole hierarchy to a JSON string, then reload it.
     text = json.dumps(backing.load())
-    store2 = ZarrJsonStore(StringBacking(text))
+    store2 = ZarrInlineStore(StringBacking(text))
     root2 = zarr.open_group(store=store2, mode="r")
     np.testing.assert_array_equal(
         root2["data"][:], np.array([10, 20, 30, 40], dtype="int32")
@@ -67,7 +67,7 @@ async def test_ome_zarr_example_reads_through_zarr_python():
         / "ome_zarr_0.5_image.json"
     )
     document = json.loads(example.read_text())
-    store = ZarrJsonStore(MemoryBacking(document), read_only=True)
+    store = ZarrInlineStore(MemoryBacking(document), read_only=True)
     root = zarr.open_group(store=store, mode="r")
 
     ome = root.attrs["ome"]

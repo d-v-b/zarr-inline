@@ -1,6 +1,6 @@
-# zarr-json (Rust)
+# zarr-inline (Rust)
 
-Store a Zarr v3 hierarchy as a single JSON object. `ZarrJsonStore` is a
+Store a Zarr v3 hierarchy as a single JSON object. `ZarrInlineStore` is a
 read-write store implementing `zarrs`'s storage traits
 (`ReadableStorageTraits` + `WritableStorageTraits` + `ListableStorageTraits`,
 and therefore `ReadableWritableListableStorageTraits`) whose entire contents
@@ -23,10 +23,10 @@ use std::sync::Arc;
 use zarrs::array::{data_type, ArrayBuilder};
 use zarrs::group::GroupBuilder;
 use zarrs::storage::ReadableWritableListableStorage;
-use zarr_json::ZarrJsonStore;
+use zarr_inline::ZarrInlineStore;
 
 // Build a hierarchy into an in-memory JSON object.
-let store = Arc::new(ZarrJsonStore::new());
+let store = Arc::new(ZarrInlineStore::new());
 let storage: ReadableWritableListableStorage = store.clone();
 
 GroupBuilder::new().build(storage.clone(), "/")?.store_metadata()?;
@@ -40,7 +40,7 @@ let document = store.document();
 let text = store.to_json_string();
 
 // Reload from a document (strict validation on construction).
-let store2 = Arc::new(ZarrJsonStore::from_document(document)?);
+let store2 = Arc::new(ZarrInlineStore::from_document(document)?);
 ```
 
 ## Legible chunks: the `json` codec
@@ -51,7 +51,7 @@ using the Zarr v3 `fill_value` scalar serialization elementwise (NaN becomes
 `"NaN"`, complex becomes `[re, im]`, and so on):
 
 ```rust
-use zarr_json::JsonCodec;
+use zarr_inline::JsonCodec;
 
 let array = ArrayBuilder::new(vec![4], vec![4], data_type::float64(), 0.0f64)
     .array_to_bytes_codec(Arc::new(JsonCodec::new()))
@@ -70,7 +70,7 @@ to keep chunks legible.
 ## Validation
 
 ```rust
-use zarr_json::{validate, validator::validate_strict};
+use zarr_inline::{validate, validator::validate_strict};
 
 let issues = validate(&document);      // lenient: returns a Vec of issues
 validate_strict(&document)?;           // strict: errors on any issue
@@ -78,14 +78,14 @@ validate_strict(&document)?;           // strict: errors on any issue
 
 `validate` checks the two validity rules: **R1** well-formed keys and **R2**
 per-value type (metadata keys map to objects; byte keys map to base64 strings
-or inline JSON arrays). `ZarrJsonStore::from_document` validates strictly;
+or inline JSON arrays). `ZarrInlineStore::from_document` validates strictly;
 `from_document_lenient` returns the issues as diagnostics instead.
 
 ## Conformance harness
 
 `cargo build` produces `target/debug/conformance`, the CLI described in
 `../DESIGN.md` §6.1: it reads a
-zarr-json document on stdin and writes a report (validator issues, decoded
+zarr-inline document on stdin and writes a report (validator issues, decoded
 bytes as base64, re-encoded values) on stdout. The harness uses only the
 codec and validator modules, which have no zarrs dependency; if zarrs ever
 fails to build, `cargo build --no-default-features` still produces the
@@ -99,4 +99,4 @@ cd rust && cargo test
 
 This runs the unit tests, every shared fixture in `../examples` (via
 `MANIFEST.json`), and integration tests that drive `zarrs` itself through
-`ZarrJsonStore`.
+`ZarrInlineStore`.

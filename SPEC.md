@@ -1,10 +1,10 @@
-# zarr-json Specification
+# zarr-inline Specification
 
 **Version:** 0.2.0-draft
 **Date:** 2026-08-23
 **Status:** Draft (revised after adversarial spec review)
 
-zarr-json is a convention for storing a Zarr v3 hierarchy as a single JSON
+zarr-inline is a convention for storing a Zarr v3 hierarchy as a single JSON
 document, for simple interchange of small hierarchies: one portable,
 human-inspectable, hand-editable file.
 
@@ -13,7 +13,7 @@ NOT RECOMMENDED are to be interpreted as described in RFC 2119.
 
 ## 1. Overview (non-normative)
 
-A Zarr v3 store is an association of *keys* to *byte strings*. zarr-json
+A Zarr v3 store is an association of *keys* to *byte strings*. zarr-inline
 encodes such a store as one JSON object whose member names are the store
 keys and whose values carry the bytes in one of three forms: metadata
 documents as inline JSON objects, opaque bytes as base64 strings, and any
@@ -34,7 +34,7 @@ array/object = inline JSON.
 
 ## 2. Terminology
 
-- **document** — a zarr-json document: JSON text (RFC 8259) whose
+- **document** — a zarr-inline document: JSON text (RFC 8259) whose
   top-level value is an object.
 - **store key** (or **key**) — a member name of the document. Keys are
   intended to hold Zarr v3 store keys (but see §3.3).
@@ -70,9 +70,9 @@ key is a *byte key*.
 
 R1 is deliberately broader than Zarr v3's node-name rules: v3 additionally
 forbids node names consisting only of periods and reserves names beginning
-with `__`. zarr-json does not re-validate hierarchy-level naming — as with
+with `__`. zarr-inline does not re-validate hierarchy-level naming — as with
 all hierarchy coherence (§8), that is deferred to the Zarr layer. Valid
-zarr-json documents therefore exist whose keys no conforming Zarr v3
+zarr-inline documents therefore exist whose keys no conforming Zarr v3
 hierarchy would produce.
 
 ## 4. Values (rule R2)
@@ -219,7 +219,7 @@ dtype-driven decoding) interprets numbers by context, not token sort.
 ## 6. Strict parsing
 
 *Strict-parse* is a JSON-text parser and may return **any** JSON value. It is
-not the same operation as reading a zarr-json document: reading a document
+not the same operation as reading a zarr-inline document: reading a document
 first strict-parses the text and then requires the result to be an object,
 while embedded parses accept the value type their caller requires (an object
 for metadata bytes, an array or object for the byte-key inlining check, and any
@@ -484,9 +484,9 @@ Numbers carry no portability constraints: integers of any size and the
 full float64 range round-trip exactly.
 
 Interchange notes: the RECOMMENDED file extension is `.zarr.json`; where
-a media type is needed, `application/zarr-json+json` is suggested. A
+a media type is needed, `application/zarr-inline+json` is suggested. A
 document does not self-identify — there is no version or magic member;
-whether JSON text is a zarr-json document is established by context.
+whether JSON text is a zarr-inline document is established by context.
 Filesystems that normalize Unicode filenames (e.g. APFS) can collide
 distinct keys if a document is ever exploded into files; keys are
 code-point-exact (§3.1).
@@ -497,7 +497,7 @@ Documents may come from untrusted sources. Implementations SHOULD bound
 input size and parser recursion, and MUST NOT assume hierarchy coherence
 (orphan keys, dangling metadata, and mismatched chunk shapes are all
 representable). Decode and codec errors MUST surface as errors, never as
-silently corrupted data. A zarr-json document contains no executable
+silently corrupted data. A zarr-inline document contains no executable
 content.
 
 ## 12. Conformance (non-normative)

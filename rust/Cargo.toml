@@ -1,12 +1,12 @@
 [package]
-name = "zarr-json"
+name = "zarr-inline"
 version = "0.1.0"
 edition = "2021"
 description = "Store a Zarr v3 hierarchy as a single JSON object (Rust reference implementation)"
 license = "MIT"
 
 [lib]
-name = "zarr_json"
+name = "zarr_inline"
 path = "src/lib.rs"
 
 [[bin]]

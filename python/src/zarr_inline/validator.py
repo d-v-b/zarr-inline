@@ -1,4 +1,4 @@
-"""Validate a zarr-json document against the two validity rules.
+"""Validate a zarr-inline document against the two validity rules.
 
 R1 — well-formed keys: every key is a non-empty string with no leading or
      trailing "/", no empty segments, and no "." or ".." segments.
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from zarr_json.codec import is_metadata_key
+from zarr_inline.codec import is_metadata_key
 
 
 class Strictness(Enum):
@@ -34,7 +34,7 @@ class ValidationError(Exception):
     def __init__(self, issues: list[ValidationIssue]) -> None:
         self.issues = issues
         joined = "; ".join(f"[{i.rule}] {i.key}: {i.message}" for i in issues)
-        super().__init__(f"invalid zarr-json document: {joined}")
+        super().__init__(f"invalid zarr-inline document: {joined}")
 
 
 def _check_key_well_formed(key: str) -> ValidationIssue | None:
@@ -74,7 +74,7 @@ def validate(
     document: dict[str, Any],
     strictness: Strictness = Strictness.LENIENT,
 ) -> list[ValidationIssue]:
-    """Check a zarr-json document. Returns the list of issues (empty if valid).
+    """Check a zarr-inline document. Returns the list of issues (empty if valid).
 
     In STRICT mode, raises ValidationError if any issue is found.
     """

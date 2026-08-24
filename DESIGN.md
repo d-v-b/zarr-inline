@@ -1,4 +1,4 @@
-# zarr-json: How It Works
+# zarr-inline: How It Works
 
 This document explains the design behind [SPEC.md](SPEC.md): the model, the
 reasoning behind its central choices, how the three implementations are
@@ -9,7 +9,7 @@ explanatory.
 ## 1. Purpose and scope
 
 Zarr stores a hierarchy as a tree of directories and files, which is
-awkward to share: many files, not one artifact. zarr-json represents the
+awkward to share: many files, not one artifact. zarr-inline represents the
 same hierarchy as a single JSON object — a small hierarchy becomes one
 portable, human-inspectable, hand-editable document.
 
@@ -26,7 +26,7 @@ The premise is *small* hierarchies. Consequently:
 
 ## 2. The model: a store transformation
 
-A Zarr v3 store is a map from keys to byte strings. zarr-json is a
+A Zarr v3 store is a map from keys to byte strings. zarr-inline is a
 transformation of that map into a JSON object: keys carry over unchanged
 as member names; each value is encoded in one of three forms.
 
@@ -71,12 +71,12 @@ The remaining gap — a top-level JSON string or number cannot be a JSON
   and `[url, offset, length]` arrays.
 - **MongoDB Extended JSON** marks bytes with a reserved `{"$binary": …}`
   wrapper.
-- **Zarr consolidated metadata** inlines only metadata documents; zarr-json
+- **Zarr consolidated metadata** inlines only metadata documents; zarr-inline
   is the extension of that idea to data, which is exactly where the typing
   problem enters.
 - **TensorStore** has the closest structural relatives: its `zip` and
   `ocdbt` kvstore adapters put an entire key-value store in one artifact,
-  strictly value-agnostic — the layering zarr-json preserves in spirit. Its
+  strictly value-agnostic — the layering zarr-inline preserves in spirit. Its
   `json` driver (JSON values addressed by RFC 6901 pointers, atomic
   read-modify-write per pointer) and `array` driver (data embedded in the
   spec as nested JSON arrays) are precedents for pointer-addressed layouts
@@ -353,7 +353,7 @@ a report on stdout:
 
 | implementation | build | run |
 |---|---|---|
-| Python | `cd python && uv sync` | `uv run python -m zarr_json.conformance` |
+| Python | `cd python && uv sync` | `uv run python -m zarr_inline.conformance` |
 | TypeScript | `cd typescript && npm install && npm run build` | `node typescript/dist/conformance.js` |
 | Rust | `cd rust && cargo build` | `rust/target/debug/conformance` |
 
@@ -422,7 +422,7 @@ empty store or from a document emitted by another implementation:
 
 ```json
 {
-  "document": {"...": "the resulting zarr-json store"},
+  "document": {"...": "the resulting zarr-inline store"},
   "reads": [{"operation": 2, "data": [[0, 0, 0, 0],
                                         [0, 1, 2, 0],
                                         [0, 3, 4, 0]]}]
@@ -436,7 +436,7 @@ succeeds identically everywhere or is rejected (exit 1) everywhere; the
 conformance tests include a set of invalid traces that all three harnesses
 must refuse:
 
-- `document`, when given, must be a *valid* zarr-json document; harnesses
+- `document`, when given, must be a *valid* zarr-inline document; harnesses
   load it strictly. `operations` is required and must be an array.
 - `path` is a non-empty relative Zarr node path. It has no empty segment;
   no segment begins with reserved `__`; and no segment consists entirely
@@ -501,7 +501,7 @@ implementations provably agree. What lies outside, and why:
   readable).
 - **Key grammar.** R1 is slightly broader than Zarr v3's node-name rules
   (v3 also forbids all-period names and reserves the `__` prefix);
-  zarr-json defers hierarchy naming to the Zarr layer.
+  zarr-inline defers hierarchy naming to the Zarr layer.
 - **Rank-0 chunks** encode as a bare scalar and so are stored base64 —
   except complex, whose `[re, im]` form is an array and inlines.
 - **Performance** is traded away deliberately: the inlining check parses

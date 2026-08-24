@@ -1,6 +1,6 @@
-# zarr-json (Python)
+# zarr-inline (Python)
 
-Store a Zarr v3 hierarchy as a single JSON object. `ZarrJsonStore` is a
+Store a Zarr v3 hierarchy as a single JSON object. `ZarrInlineStore` is a
 read-write `zarr.abc.store.Store` whose entire contents live in one JSON
 document — metadata keys (`zarr.json` or `*/zarr.json`) hold inline JSON
 metadata; all other keys hold base64-encoded bytes or, for arrays using the
@@ -18,11 +18,11 @@ cd python && uv sync
 
 ```python
 import zarr
-from zarr_json import ZarrJsonStore, MemoryBacking, StringBacking
+from zarr_inline import ZarrInlineStore, MemoryBacking, StringBacking
 
 # Build a hierarchy into an in-memory JSON object.
 backing = MemoryBacking({})
-store = ZarrJsonStore(backing)
+store = ZarrInlineStore(backing)
 root = zarr.open_group(store=store, mode="w")
 arr = root.create_array("data", shape=(8,), chunks=(4,), dtype="uint8")
 arr[:] = range(8)
@@ -32,7 +32,7 @@ document = backing.load()
 
 # Reload from a JSON string.
 import json
-store2 = ZarrJsonStore(StringBacking(json.dumps(document)))
+store2 = ZarrInlineStore(StringBacking(json.dumps(document)))
 root2 = zarr.open_group(store=store2, mode="r")
 ```
 
@@ -45,7 +45,7 @@ using the Zarr v3 `fill_value` scalar serialization elementwise (NaN becomes
 
 ```python
 import math
-from zarr_json import JsonSerializer
+from zarr_inline import JsonSerializer
 
 arr = root.create_array(
     "legible", shape=(4,), chunks=(4,), dtype="float64",
@@ -67,7 +67,7 @@ compressor after the serializer, making chunks opaque again.
 ## Validation
 
 ```python
-from zarr_json import validate, Strictness
+from zarr_inline import validate, Strictness
 
 issues = validate(document)                       # lenient: returns a list
 validate(document, strictness=Strictness.STRICT)   # strict: raises ValidationError

@@ -5,7 +5,7 @@
  * and nested by shape in C order: numbers as JSON numbers, NaN/Infinity as the
  * strings "NaN"/"Infinity"/"-Infinity", booleans as true/false. Output is
  * canonical JSON (see codec.canonicalStringify), which is what lets
- * ZarrJsonStore inline these chunks as real JSON arrays in the document.
+ * ZarrInlineStore inline these chunks as real JSON arrays in the document.
  *
  * int64/uint64 caveat: JS represents these as BigInt. Values within
  * Number.MAX_SAFE_INTEGER are emitted as JSON numbers; larger values throw —

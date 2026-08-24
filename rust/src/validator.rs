@@ -1,4 +1,4 @@
-//! Validate a zarr-json document against the two validity rules.
+//! Validate a zarr-inline document against the two validity rules.
 //!
 //! R1 — well-formed keys: every key is a non-empty string with no leading or
 //!      trailing `/`, no empty segments, and no `.` or `..` segments.
@@ -38,7 +38,7 @@ impl std::fmt::Display for ValidationError {
             .map(|i| format!("[{}] {}: {}", i.rule, i.key, i.message))
             .collect::<Vec<_>>()
             .join("; ");
-        write!(f, "invalid zarr-json document: {joined}")
+        write!(f, "invalid zarr-inline document: {joined}")
     }
 }
 
@@ -96,7 +96,7 @@ pub fn check_key(key: &str) -> Option<ValidationIssue> {
     check_key_well_formed(key)
 }
 
-/// Check a zarr-json document. Returns the list of issues (empty if valid),
+/// Check a zarr-inline document. Returns the list of issues (empty if valid),
 /// in document order.
 pub fn validate(document: &Map<String, Value>) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
@@ -112,7 +112,7 @@ pub fn validate(document: &Map<String, Value>) -> Vec<ValidationIssue> {
     issues
 }
 
-/// Check a zarr-json document, failing on the first problem (strict mode).
+/// Check a zarr-inline document, failing on the first problem (strict mode).
 ///
 /// # Errors
 /// Returns [`ValidationError`] carrying every issue if the document is invalid.

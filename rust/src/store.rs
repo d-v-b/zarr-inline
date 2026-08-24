@@ -1,4 +1,4 @@
-//! `ZarrJsonStore`: a read-write zarrs store backed by a JSON object.
+//! `ZarrInlineStore`: a read-write zarrs store backed by a JSON object.
 //!
 //! Implements zarrs's [`ReadableStorageTraits`], [`WritableStorageTraits`],
 //! and [`ListableStorageTraits`] (and, via zarrs's blanket impls, the
@@ -21,7 +21,7 @@ use zarrs::storage::{
 use crate::codec::{canonical_to_string, decode_value, encode_value};
 use crate::validator::{check_key, validate, ValidationError, ValidationIssue};
 
-/// A zarr-json document: one JSON object holding a whole Zarr hierarchy.
+/// A zarr-inline document: one JSON object holding a whole Zarr hierarchy.
 ///
 /// `serde_json::Map` preserves member order (`preserve_order` feature), so
 /// documents round-trip losslessly.
@@ -29,7 +29,7 @@ pub type Document = Map<String, Value>;
 
 /// A Zarr v3 store whose entire contents live in one JSON object.
 #[derive(Debug, Default)]
-pub struct ZarrJsonStore {
+pub struct ZarrInlineStore {
     document: RwLock<Document>,
     /// Lenient mode: keys with validation issues behave as absent (SPEC 8.1)
     /// while staying in the document text, so values this version does not
@@ -38,7 +38,7 @@ pub struct ZarrJsonStore {
     skipped: RwLock<HashSet<String>>,
 }
 
-impl ZarrJsonStore {
+impl ZarrInlineStore {
     /// Create a store over an empty document.
     #[must_use]
     pub fn new() -> Self {
@@ -163,7 +163,7 @@ impl ZarrJsonStore {
     }
 }
 
-impl ReadableStorageTraits for ZarrJsonStore {
+impl ReadableStorageTraits for ZarrInlineStore {
     fn get(&self, key: &StoreKey) -> Result<MaybeBytes, StorageError> {
         Ok(self.get_bytes(key)?.map(Bytes::from))
     }
@@ -211,7 +211,7 @@ impl ReadableStorageTraits for ZarrJsonStore {
     }
 }
 
-impl WritableStorageTraits for ZarrJsonStore {
+impl WritableStorageTraits for ZarrInlineStore {
     fn set(&self, key: &StoreKey, value: Bytes) -> Result<(), StorageError> {
         Self::check_write_key(key)?;
         let encoded = encode_value(key.as_str(), &value)
@@ -286,7 +286,7 @@ impl WritableStorageTraits for ZarrJsonStore {
     }
 }
 
-impl ListableStorageTraits for ZarrJsonStore {
+impl ListableStorageTraits for ZarrInlineStore {
     // Listing silently skips document keys that are not valid store keys
     // (possible only in a leniently constructed store): lenient mode
     // surfaces such entries as diagnostics at construction time, and one
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn get_set_round_trip() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         // Metadata key: stored inline as a JSON object.
         store
             .set(&key("zarr.json"), Bytes::from_static(b"{\"zarr_format\":3}"))
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn set_metadata_key_with_non_object_bytes_errors() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         let result = store.set(&key("zarr.json"), Bytes::from_static(b"[1,2]"));
         assert!(result.is_err());
         // No mutation happened.
@@ -407,7 +407,7 @@ mod tests {
     fn set_rejects_keys_failing_r1() {
         // zarrs's StoreKey is laxer than the validator's R1 rule, so the
         // store must reject such keys itself; the document stays unchanged.
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         let mut exercised = Vec::new();
         for bad in ["", "a/", "a//b", "a/./b", "a/../b", "..", "/a"] {
             let Ok(store_key) = StoreKey::new(bad) else {
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn erase_removes_key() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         store.set(&key("a/c/0"), Bytes::from_static(&[1])).unwrap();
         store.erase(&key("a/c/0")).unwrap();
         assert!(store.get(&key("a/c/0")).unwrap().is_none());
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn erase_prefix_removes_subtree() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         store.set(&key("a/c/0"), Bytes::from_static(&[1])).unwrap();
         store.set(&key("a/c/1"), Bytes::from_static(&[2])).unwrap();
         store.set(&key("b/c/0"), Bytes::from_static(&[3])).unwrap();
@@ -460,7 +460,7 @@ mod tests {
 
     #[test]
     fn listing_derives_hierarchy() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         for k in ["zarr.json", "a/zarr.json", "a/c/0", "a/c/1", "b/zarr.json"] {
             store.set(&key(k), Bytes::from_static(b"{}")).unwrap();
         }
@@ -508,7 +508,7 @@ mod tests {
         // listed) but survive in the document text; a successful set makes
         // the key live again.
         let (store, issues) =
-            ZarrJsonStore::from_document_lenient(doc(json!({"bad/c/0": 123, "ok/c/0": "AAEC"})));
+            ZarrInlineStore::from_document_lenient(doc(json!({"bad/c/0": 123, "ok/c/0": "AAEC"})));
         assert_eq!(issues.len(), 1);
         assert!(store.get(&key("bad/c/0")).unwrap().is_none());
         assert_eq!(store.size_key(&key("bad/c/0")).unwrap(), None);
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn partial_write_to_skipped_key_starts_from_empty_value() {
         let (store, _issues) =
-            ZarrJsonStore::from_document_lenient(doc(json!({"bad/c/0": 123})));
+            ZarrInlineStore::from_document_lenient(doc(json!({"bad/c/0": 123})));
         let writes: OffsetBytesIterator = Box::new(vec![(1u64, Bytes::from_static(&[7]))].into_iter());
         store.set_partial_many(&key("bad/c/0"), writes).unwrap();
         assert_eq!(store.get(&key("bad/c/0")).unwrap().unwrap().as_ref(), &[0, 7]);
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn set_json_stores_inline_canonical_values() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         store
             .set_json(&key("zarr.json"), &json!({"zarr_format": 3, "node_type": "group", "x": 1.0}))
             .unwrap();
@@ -556,7 +556,7 @@ mod tests {
 
     #[test]
     fn set_json_rejects_wrong_shape_for_key_class() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         let err = store.set_json(&key("zarr.json"), &json!([1, 2])).unwrap_err();
         assert!(err.to_string().contains("takes a JSON object"), "{err}");
         let err = store.set_json(&key("a/c/0"), &json!("raw")).unwrap_err();
@@ -565,15 +565,15 @@ mod tests {
 
     #[test]
     fn from_document_validates_strictly() {
-        assert!(ZarrJsonStore::from_document(doc(json!({"zarr.json": {}}))).is_ok());
-        assert!(ZarrJsonStore::from_document(doc(json!({"/bad": "x"}))).is_err());
-        assert!(ZarrJsonStore::from_document(doc(json!({"zarr.json": "bad"}))).is_err());
+        assert!(ZarrInlineStore::from_document(doc(json!({"zarr.json": {}}))).is_ok());
+        assert!(ZarrInlineStore::from_document(doc(json!({"/bad": "x"}))).is_err());
+        assert!(ZarrInlineStore::from_document(doc(json!({"zarr.json": "bad"}))).is_err());
     }
 
     #[test]
     fn from_document_lenient_surfaces_issues() {
         let (store, issues) =
-            ZarrJsonStore::from_document_lenient(doc(json!({"/bad": "x", "ok/c/0": "AAEC"})));
+            ZarrInlineStore::from_document_lenient(doc(json!({"/bad": "x", "ok/c/0": "AAEC"})));
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].rule, "R1");
         assert_eq!(
@@ -585,7 +585,7 @@ mod tests {
     #[test]
     fn lenient_store_with_invalid_key_is_still_listable() {
         let (store, issues) =
-            ZarrJsonStore::from_document_lenient(doc(json!({"/bad": "eA==", "ok/c/0": "AAEC"})));
+            ZarrInlineStore::from_document_lenient(doc(json!({"/bad": "eA==", "ok/c/0": "AAEC"})));
         assert_eq!(issues.len(), 1);
 
         // list() skips the invalid document key.
@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn get_partial_many_out_of_range_errors_instead_of_panicking() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         store
             .set(&key("a/c/0"), Bytes::from_static(&[0, 1, 2, 3, 4]))
             .unwrap();
@@ -665,7 +665,7 @@ mod tests {
 
     #[test]
     fn set_partial_many_overwrites_and_zero_fills() {
-        let store = ZarrJsonStore::new();
+        let store = ZarrInlineStore::new();
         store
             .set(&key("a/c/0"), Bytes::from_static(&[9, 9, 9]))
             .unwrap();
@@ -697,7 +697,7 @@ mod tests {
     #[test]
     fn get_invalid_base64_errors() {
         let (store, _) =
-            ZarrJsonStore::from_document_lenient(doc(json!({"a/c/0": "not base64!"})));
+            ZarrInlineStore::from_document_lenient(doc(json!({"a/c/0": "not base64!"})));
         assert!(store.get(&key("a/c/0")).is_err());
     }
 }

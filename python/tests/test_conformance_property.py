@@ -1,6 +1,6 @@
 """Property-based cross-implementation conformance tests.
 
-Hypothesis generates zarr-json documents; each document is run through the
+Hypothesis generates zarr-inline documents; each document is run through the
 Python conformance harness in-process and through the TypeScript and Rust
 harness CLIs (built on demand; skipped if their toolchains or sources are
 absent). All reports must agree structurally.
@@ -26,7 +26,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from zarr_json.conformance import run as run_python
+from zarr_inline.conformance import run as run_python
 
 REPO = Path(__file__).resolve().parents[2]
 

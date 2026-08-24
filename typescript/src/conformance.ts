@@ -1,7 +1,7 @@
 /**
  * Conformance harness: shared cross-implementation behavior as a CLI.
  *
- * Reads a zarr-json document (a JSON object) on stdin and writes a JSON
+ * Reads a zarr-inline document (a JSON object) on stdin and writes a JSON
  * report on stdout:
  *
  * - "issues": validator issues, sorted by (key, rule).

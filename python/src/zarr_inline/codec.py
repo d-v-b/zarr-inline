@@ -1,6 +1,6 @@
 """Pure functions for classifying keys and encoding/decoding values.
 
-A zarr-json value is one of:
+A zarr-inline value is one of:
 
 - metadata key (``zarr.json`` or ``*/zarr.json``) -> inline JSON object
 - byte key -> base64 string (opaque bytes), or a JSON array/object (inline
@@ -116,14 +116,14 @@ def _canonical_write(value: Any, out: list[str]) -> None:
 
 
 def canonical_dumps(value: Any) -> str:
-    """Serialize a JSON value in the canonical zarr-json form.
+    """Serialize a JSON value in the canonical zarr-inline form.
 
     No whitespace; non-ASCII characters unescaped (UTF-8); object member
     order preserved (member names are NOT sorted — this deliberately departs
     from full RFC 8785); numbers per RFC 8785: floats via ECMAScript
     Number::toString (es_number_str), integers as digits; non-finite numbers
     rejected (the fill_value convention represents them as strings like
-    "NaN"). This form is shared by all zarr-json implementations so that
+    "NaN"). This form is shared by all zarr-inline implementations so that
     decoded bytes agree byte-for-byte across languages.
     """
     out: list[str] = []
@@ -132,7 +132,7 @@ def canonical_dumps(value: Any) -> str:
 
 
 def decode_value(key: str, value: Any) -> bytes:
-    """Convert a stored zarr-json value into the bytes Zarr expects.
+    """Convert a stored zarr-inline value into the bytes Zarr expects.
 
     Metadata keys hold a JSON object -> serialize to UTF-8 JSON bytes.
     Byte keys hold a base64 string -> base64-decode to raw bytes, or an
@@ -153,7 +153,7 @@ def decode_value(key: str, value: Any) -> bytes:
 
 
 def encode_value(key: str, data: bytes) -> Any:
-    """Convert Zarr's bytes into the value stored in a zarr-json document.
+    """Convert Zarr's bytes into the value stored in a zarr-inline document.
 
     Metadata keys: parse bytes as JSON, require a JSON object (value-level
     losslessness: stock Zarr writers do not emit canonical text).

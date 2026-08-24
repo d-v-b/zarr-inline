@@ -1,5 +1,5 @@
 [project]
-name = "zarr-json"
+name = "zarr-inline"
 version = "0.1.0"
 description = "Store a Zarr v3 hierarchy as a single JSON object"
 requires-python = ">=3.12"
@@ -20,7 +20,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/zarr_json"]
+packages = ["src/zarr_inline"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

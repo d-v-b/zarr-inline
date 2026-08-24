@@ -32,7 +32,7 @@ import {
 	makeTypedArray,
 	registerJsonCodec,
 } from "./serializer.js";
-import { ZarrJsonStore } from "./store.js";
+import { ZarrInlineStore } from "./store.js";
 
 registerJsonCodec();
 
@@ -138,7 +138,7 @@ function asChunk(value: unknown, shape: number[], dtype: string): Chunk<DataType
 }
 
 async function setRegion(
-	arr: zarr.Array<DataType, ZarrJsonStore>,
+	arr: zarr.Array<DataType, ZarrInlineStore>,
 	selection: (number | zarr.Slice | null)[] | null,
 	data: unknown,
 	shape: number[],
@@ -153,7 +153,7 @@ async function setRegion(
 }
 
 async function getRegion(
-	arr: zarr.Array<DataType, ZarrJsonStore>,
+	arr: zarr.Array<DataType, ZarrInlineStore>,
 	selection: (number | zarr.Slice | null)[] | null,
 	shape: number[],
 	dtype: string,
@@ -182,7 +182,7 @@ function nodeType(document: Document, key: string): string | undefined {
  */
 async function ensureParents(
 	backing: MemoryBacking,
-	root: zarr.Location<ZarrJsonStore>,
+	root: zarr.Location<ZarrInlineStore>,
 	path: string,
 ): Promise<void> {
 	const document = backing.load();
@@ -213,12 +213,12 @@ async function ensureParents(
 
 async function createArray(
 	backing: MemoryBacking,
-	root: zarr.Location<ZarrJsonStore>,
+	root: zarr.Location<ZarrInlineStore>,
 	path: string,
 	dtype: string,
 	shape: number[],
 	chunks: number[],
-): Promise<zarr.Array<DataType, ZarrJsonStore>> {
+): Promise<zarr.Array<DataType, ZarrInlineStore>> {
 	if (!(dtype in ZERO_FILL)) {
 		throw new Error(`unsupported dtype ${JSON.stringify(dtype)} for this harness`);
 	}
@@ -279,7 +279,7 @@ function portableDtype(value: unknown, what: string): string {
 
 async function write(payload: Payload): Promise<Document> {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	const root = zarr.root(store);
 	for (const spec of payload.arrays) {
 		const path = portablePath(spec.path, "array path");
@@ -293,7 +293,7 @@ async function write(payload: Payload): Promise<Document> {
 }
 
 async function read(document: Document): Promise<Payload> {
-	const store = new ZarrJsonStore(new MemoryBacking(document), {
+	const store = new ZarrInlineStore(new MemoryBacking(document), {
 		readOnly: true,
 	});
 	const root = zarr.root(store);
@@ -326,7 +326,7 @@ async function read(document: Document): Promise<Payload> {
  */
 function region(
 	operation: TraceOperation,
-	arr: zarr.Array<DataType, ZarrJsonStore>,
+	arr: zarr.Array<DataType, ZarrInlineStore>,
 	index: number,
 ): { shape: number[]; selection: zarr.Slice[] | null } {
 	const origin = intList(operation.origin, `operation ${index}: origin`, 0);
@@ -364,10 +364,10 @@ async function trace(
 		throw new Error("trace payload needs an operations array");
 	}
 	const backing = new MemoryBacking(payload.document ?? {});
-	let store: ZarrJsonStore;
+	let store: ZarrInlineStore;
 	try {
 		// The initial document MUST be valid (DESIGN 6.3).
-		store = new ZarrJsonStore(backing, { strict: true });
+		store = new ZarrInlineStore(backing, { strict: true });
 	} catch (err) {
 		throw new Error(`invalid initial document: ${String(err)}`);
 	}

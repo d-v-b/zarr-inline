@@ -1,4 +1,4 @@
-"""Pluggable backings: where the zarr-json object lives and how it persists.
+"""Pluggable backings: where the zarr-inline object lives and how it persists.
 
 A Backing has two operations: load() returns the document object, persist()
 writes a document object. The store logic is identical regardless of backing.
@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from zarr_json.codec import strict_loads
+from zarr_inline.codec import strict_loads
 
 Document = dict[str, Any]
 
@@ -27,7 +27,7 @@ def require_document(value: Any) -> Document:
 
 @runtime_checkable
 class Backing(Protocol):
-    """Where a zarr-json document lives and how it persists.
+    """Where a zarr-inline document lives and how it persists.
 
     The store calls ``load()`` exactly once to obtain the document, mutates
     that document in place, then calls ``persist()`` after each mutation.

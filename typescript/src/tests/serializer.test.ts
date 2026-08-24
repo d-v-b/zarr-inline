@@ -9,7 +9,7 @@ import {
 	fromJsonScalar,
 	registerJsonCodec,
 } from "../serializer.js";
-import { ZarrJsonStore } from "../store.js";
+import { ZarrInlineStore } from "../store.js";
 
 registerJsonCodec();
 
@@ -17,7 +17,7 @@ const JSON_CODECS = [{ name: "json", configuration: {} }];
 
 test("uint8 chunks appear as inline JSON arrays and round-trip", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	const root = zarr.root(store);
 	await zarr.create(root);
 	const arr = await zarr.create(root.resolve("data"), {
@@ -38,7 +38,7 @@ test("uint8 chunks appear as inline JSON arrays and round-trip", async () => {
 	assert.deepEqual((doc["data/zarr.json"] as { codecs: unknown }).codecs, JSON_CODECS);
 
 	// Read back through a JSON round-trip of the whole document.
-	const store2 = new ZarrJsonStore(
+	const store2 = new ZarrInlineStore(
 		new MemoryBacking(JSON.parse(JSON.stringify(doc))),
 	);
 	const arr2 = await zarr.open(zarr.root(store2).resolve("data"), {
@@ -50,7 +50,7 @@ test("uint8 chunks appear as inline JSON arrays and round-trip", async () => {
 
 test("float64 chunks serialize NaN/Infinity as strings and round-trip", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	const root = zarr.root(store);
 	await zarr.create(root);
 	const arr = await zarr.create(root.resolve("data"), {
@@ -65,7 +65,7 @@ test("float64 chunks serialize NaN/Infinity as strings and round-trip", async ()
 	const doc = backing.load();
 	assert.deepEqual(doc["data/c/0"], [1.5, "NaN", "Infinity", "-Infinity"]);
 
-	const store2 = new ZarrJsonStore(
+	const store2 = new ZarrInlineStore(
 		new MemoryBacking(JSON.parse(JSON.stringify(doc))),
 	);
 	const arr2 = await zarr.open(zarr.root(store2).resolve("data"), {
@@ -81,7 +81,7 @@ test("float64 chunks serialize NaN/Infinity as strings and round-trip", async ()
 
 test("int64 chunks round-trip within Number.MAX_SAFE_INTEGER", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	const root = zarr.root(store);
 	await zarr.create(root);
 	const arr = await zarr.create(root.resolve("data"), {
@@ -96,7 +96,7 @@ test("int64 chunks round-trip within Number.MAX_SAFE_INTEGER", async () => {
 	const doc = backing.load();
 	assert.deepEqual(doc["data/c/0"], [123456789012345, -1]);
 
-	const store2 = new ZarrJsonStore(
+	const store2 = new ZarrInlineStore(
 		new MemoryBacking(JSON.parse(JSON.stringify(doc))),
 	);
 	const arr2 = await zarr.open(zarr.root(store2).resolve("data"), {
@@ -108,7 +108,7 @@ test("int64 chunks round-trip within Number.MAX_SAFE_INTEGER", async () => {
 
 test("bool chunks appear as true/false and round-trip", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	const root = zarr.root(store);
 	await zarr.create(root);
 	const arr = await zarr.create(root.resolve("data"), {
@@ -126,7 +126,7 @@ test("bool chunks appear as true/false and round-trip", async () => {
 	const doc = backing.load();
 	assert.deepEqual(doc["data/c/0"], [true, false]);
 
-	const store2 = new ZarrJsonStore(
+	const store2 = new ZarrInlineStore(
 		new MemoryBacking(JSON.parse(JSON.stringify(doc))),
 	);
 	const arr2 = await zarr.open(zarr.root(store2).resolve("data"), {

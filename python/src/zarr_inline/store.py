@@ -1,4 +1,4 @@
-"""ZarrJsonStore: a read-write zarr.abc.store.Store backed by a JSON object."""
+"""ZarrInlineStore: a read-write zarr.abc.store.Store backed by a JSON object."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from zarr.abc.store import (
 )
 from zarr.core.buffer import Buffer, BufferPrototype
 
-from zarr_json.backing import Backing
-from zarr_json.codec import canonical_dumps, decode_value, encode_value, is_metadata_key
-from zarr_json.validator import Strictness, check_key, validate
+from zarr_inline.backing import Backing
+from zarr_inline.codec import canonical_dumps, decode_value, encode_value, is_metadata_key
+from zarr_inline.validator import Strictness, check_key, validate
 
 
 def _apply_byte_range(data: bytes, byte_range: ByteRequest | None) -> bytes:
@@ -35,7 +35,7 @@ def _apply_byte_range(data: bytes, byte_range: ByteRequest | None) -> bytes:
     raise ValueError(f"unsupported byte range: {byte_range!r}")
 
 
-class ZarrJsonStore(Store):
+class ZarrInlineStore(Store):
     """A Zarr v3 store whose entire contents live in one JSON object.
 
     Construct from a Backing (memory / file / string). All operations are
@@ -65,14 +65,14 @@ class ZarrJsonStore(Store):
             for issue in validate(self._document):
                 self._skipped.add(issue.key)
                 warnings.warn(
-                    f"zarr-json validation [{issue.rule}] {issue.key}: {issue.message}",
+                    f"zarr-inline validation [{issue.rule}] {issue.key}: {issue.message}",
                     stacklevel=2,
                 )
         self._lock = asyncio.Lock()
 
-    def with_read_only(self, read_only: bool = False) -> "ZarrJsonStore":
-        """Return a new ZarrJsonStore over the same backing with the given read_only flag."""
-        new_store = ZarrJsonStore(self._backing, read_only=read_only)
+    def with_read_only(self, read_only: bool = False) -> "ZarrInlineStore":
+        """Return a new ZarrInlineStore over the same backing with the given read_only flag."""
+        new_store = ZarrInlineStore(self._backing, read_only=read_only)
         # Reassign to the caller's live document rather than the freshly-loaded
         # copy produced by __init__.  This keeps both stores sharing the exact
         # same dict object by identity (required by __eq__ / __hash__) and
@@ -99,7 +99,7 @@ class ZarrJsonStore(Store):
         return False
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, ZarrJsonStore) and other._document is self._document
+        return isinstance(other, ZarrInlineStore) and other._document is self._document
 
     def __hash__(self) -> int:
         return id(self._document)

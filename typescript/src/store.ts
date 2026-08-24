@@ -1,10 +1,10 @@
 /**
- * ZarrJsonStore: a read-write zarrita store backed by a JSON object.
+ * ZarrInlineStore: a read-write zarrita store backed by a JSON object.
  *
  * Conforms to zarrita's `AsyncMutable` store interface
  * (`AsyncReadable & AsyncWritable` from `@zarrita/storage`), including the
  * optional `getRange` partial read. zarrita store keys are `AbsolutePath`
- * strings starting with "/"; the leading "/" is stripped to obtain zarr-json
+ * strings starting with "/"; the leading "/" is stripped to obtain zarr-inline
  * document keys.
  */
 
@@ -20,7 +20,7 @@ import { checkKey, validate, type ValidationIssue } from "./validator.js";
 
 const UTF8_ENCODER = new TextEncoder();
 
-export interface ZarrJsonStoreOptions {
+export interface ZarrInlineStoreOptions {
 	/** Refuse set/delete when true. Default false. */
 	readOnly?: boolean;
 	/** Throw ValidationError on construction if the document is invalid. */
@@ -48,7 +48,7 @@ function applyRange(data: Uint8Array, range: RangeQuery): Uint8Array {
  * by an async mutex (JS is single-threaded, but operations interleave at
  * await points). Mutating operations call backing.persist().
  */
-export class ZarrJsonStore implements AsyncMutable {
+export class ZarrInlineStore implements AsyncMutable {
 	#backing: Backing;
 	#document: Document;
 	#readOnly: boolean;
@@ -59,7 +59,7 @@ export class ZarrJsonStore implements AsyncMutable {
 	// the key's skip.
 	#skipped: Set<string> = new Set();
 
-	constructor(backing: Backing, options: ZarrJsonStoreOptions = {}) {
+	constructor(backing: Backing, options: ZarrInlineStoreOptions = {}) {
 		this.#backing = backing;
 		this.#readOnly = options.readOnly ?? false;
 		// Documents must be null-prototype objects so that keys like
@@ -76,7 +76,7 @@ export class ZarrJsonStore implements AsyncMutable {
 				options.onIssue ??
 				((issue: ValidationIssue) =>
 					console.warn(
-						`zarr-json validation [${issue.rule}] ${issue.key}: ${issue.message}`,
+						`zarr-inline validation [${issue.rule}] ${issue.key}: ${issue.message}`,
 					));
 			for (const issue of validate(this.#document)) {
 				this.#skipped.add(issue.key);
@@ -218,7 +218,7 @@ export class ZarrJsonStore implements AsyncMutable {
 		return this.#withLock(() => this.#present(this.#docKey(key)));
 	}
 
-	/** All usable document keys (zarr-json keys, without a leading "/"). */
+	/** All usable document keys (zarr-inline keys, without a leading "/"). */
 	async list(): Promise<string[]> {
 		return this.#withLock(() =>
 			Object.keys(this.#document).filter((k) => !this.#skipped.has(k)),

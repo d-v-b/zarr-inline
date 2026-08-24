@@ -1,4 +1,4 @@
-//! zarr-json: store a Zarr v3 hierarchy as a single JSON object.
+//! zarr-inline: store a Zarr v3 hierarchy as a single JSON object.
 //!
 //! Rust reference implementation. See
 //! `../SPEC.md` and `../DESIGN.md`.
@@ -20,4 +20,4 @@ pub use validator::{check_key, validate, ValidationError, ValidationIssue};
 #[cfg(feature = "zarrs")]
 pub use serializer::JsonCodec;
 #[cfg(feature = "zarrs")]
-pub use store::{Document, ZarrJsonStore};
+pub use store::{Document, ZarrInlineStore};

@@ -1,5 +1,5 @@
-//! Randomized differential test of [`zarr_json::es_number_str`] against the
-//! Python reference implementation (`zarr_json.codec.es_number_str`).
+//! Randomized differential test of [`zarr_inline::es_number_str`] against the
+//! Python reference implementation (`zarr_inline.codec.es_number_str`).
 //!
 //! Generates a few hundred deterministic f64 bit patterns, formats them in
 //! Rust, and compares against one batch `uv run python` subprocess reading
@@ -9,7 +9,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use zarr_json::es_number_str;
+use zarr_inline::es_number_str;
 
 /// xorshift64* PRNG: deterministic, dependency-free bit patterns.
 fn xorshift64star(state: &mut u64) -> u64 {
@@ -27,7 +27,7 @@ fn python_dir() -> PathBuf {
 
 const PYTHON_SCRIPT: &str = r"
 import struct, sys
-from zarr_json.codec import es_number_str
+from zarr_inline.codec import es_number_str
 for line in sys.stdin:
     line = line.strip()
     if line:

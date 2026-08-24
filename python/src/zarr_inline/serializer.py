@@ -10,7 +10,7 @@ so on. zarr-python exposes the serialization as ZDType.to_json_scalar /
 from_json_scalar.
 
 Output is canonical JSON (see codec.canonical_dumps), which is what lets
-ZarrJsonStore inline these chunks as real JSON arrays in the document.
+ZarrInlineStore inline these chunks as real JSON arrays in the document.
 
 A rank-0 chunk serializes to a bare JSON scalar; the store only inlines
 arrays, so rank-0 chunks are stored base64-encoded.
@@ -27,7 +27,7 @@ from zarr.abc.codec import ArrayBytesCodec
 from zarr.core.common import JSON
 from zarr.registry import register_codec
 
-from zarr_json.codec import canonical_dumps, strict_loads
+from zarr_inline.codec import canonical_dumps, strict_loads
 
 if TYPE_CHECKING:
     from zarr.core.array_spec import ArraySpec

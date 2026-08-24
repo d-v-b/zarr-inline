@@ -1,6 +1,6 @@
-# zarr-json (TypeScript)
+# zarr-inline (TypeScript)
 
-Store a Zarr v3 hierarchy as a single JSON object. `ZarrJsonStore` is a
+Store a Zarr v3 hierarchy as a single JSON object. `ZarrInlineStore` is a
 read-write [zarrita](https://github.com/manzt/zarrita.js) store (the
 `AsyncMutable` interface from `@zarrita/storage`, including `getRange`
 partial reads) whose entire contents live in one JSON document — metadata
@@ -28,11 +28,11 @@ cd typescript && npm install && npm run build
 
 ```ts
 import * as zarr from "zarrita";
-import { ZarrJsonStore, MemoryBacking, StringBacking } from "zarr-json";
+import { ZarrInlineStore, MemoryBacking, StringBacking } from "zarr-inline";
 
 // Build a hierarchy into an in-memory JSON object.
 const backing = new MemoryBacking({});
-const store = new ZarrJsonStore(backing);
+const store = new ZarrInlineStore(backing);
 const root = zarr.root(store);
 await zarr.create(root);
 const arr = await zarr.create(root.resolve("data"), {
@@ -50,7 +50,7 @@ await zarr.set(arr, null, {
 const document = backing.load();
 
 // Reload from a JSON string.
-const store2 = new ZarrJsonStore(new StringBacking(JSON.stringify(document)));
+const store2 = new ZarrInlineStore(new StringBacking(JSON.stringify(document)));
 const arr2 = await zarr.open(zarr.root(store2).resolve("data"), { kind: "array" });
 ```
 
@@ -63,7 +63,7 @@ using the Zarr v3 `fill_value` scalar serialization elementwise (NaN becomes
 zarrita's codec registry, then name it in the array's codec chain:
 
 ```ts
-import { registerJsonCodec } from "zarr-json";
+import { registerJsonCodec } from "zarr-inline";
 
 registerJsonCodec(); // registry.set("json", ...) on zarrita's global registry
 
@@ -115,7 +115,7 @@ Rust refuse to parse.
 ## Validation
 
 ```ts
-import { validate } from "zarr-json";
+import { validate } from "zarr-inline";
 
 const issues = validate(document);          // lenient: returns a list
 validate(document, { strict: true });       // strict: throws ValidationError
@@ -159,7 +159,7 @@ node dist/crosscheck.js read < document.json   # document -> payload
 
 The array-layer harness from
 `../DESIGN.md` §6.2: `write`
-drives zarrita over a `ZarrJsonStore` to build a hierarchy of json-codec
+drives zarrita over a `ZarrInlineStore` to build a hierarchy of json-codec
 arrays from a payload, `read` opens every array in a document and reports
 its values using the `fill_value` scalar serialization. The Python test
 orchestrator (`python/tests/test_crosscheck.py`) runs the full

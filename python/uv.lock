@@ -353,7 +353,7 @@ wheels = [
 ]
 
 [[package]]
-name = "zarr-json"
+name = "zarr-inline"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

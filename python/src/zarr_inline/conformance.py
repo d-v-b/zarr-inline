@@ -1,6 +1,6 @@
 """Conformance harness: shared cross-implementation behavior as a CLI.
 
-Reads a zarr-json document (a JSON object) on stdin and writes a JSON
+Reads a zarr-inline document (a JSON object) on stdin and writes a JSON
 report on stdout:
 
 - "issues": validator issues, sorted by (key, rule).
@@ -23,8 +23,8 @@ import json
 import sys
 from typing import Any
 
-from zarr_json.codec import decode_value, encode_value
-from zarr_json.validator import validate
+from zarr_inline.codec import decode_value, encode_value
+from zarr_inline.validator import validate
 
 
 def run(document: dict[str, Any]) -> dict[str, Any]:
@@ -55,7 +55,7 @@ def run(document: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    from zarr_json.codec import strict_loads
+    from zarr_inline.codec import strict_loads
 
     try:
         document = strict_loads(sys.stdin.buffer.read())

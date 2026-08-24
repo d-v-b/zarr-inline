@@ -5,12 +5,12 @@ import * as zarr from "zarrita";
 
 import { MemoryBacking, StringBacking } from "../backing.js";
 import { isMetadataKey } from "../codec.js";
-import { ZarrJsonStore } from "../store.js";
+import { ZarrInlineStore } from "../store.js";
 import { ValidationError } from "../validator.js";
 
 test("create group and array, write and read back through zarrita", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	const root = zarr.root(store);
 
 	await zarr.create(root, { attributes: { title: "demo" } });
@@ -23,7 +23,7 @@ test("create group and array, write and read back through zarrita", async () => 
 	await zarr.set(arr, null, { data: values, shape: [8], stride: [1] });
 
 	// Read back through a fresh store over the same document.
-	const store2 = new ZarrJsonStore(new MemoryBacking(backing.load()));
+	const store2 = new ZarrInlineStore(new MemoryBacking(backing.load()));
 	const arr2 = await zarr.open(zarr.root(store2).resolve("data"), {
 		kind: "array",
 	});
@@ -33,7 +33,7 @@ test("create group and array, write and read back through zarrita", async () => 
 
 test("document shape: metadata objects and base64 chunk strings", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	const root = zarr.root(store);
 	await zarr.create(root);
 	const arr = await zarr.create(root.resolve("data"), {
@@ -63,7 +63,7 @@ test("document shape: metadata objects and base64 chunk strings", async () => {
 
 test("round trip through string backing", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	const root = zarr.root(store);
 	await zarr.create(root);
 	const arr = await zarr.create(root.resolve("data"), {
@@ -79,7 +79,7 @@ test("round trip through string backing", async () => {
 
 	// Serialize the whole hierarchy to a JSON string, then reload it.
 	const text = JSON.stringify(backing.load());
-	const store2 = new ZarrJsonStore(new StringBacking(text));
+	const store2 = new ZarrInlineStore(new StringBacking(text));
 	const arr2 = await zarr.open(zarr.root(store2).resolve("data"), {
 		kind: "array",
 	});
@@ -88,12 +88,12 @@ test("round trip through string backing", async () => {
 });
 
 test("get returns undefined for a missing key", async () => {
-	const store = new ZarrJsonStore(new MemoryBacking({}));
+	const store = new ZarrInlineStore(new MemoryBacking({}));
 	assert.equal(await store.get("/nope"), undefined);
 });
 
 test("getRange applies offset/length and suffixLength to decoded bytes", async () => {
-	const store = new ZarrJsonStore(
+	const store = new ZarrInlineStore(
 		new MemoryBacking({ "a/c/0": Buffer.from([0, 1, 2, 3, 4, 5]).toString("base64") }),
 	);
 	assert.deepEqual(
@@ -113,7 +113,7 @@ test("getRange applies offset/length and suffixLength to decoded bytes", async (
 
 test("delete removes a key and persists", async () => {
 	const backing = new MemoryBacking({ "a/c/0": "AAEC" });
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	await store.delete("/a/c/0");
 	// Documents are null-prototype objects; spread to compare contents.
 	assert.deepEqual({ ...backing.load() }, {});
@@ -124,7 +124,7 @@ test("prototype-named keys are ordinary document keys", async () => {
 	// store.set of key "__proto__"; documents are null-prototype objects so
 	// every key is an own property.
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	for (const key of ["__proto__", "constructor", "toString"] as const) {
 		const path = `/${key}` as const;
 		assert.equal(await store.has(path), false);
@@ -151,13 +151,13 @@ test("prototype-named keys are ordinary document keys", async () => {
 test("prototype-named keys load from parsed and constructed documents", async () => {
 	// JSON.parse creates "__proto__" as an own property; the backings must
 	// keep it one (StringBacking) and re-key plain objects (MemoryBacking).
-	const fromString = new ZarrJsonStore(
+	const fromString = new ZarrInlineStore(
 		new StringBacking('{"__proto__": "AAEC", "toString": "AAEC"}'),
 	);
 	assert.deepEqual(await fromString.get("/__proto__"), new Uint8Array([0, 1, 2]));
 	assert.deepEqual(await fromString.get("/toString"), new Uint8Array([0, 1, 2]));
 	const doc = JSON.parse('{"constructor": "AAEC"}') as Record<string, unknown>;
-	const fromMemory = new ZarrJsonStore(new MemoryBacking(doc));
+	const fromMemory = new ZarrInlineStore(new MemoryBacking(doc));
 	assert.equal(await fromMemory.has("/constructor"), true);
 	assert.deepEqual(await fromMemory.get("/constructor"), new Uint8Array([0, 1, 2]));
 });
@@ -172,7 +172,7 @@ test("string backing load rejects overflowing number literals", () => {
 });
 
 test("read-only store refuses set and delete", async () => {
-	const store = new ZarrJsonStore(new MemoryBacking({ "a/c/0": "AAEC" }), {
+	const store = new ZarrInlineStore(new MemoryBacking({ "a/c/0": "AAEC" }), {
 		readOnly: true,
 	});
 	await assert.rejects(store.set("/x", new Uint8Array([1])), /read-only/);
@@ -184,7 +184,7 @@ test("read-only store refuses set and delete", async () => {
 test("strict construction rejects an invalid document", () => {
 	assert.throws(
 		() =>
-			new ZarrJsonStore(new MemoryBacking({ "zarr.json": "bad" }), {
+			new ZarrInlineStore(new MemoryBacking({ "zarr.json": "bad" }), {
 				strict: true,
 			}),
 		ValidationError,
@@ -193,16 +193,16 @@ test("strict construction rejects an invalid document", () => {
 
 test("lenient construction surfaces issues via onIssue and continues", () => {
 	const seen: string[] = [];
-	const store = new ZarrJsonStore(new MemoryBacking({ "/bad": "x" }), {
+	const store = new ZarrInlineStore(new MemoryBacking({ "/bad": "x" }), {
 		onIssue: (issue) => seen.push(`${issue.rule}:${issue.key}`),
 	});
 	assert.deepEqual(seen, ["R1:/bad"]);
-	assert.ok(store instanceof ZarrJsonStore);
+	assert.ok(store instanceof ZarrInlineStore);
 });
 
 test("set rejects malformed store keys per the Zarr v3 key grammar", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	for (const bad of ["/a/./b", "/a//b", "/..", "/a/", "//x", "/a/../b"]) {
 		await assert.rejects(
 			() => store.set(bad as `/${string}`, new Uint8Array([1])),
@@ -216,10 +216,10 @@ test("StringBacking persists integers beyond 2^53 losslessly", async () => {
 	// Regression: JSON.stringify throws on bigint; persist must use the
 	// canonical serializer so full int64/uint64 support holds end to end.
 	const backing = new StringBacking("{}");
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	await store.set("/a/c/0", new TextEncoder().encode("[9007199254740993]"));
 	assert.ok(backing.dumps().includes("9007199254740993"));
-	const reloaded = new ZarrJsonStore(new StringBacking(backing.dumps()));
+	const reloaded = new ZarrInlineStore(new StringBacking(backing.dumps()));
 	assert.equal(
 		new TextDecoder().decode(await reloaded.get("/a/c/0")),
 		"[9007199254740993]",
@@ -246,7 +246,7 @@ test("a failed persist leaves the document unchanged (set and delete)", async ()
 			inner.persist(doc);
 		},
 	};
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	fail = true;
 	await assert.rejects(() => store.set("/new/c/0", new Uint8Array([1])), /disk full/);
 	assert.equal(await store.get("/new/c/0"), undefined);
@@ -262,7 +262,7 @@ test("a failed persist leaves the document unchanged (set and delete)", async ()
 
 test("lenient mode treats invalid entries as absent until rewritten", async () => {
 	const backing = new MemoryBacking({ "bad/c/0": 123, "ok/c/0": "AAEC" });
-	const store = new ZarrJsonStore(backing, { onIssue: () => undefined });
+	const store = new ZarrInlineStore(backing, { onIssue: () => undefined });
 	assert.equal(await store.has("/bad/c/0"), false);
 	assert.equal(await store.get("/bad/c/0"), undefined);
 	assert.deepEqual(await store.list(), ["ok/c/0"]);
@@ -276,7 +276,7 @@ test("lenient mode treats invalid entries as absent until rewritten", async () =
 
 test("setJson stores inline canonical values", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	await store.setJson("/zarr.json", { zarr_format: 3, node_type: "group", x: 1.0 });
 	await store.setJson("/a/c/0", [1.5, -0, 2, "NaN"]);
 	const doc = backing.load();
@@ -290,7 +290,7 @@ test("setJson stores inline canonical values", async () => {
 });
 
 test("setJson rejects wrong shapes and non-canonicalizable values", async () => {
-	const store = new ZarrJsonStore(new MemoryBacking({}));
+	const store = new ZarrInlineStore(new MemoryBacking({}));
 	await assert.rejects(() => store.setJson("/zarr.json", [1, 2]), /takes a JSON object/);
 	await assert.rejects(() => store.setJson("/a/c/0", "raw"), /takes a JSON array or object/);
 	await assert.rejects(() => store.setJson("/a/c/0", [Number.NaN]), /non-finite/);
@@ -298,7 +298,7 @@ test("setJson rejects wrong shapes and non-canonicalizable values", async () => 
 
 test("setJson rejects nested non-JSON values without mutation", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	await assert.rejects(() => store.setJson("/a/c/0", [undefined]), /JSON-serializable/);
 	await assert.rejects(
 		() => store.setJson("/zarr.json", { x: undefined }),
@@ -309,7 +309,7 @@ test("setJson rejects nested non-JSON values without mutation", async () => {
 
 test("setJson rejects non-plain host objects without mutation", async () => {
 	const backing = new MemoryBacking({});
-	const store = new ZarrJsonStore(backing);
+	const store = new ZarrInlineStore(backing);
 	await assert.rejects(() => store.setJson("/a/c/0", new Date(0)), /plain JSON object/);
 	assert.deepEqual(Object.keys(backing.load()), []);
 });

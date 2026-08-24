@@ -17,11 +17,11 @@ from typing import Any
 
 import zarr
 
-from zarr_json.backing import MemoryBacking
-from zarr_json.codec import is_metadata_key, strict_loads
-from zarr_json.serializer import JsonSerializer, decode_chunk, encode_chunk
-from zarr_json.store import ZarrJsonStore
-from zarr_json.validator import Strictness
+from zarr_inline.backing import MemoryBacking
+from zarr_inline.codec import is_metadata_key, strict_loads
+from zarr_inline.serializer import JsonSerializer, decode_chunk, encode_chunk
+from zarr_inline.store import ZarrInlineStore
+from zarr_inline.validator import Strictness
 
 PORTABLE_DTYPES = frozenset(
     {"bool", "uint8", "int32", "int64", "float32", "float64"}
@@ -75,7 +75,7 @@ def _dtype_name(arr: Any) -> str:
 
 
 def _create_array(
-    store: ZarrJsonStore, path: str, dtype: str, shape: tuple[int, ...], chunks: tuple[int, ...]
+    store: ZarrInlineStore, path: str, dtype: str, shape: tuple[int, ...], chunks: tuple[int, ...]
 ) -> Any:
     root = zarr.open_group(store=store, mode="a")
     # zarr-python refuses to create a node under an array and to overwrite an
@@ -92,7 +92,7 @@ def _create_array(
 
 def write(payload: dict[str, Any]) -> dict[str, Any]:
     backing = MemoryBacking({})
-    store = ZarrJsonStore(backing)
+    store = ZarrInlineStore(backing)
     for spec in payload["arrays"]:
         path = _path(spec.get("path"), "array path")
         dtype = _dtype(spec.get("dtype"), f"array {path}: dtype")
@@ -104,7 +104,7 @@ def write(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def read(document: dict[str, Any]) -> dict[str, Any]:
-    store = ZarrJsonStore(MemoryBacking(document), read_only=True)
+    store = ZarrInlineStore(MemoryBacking(document), read_only=True)
     paths = sorted(
         key.removesuffix("/zarr.json")
         for key, value in document.items()
@@ -163,7 +163,7 @@ def _region(operation: dict[str, Any], arr: Any, index: int) -> tuple[tuple[int,
 def trace(payload: dict[str, Any]) -> dict[str, Any]:
     """Execute portable create/write/read operations and return the store.
 
-    The optional initial ``document`` (which MUST be a valid zarr-json
+    The optional initial ``document`` (which MUST be a valid zarr-inline
     document) permits a document emitted by any implementation to be used
     as the starting store for another.
     """
@@ -175,7 +175,7 @@ def trace(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("trace payload needs an operations array")
     backing = MemoryBacking(initial)
     try:
-        store = ZarrJsonStore(backing, strictness=Strictness.STRICT)
+        store = ZarrInlineStore(backing, strictness=Strictness.STRICT)
     except Exception as exc:  # noqa: BLE001 - harness boundary
         raise ValueError(f"invalid initial document: {exc}") from exc
     reads: list[dict[str, Any]] = []
@@ -219,7 +219,7 @@ MODES = {"write": write, "read": read, "trace": trace}
 
 def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] not in MODES:
-        print(f"usage: python -m zarr_json.crosscheck {'|'.join(MODES)}", file=sys.stderr)
+        print(f"usage: python -m zarr_inline.crosscheck {'|'.join(MODES)}", file=sys.stderr)
         return 1
     try:
         payload = strict_loads(sys.stdin.buffer.read())

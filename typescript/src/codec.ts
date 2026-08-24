@@ -1,7 +1,7 @@
 /**
  * Pure functions for classifying keys and encoding/decoding values.
  *
- * A zarr-json value is one of:
+ * A zarr-inline value is one of:
  *
  * - metadata key (`zarr.json` or `*\/zarr.json`) -> inline JSON object
  * - byte key -> base64 string (opaque bytes), or a JSON array/object (inline
@@ -23,7 +23,7 @@ export function isMetadataKey(key: string): boolean {
 }
 
 /**
- * Serialize a JSON value in the canonical zarr-json form.
+ * Serialize a JSON value in the canonical zarr-inline form.
  *
  * No whitespace; non-ASCII characters unescaped (UTF-8); object member order
  * preserved. Numbers follow RFC 8785 (JCS): ECMAScript Number::toString,
@@ -245,7 +245,7 @@ export interface StrictParseOptions {
 export function strictParse(text: string, options: StrictParseOptions = {}): unknown {
 	if (!HAS_REVIVER_SOURCE) {
 		throw new Error(
-			"zarr-json requires JSON.parse reviver source access (Node >= 21) " +
+			"zarr-inline requires JSON.parse reviver source access (Node >= 21) " +
 				"to parse integers losslessly",
 		);
 	}
@@ -308,7 +308,7 @@ const UTF8_ENCODER = new TextEncoder();
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /**
- * Convert a stored zarr-json value into the bytes Zarr expects.
+ * Convert a stored zarr-inline value into the bytes Zarr expects.
  *
  * Metadata keys hold a JSON object -> serialize to canonical UTF-8 JSON bytes.
  * Byte keys hold a base64 string -> base64-decode to raw bytes, or a JSON
@@ -334,7 +334,7 @@ export function decodeValue(key: string, value: unknown): Uint8Array {
 }
 
 /**
- * Convert Zarr's bytes into the value stored in a zarr-json document.
+ * Convert Zarr's bytes into the value stored in a zarr-inline document.
  *
  * Metadata keys: parse bytes as JSON, require a JSON object.
  * Byte keys: inline as a JSON array if the bytes are exactly the canonical

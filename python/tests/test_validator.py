@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from zarr_json.validator import Strictness, ValidationError, validate
+from zarr_inline.validator import Strictness, ValidationError, validate
 
 
 def test_empty_document_is_valid():

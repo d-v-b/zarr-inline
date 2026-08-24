@@ -2,14 +2,14 @@ import json
 
 import pytest
 
-from zarr_json.codec import decode_value, encode_value, is_metadata_key
+from zarr_inline.codec import decode_value, encode_value, is_metadata_key
 
 
-def test_root_zarr_json_is_metadata_key():
+def test_root_zarr_inline_is_metadata_key():
     assert is_metadata_key("zarr.json") is True
 
 
-def test_nested_zarr_json_is_metadata_key():
+def test_nested_zarr_inline_is_metadata_key():
     assert is_metadata_key("myarray/zarr.json") is True
 
 
@@ -17,7 +17,7 @@ def test_chunk_key_is_not_metadata_key():
     assert is_metadata_key("myarray/c/0/0") is False
 
 
-def test_key_containing_but_not_ending_zarr_json_is_not_metadata():
+def test_key_containing_but_not_ending_zarr_inline_is_not_metadata():
     assert is_metadata_key("zarr.json/c/0") is False
 
 
@@ -57,18 +57,18 @@ def test_round_trip_bytes():
 
 
 def test_public_api_is_importable_from_package_root():
-    import zarr_json
+    import zarr_inline
 
-    assert hasattr(zarr_json, "ZarrJsonStore")
-    assert hasattr(zarr_json, "MemoryBacking")
-    assert hasattr(zarr_json, "FileBacking")
-    assert hasattr(zarr_json, "StringBacking")
-    assert hasattr(zarr_json, "validate")
-    assert hasattr(zarr_json, "Strictness")
-    assert hasattr(zarr_json, "ValidationError")
+    assert hasattr(zarr_inline, "ZarrInlineStore")
+    assert hasattr(zarr_inline, "MemoryBacking")
+    assert hasattr(zarr_inline, "FileBacking")
+    assert hasattr(zarr_inline, "StringBacking")
+    assert hasattr(zarr_inline, "validate")
+    assert hasattr(zarr_inline, "Strictness")
+    assert hasattr(zarr_inline, "ValidationError")
 
 
-def test_key_ending_in_zarr_json_without_separator_is_not_metadata():
+def test_key_ending_in_zarr_inline_without_separator_is_not_metadata():
     assert is_metadata_key("xyzarr.json") is False
     assert is_metadata_key("a/notzarr.json") is False
 
@@ -109,14 +109,14 @@ def test_round_trip_inline_array():
 
 
 def test_strict_loads_rejects_bare_nan_token():
-    from zarr_json.codec import strict_loads
+    from zarr_inline.codec import strict_loads
 
     with pytest.raises(ValueError, match="not a JSON token"):
         strict_loads('{"a/c/0": [NaN]}')
 
 
 def test_strict_loads_rejects_float_overflow_literal():
-    from zarr_json.codec import strict_loads
+    from zarr_inline.codec import strict_loads
 
     with pytest.raises(ValueError, match="overflows float64"):
         strict_loads('{"a/c/0": [1e999]}')

@@ -1,6 +1,6 @@
 import json
 
-from zarr_json.backing import Backing, FileBacking, MemoryBacking, StringBacking
+from zarr_inline.backing import Backing, FileBacking, MemoryBacking, StringBacking
 
 
 def test_memory_backing_load_returns_initial_object():
@@ -60,7 +60,7 @@ def test_file_backing_persist_creates_missing_parent_directories(tmp_path):
 def test_string_backing_rejects_nan_token_document():
     import pytest
 
-    from zarr_json.backing import StringBacking
+    from zarr_inline.backing import StringBacking
 
     with pytest.raises(ValueError, match="not a JSON token"):
         StringBacking('{"a/c/0": [NaN]}').load()
@@ -69,7 +69,7 @@ def test_string_backing_rejects_nan_token_document():
 def test_backings_reject_non_object_top_level_document():
     import pytest
 
-    from zarr_json.backing import MemoryBacking, StringBacking
+    from zarr_inline.backing import MemoryBacking, StringBacking
 
     with pytest.raises(ValueError, match="top-level value must be a JSON object"):
         StringBacking('["AA=="]').load()

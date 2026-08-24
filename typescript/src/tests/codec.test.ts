@@ -279,7 +279,7 @@ test("base64Decode round-trips arbitrary bytes", () => {
 test("public API is importable from package root", async () => {
 	const api = await import("../index.js");
 	for (const name of [
-		"ZarrJsonStore",
+		"ZarrInlineStore",
 		"MemoryBacking",
 		"StringBacking",
 		"validate",

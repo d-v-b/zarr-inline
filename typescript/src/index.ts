@@ -1,4 +1,4 @@
-/** zarr-json public API (TypeScript reference implementation). */
+/** zarr-inline public API (TypeScript reference implementation). */
 
 export {
 	assertNumbersFinite,
@@ -25,6 +25,6 @@ export {
 	type Backing,
 	type Document,
 } from "./backing.js";
-export { ZarrJsonStore, type ZarrJsonStoreOptions } from "./store.js";
+export { ZarrInlineStore, type ZarrInlineStoreOptions } from "./store.js";
 export { JsonSerializer, registerJsonCodec } from "./serializer.js";
 export { run as runConformance, type ConformanceReport } from "./conformance.js";

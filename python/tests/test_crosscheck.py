@@ -1,6 +1,6 @@
 """Cross-language writer x reader matrix over json-codec arrays.
 
-Each implementation's crosscheck harness turns a payload into a zarr-json
+Each implementation's crosscheck harness turns a payload into a zarr-inline
 document (write) and a document back into a payload (read); every
 (writer, reader) pair must reproduce the input payload exactly. See
 DESIGN.md section 6.2.
@@ -55,7 +55,7 @@ def _available(name: str, probe: Path, build: list[list[str]], cwd: Path) -> boo
 
 
 def _harnesses() -> dict[str, list[str]]:
-    out = {"python": [sys.executable, "-m", "zarr_json.crosscheck"]}
+    out = {"python": [sys.executable, "-m", "zarr_inline.crosscheck"]}
     ts = REPO / "typescript" / "dist" / "crosscheck.js"
     if _available(
         "ts", ts,
