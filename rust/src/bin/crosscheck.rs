@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value};
 use zarrs::array::codec::api::{ArrayToBytesCodecTraits, CodecOptions};
+use zarrs::array::codec::array_to_bytes::sharding::ShardingCodecBuilder;
 use zarrs::array::{Array, ArrayBuilder, ArrayBytes, ArrayMetadata, ArraySubset, DataType, FillValue};
 use zarrs::group::GroupBuilder;
 use zarrs::metadata::v3::MetadataV3;
@@ -75,6 +76,56 @@ fn nonzero_shape(shape: &[u64], what: &str) -> Result<Vec<NonZeroU64>, String> {
         .iter()
         .map(|d| NonZeroU64::new(*d).ok_or_else(|| format!("{what}: extents must be >= 1")))
         .collect()
+}
+
+fn shard_shapes(
+    value: Option<&Value>,
+    chunks: &[u64],
+    what: &str,
+) -> Result<Vec<Vec<u64>>, String> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let Value::Array(levels) = value else {
+        return Err(format!("{what} must be a list of shard shapes"));
+    };
+    let mut result = Vec::with_capacity(levels.len());
+    let mut inner = chunks.to_vec();
+    for (level, value) in levels.iter().enumerate() {
+        let shard = u64_list(value, &format!("{what}[{level}]"), 1)?;
+        if shard.len() != inner.len()
+            || shard.iter().zip(&inner).any(|(shard, chunk)| shard % chunk != 0)
+        {
+            return Err(format!(
+                "{what}[{level}] must match the rank of and be evenly divisible by the preceding chunk shape"
+            ));
+        }
+        inner.clone_from(&shard);
+        result.push(shard);
+    }
+    Ok(result)
+}
+
+fn layout(metadata: &Value) -> Result<(Vec<u64>, Vec<Vec<u64>>), String> {
+    let mut current = u64_list(
+        &metadata["chunk_grid"]["configuration"]["chunk_shape"],
+        "metadata chunk shape",
+        1,
+    )?;
+    let mut codecs = metadata["codecs"]
+        .as_array()
+        .ok_or_else(|| "metadata codecs must be an array".to_string())?;
+    let mut outer_to_inner = Vec::new();
+    while codecs.len() == 1 && codecs[0].get("name").and_then(Value::as_str) == Some("sharding_indexed") {
+        outer_to_inner.push(current);
+        let configuration = &codecs[0]["configuration"];
+        current = u64_list(&configuration["chunk_shape"], "sharding chunk shape", 1)?;
+        codecs = configuration["codecs"]
+            .as_array()
+            .ok_or_else(|| "sharding codecs must be an array".to_string())?;
+    }
+    outer_to_inner.reverse();
+    Ok((current, outer_to_inner))
 }
 
 /// Payload JSON -> native bytes, via the codec's decoder. The payload is
@@ -163,6 +214,7 @@ fn create_array(
     dtype_name: &str,
     shape: Vec<u64>,
     chunks: Vec<u64>,
+    shards: Vec<Vec<u64>>,
 ) -> Result<Array<dyn zarrs::storage::ReadableWritableListableStorageTraits>, String> {
     ensure_parents(store, storage, path)?;
     let data_type = DataType::from_metadata(&MetadataV3::new(dtype_name))
@@ -170,9 +222,23 @@ fn create_array(
     let element_size = data_type
         .fixed_size()
         .ok_or_else(|| format!("array {path}: dtype {dtype_name} is not fixed-size"))?;
+    let mut codec: Arc<dyn ArrayToBytesCodecTraits> = Arc::new(JsonCodec::new());
+    let mut storage_chunks = chunks;
+    for (level, shard) in shards.into_iter().enumerate() {
+        let inner = nonzero_shape(&storage_chunks, &format!("shards[{level}]"))?;
+        let mut builder = ShardingCodecBuilder::new(inner, &data_type);
+        builder.array_to_bytes_codec(codec);
+        codec = builder.build_arc();
+        storage_chunks = shard;
+    }
     // Explicit zero fill value (0 / false / 0.0) for every dtype.
-    let array = ArrayBuilder::new(shape, chunks, data_type, FillValue::new(vec![0u8; element_size]))
-        .array_to_bytes_codec(Arc::new(JsonCodec::new()))
+    let array = ArrayBuilder::new(
+        shape,
+        storage_chunks,
+        data_type,
+        FillValue::new(vec![0u8; element_size]),
+    )
+        .array_to_bytes_codec(codec)
         .build(storage.clone(), &format!("/{path}"))
         .map_err(|e| format!("array {path}: cannot create: {e}"))?;
     array
@@ -211,10 +277,11 @@ fn write(payload: &Value) -> Result<String, String> {
         )?;
         let shape = u64_list(spec.get("shape").unwrap_or(&Value::Null), &format!("array {path}: shape"), 0)?;
         let chunks = u64_list(spec.get("chunks").unwrap_or(&Value::Null), &format!("array {path}: chunks"), 1)?;
+        let shards = shard_shapes(spec.get("shards"), &chunks, &format!("array {path}: shards"))?;
         let data = spec
             .get("data")
             .ok_or_else(|| format!("array {path}: missing \"data\""))?;
-        let array = create_array(&store, &storage, path, dtype_name, shape.clone(), chunks)?;
+        let array = create_array(&store, &storage, path, dtype_name, shape.clone(), chunks, shards)?;
         let bytes = to_native(&array, data, &shape).map_err(|e| format!("array {path}: {e}"))?;
         array
             .store_array_subset(&array.subset_all(), ArrayBytes::new_flen(bytes))
@@ -249,12 +316,10 @@ fn read(document_value: &Value) -> Result<String, String> {
         };
         let dtype_name = metadata.data_type.name().to_string();
         let shape: Vec<u64> = array.shape().to_vec();
-        let chunk_shape: Vec<u64> = array
-            .chunk_shape(&vec![0; shape.len()])
-            .map_err(|e| format!("array {path}: cannot determine chunk shape: {e}"))?
-            .iter()
-            .map(|d| d.get())
-            .collect();
+        let metadata_value = document
+            .get(&format!("{path}/zarr.json"))
+            .ok_or_else(|| format!("array {path}: metadata disappeared"))?;
+        let (chunk_shape, shards) = layout(metadata_value)?;
         let bytes = array
             .retrieve_array_subset(&array.subset_all())
             .map_err(|e| format!("array {path}: cannot read data: {e}"))?;
@@ -265,6 +330,17 @@ fn read(document_value: &Value) -> Result<String, String> {
         entry.insert("dtype".to_string(), Value::String(dtype_name));
         entry.insert("shape".to_string(), Value::Array(shape.into_iter().map(Value::from).collect()));
         entry.insert("chunks".to_string(), Value::Array(chunk_shape.into_iter().map(Value::from).collect()));
+        if !shards.is_empty() {
+            entry.insert(
+                "shards".to_string(),
+                Value::Array(
+                    shards
+                        .into_iter()
+                        .map(|shape| Value::Array(shape.into_iter().map(Value::from).collect()))
+                        .collect(),
+                ),
+            );
+        }
         entry.insert("data".to_string(), data);
         arrays.push(Value::Object(entry));
     }
@@ -319,7 +395,8 @@ fn trace(payload: &Value) -> Result<String, String> {
                 )?;
                 let shape = u64_list(operation.get("shape").unwrap_or(&Value::Null), &format!("operation {index}: shape"), 0)?;
                 let chunks = u64_list(operation.get("chunks").unwrap_or(&Value::Null), &format!("operation {index}: chunks"), 1)?;
-                create_array(&store, &storage, path, dtype_name, shape, chunks)
+                let shards = shard_shapes(operation.get("shards"), &chunks, &format!("operation {index}: shards"))?;
+                create_array(&store, &storage, path, dtype_name, shape, chunks, shards)
                     .map_err(|e| format!("operation {index}: {e}"))?;
             }
             "write_region" | "read_region" => {
@@ -430,6 +507,25 @@ mod tests {
         );
 
         // Reading the document back reproduces the payload exactly.
+        let read_back: Value = serde_json::from_str(&read(&document).unwrap()).unwrap();
+        assert_eq!(read_back, payload);
+    }
+
+    #[test]
+    fn nested_sharding_write_read_round_trip() {
+        let payload = serde_json::json!({"arrays": [{
+            "path": "a",
+            "dtype": "uint8",
+            "shape": [3, 3],
+            "chunks": [1, 1],
+            "shards": [[2, 2], [4, 4]],
+            "data": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+        }]});
+
+        let document_text = write(&payload).unwrap();
+        let document: Value = serde_json::from_str(&document_text).unwrap();
+        assert!(document["a/c/0/0"].is_string());
+
         let read_back: Value = serde_json::from_str(&read(&document).unwrap()).unwrap();
         assert_eq!(read_back, payload);
     }

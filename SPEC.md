@@ -508,7 +508,9 @@ and Rust/zarrs) live in this repository, with shared fixtures in
 `examples/` (verdicts in `MANIFEST.json`), a conformance-harness
 protocol, a property-based cross-implementation test, an array-level
 crosscheck matrix, and JSON operation traces that create arrays and write or
-read regions across chunk boundaries; see [DESIGN.md](DESIGN.md) §6.
+read regions across chunk boundaries. The array and trace matrices cover
+unsharded arrays, one-level sharding, and nested `sharding_indexed` codecs; see
+[DESIGN.md](DESIGN.md) §6.
 
 ## 13. References
 

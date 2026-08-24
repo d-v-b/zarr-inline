@@ -379,24 +379,32 @@ harness tests the array layer across host libraries. Payload:
 
 `dtype` is a Zarr v3 data type name (the portable set: `bool`, `uint8`,
 `int32`, `int64`, `float32`, `float64`); `data` is nested C-order JSON in
-fill_value scalar conventions. `<harness> write` turns a payload into a
+fill_value scalar conventions. `chunks` is the leaf chunk shape. An optional
+`shards` array lists shard shapes from inner to outer; every shape has the
+array's rank and is evenly divisible by the preceding chunk or shard shape.
+For example, `"chunks": [2, 2], "shards": [[4, 4], [8, 8]]` specifies two
+nested `sharding_indexed` codec levels. `<harness> write` turns a payload into a
 document through the host library (root group, arrays at `path` with the
-`json` codec and no compressors, default `/` chunk-key encoding);
+`json` leaf codec, optional shard codecs, no compressors, and default `/`
+chunk-key encoding);
 `<harness> read` opens every `<path>/zarr.json` array node in a document,
 sorted by path, and emits a payload. Invocations mirror the table above
 with `crosscheck` in place of `conformance` and a `write` or `read`
 argument. Paths and dimension lists use the portable domain defined for
 traces below.
 
-`python/tests/test_crosscheck.py` runs the full writer × reader matrix
-(nine combinations) over a fixed payload — every portable dtype, edge
+`python/tests/test_crosscheck.py` runs the full writer × reader matrix (nine
+combinations) over a fixed unsharded payload — every portable dtype, edge
 chunks, a nested group path, non-finite floats, int64 across its full
 range including values JavaScript carries only as BigInt — and requires
 every reader to reproduce the written payload exactly (Python-side
 structural comparison, so `1` and `1.0` compare equal; `"NaN"` strings
 keep non-finite comparisons exact). Readers tolerate each other's
 metadata idioms without special cases; the Rust writer disables zarrs's
-`_zarrs` attribute to stay maximally standard.
+`_zarrs` attribute to stay maximally standard. A second matrix covers both
+one-level and two-level nested sharding. Because zarrita cannot write sharded
+arrays, that matrix uses Python and Rust as writers and all three
+implementations as readers.
 
 ### 6.3 Operation-trace protocol
 
@@ -448,6 +456,10 @@ must refuse:
   `dtype` must be one of the portable §6.2 set; every other dtype is an
   error. Shape-like fields contain integer tokens in `[0, 2^53 − 1]`, with
   `chunks` extents ≥ 1.
+- `shards`, when given, is an array of shard shapes ordered inner to outer.
+  Every shard shape obeys the shape-like field rules above, has the array's
+  rank, and is evenly divisible by the preceding `chunks` or shard shape.
+  An empty array is equivalent to omission; `null` is an error.
 - `write_region` / `read_region` take a zero-based `origin` and a `shape`
   of integer tokens in `[0, 2^53 − 1]` whose rank equals the array rank,
   every shape extent ≥ 1, and
@@ -470,10 +482,12 @@ pass its result as `document` with a read suffix to implementation B. Final
 documents are deliberately not compared directly because host libraries emit
 different but compatible optional metadata. The suite instead runs the full
 writer × reader matrix and compares read results with a small independent
-array model. Hypothesis generates partial writes, overlaps, edge chunks, and
-subregion reads. Both trace messages and resulting stores are ordinary JSON,
-so the same protocol can be consumed by future implementations without a
-language-specific test dependency.
+array model. Hypothesis generates partial writes, overlaps, edge chunks,
+subregion reads, and zero, one, or two levels of sharding. Fixed traces force a
+partial write across both leaf-chunk and nested-shard boundaries. Both trace
+messages and resulting stores are ordinary JSON, so the same protocol can be
+consumed by future implementations without a language-specific test
+dependency.
 
 ## 7. Constraints and known limitations
 
@@ -488,6 +502,10 @@ implementations provably agree. What lies outside, and why:
   (Store keys are unaffected — they contain `/`.)
 - **`transpose` + `json`** is not interoperable pending the zarrita
   upstream fix (§3.3); cross-reads fail loudly on shape mismatch.
+- **Sharded writes in TypeScript** are unavailable because zarrita 0.7 does
+  not implement writes through `sharding_indexed`. The TypeScript crosscheck
+  adapter registers a recursive decoder so zarrita can read both one-level and
+  nested shards; Python and Rust provide the writers in those matrices.
 - **Negative-zero sign** is lost (RFC 8785). **NaN payloads** are not
   preserved (every NaN becomes `"NaN"`). Zarr v3's bit-exact hex-string
   float forms are never emitted; decoder acceptance genuinely differs

@@ -52,6 +52,6 @@ serde_json = { version = "1", features = [
 serde = "1"
 ryu = "1"
 base64 = "0.22"
-zarrs = { version = "0.23", default-features = false, optional = true }
+zarrs = { version = "0.23", default-features = false, features = ["crc32c", "sharding"], optional = true }
 # For registering the `json` codec plugin with zarrs (compile-time registry).
 inventory = { version = "0.3", optional = true }

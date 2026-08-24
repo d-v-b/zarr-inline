@@ -42,6 +42,27 @@ PAYLOAD = {
     ]
 }
 
+SHARDED_PAYLOAD = {
+    "arrays": [
+        {
+            "path": "nested/a",
+            "dtype": "uint8",
+            "shape": [7, 7],
+            "chunks": [2, 2],
+            "shards": [[4, 4], [8, 8]],
+            "data": [list(range(row * 7, (row + 1) * 7)) for row in range(7)],
+        },
+        {
+            "path": "single",
+            "dtype": "int32",
+            "shape": [7, 7],
+            "chunks": [2, 2],
+            "shards": [[4, 4]],
+            "data": [list(range(row * 7, (row + 1) * 7)) for row in range(7)],
+        },
+    ]
+}
+
 
 def _available(name: str, probe: Path, build: list[list[str]], cwd: Path) -> bool:
     if probe.exists():
@@ -108,6 +129,24 @@ def test_writer_reader_matrix(writer, reader):
     assert result == PAYLOAD, f"{writer}->{reader} mismatch"
 
 
+@pytest.mark.parametrize("writer", ["python", "rust"])
+@pytest.mark.parametrize("reader", sorted(HARNESSES))
+def test_sharded_writer_reader_matrix(writer, reader):
+    """One-level and nested shards from both capable writers open everywhere."""
+    _require_all_harnesses()
+    document = _run(HARNESSES[writer], "write", SHARDED_PAYLOAD)
+    shard_keys = [
+        key for key in document
+        if key.startswith(("nested/a/c/", "single/c/"))
+    ]
+    assert shard_keys
+    assert all(isinstance(document[key], str) for key in shard_keys), (
+        "sharding around the json codec must make the stored shards opaque"
+    )
+    result = _run(HARNESSES[reader], "read", document)
+    assert result == SHARDED_PAYLOAD, f"{writer}->{reader} sharding mismatch"
+
+
 def test_all_implementations_read_the_ome_zarr_example():
     """zarr-python, zarrita, and zarrs all open the shipped OME-Zarr 0.5
     example and read identical values from it."""
@@ -134,6 +173,23 @@ TRACE = {
     ]
 }
 
+NESTED_SHARD_TRACE = {
+    "operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8",
+         "shape": [7, 7], "chunks": [2, 2], "shards": [[4, 4], [8, 8]]},
+        {"op": "write_region", "path": "a", "origin": [1, 1],
+         "shape": [5, 5], "data": [
+             [1, 2, 3, 4, 5],
+             [6, 7, 8, 9, 10],
+             [11, 12, 13, 14, 15],
+             [16, 17, 18, 19, 20],
+             [21, 22, 23, 24, 25],
+         ]},
+        {"op": "read_region", "path": "a", "origin": [0, 0],
+         "shape": [7, 7]},
+    ]
+}
+
 
 def test_operation_trace_writer_reader_matrix():
     """Every implementation can resume a trace from every emitted store."""
@@ -150,11 +206,40 @@ def test_operation_trace_writer_reader_matrix():
             )
 
 
+def test_nested_shard_operation_trace_matrix():
+    """Partial writes through nested shards remain readable everywhere."""
+    _require_all_harnesses()
+    prefix = {"operations": NESTED_SHARD_TRACE["operations"][:2]}
+    suffix = {"operations": NESTED_SHARD_TRACE["operations"][2:]}
+    expected = [[
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 0],
+        [0, 6, 7, 8, 9, 10, 0],
+        [0, 11, 12, 13, 14, 15, 0],
+        [0, 16, 17, 18, 19, 20, 0],
+        [0, 21, 22, 23, 24, 25, 0],
+        [0, 0, 0, 0, 0, 0, 0],
+    ]]
+    for writer in ("python", "rust"):
+        document = _run(HARNESSES[writer], "trace", prefix)["document"]
+        for reader, reader_cmd in HARNESSES.items():
+            result = _run(reader_cmd, "trace", {"document": document, **suffix})
+            assert [item["data"] for item in result["reads"]] == expected, (
+                f"{writer}->{reader} nested-shard trace mismatch"
+            )
+
+
 @st.composite
 def _one_dimensional_trace(draw):
     """A compact stateful trace that frequently crosses chunk boundaries."""
     length = draw(st.integers(1, 10))
     chunks = draw(st.integers(1, 6))
+    shard_depth = draw(st.integers(0, 2))
+    shards = []
+    shard_extent = chunks
+    for _ in range(shard_depth):
+        shard_extent *= draw(st.integers(1, 3))
+        shards.append([shard_extent])
     dtype = draw(st.sampled_from(["bool", "uint8", "int32", "int64", "float64"]))
     scalar = {
         "bool": st.booleans(),
@@ -180,13 +265,11 @@ def _one_dimensional_trace(draw):
         model[start:start + size] = data
     read_start = draw(st.integers(0, length - 1))
     read_size = draw(st.integers(1, length - read_start))
-    prefix = {
-        "operations": [
-            {"op": "create_array", "path": "a", "dtype": dtype,
-             "shape": [length], "chunks": [chunks]},
-            *writes,
-        ]
-    }
+    create = {"op": "create_array", "path": "a", "dtype": dtype,
+              "shape": [length], "chunks": [chunks]}
+    if shards:
+        create["shards"] = shards
+    prefix = {"operations": [create, *writes]}
     suffix = {
         "operations": [
             {"op": "read_region", "path": "a", "origin": [0],
@@ -206,7 +289,10 @@ def test_generated_operation_traces(case):
     """Generated stores from each writer remain readable by every reader."""
     _require_all_harnesses()
     prefix, suffix, expected = case
-    for writer, writer_cmd in HARNESSES.items():
+    create = prefix["operations"][0]
+    writers = ("python", "rust") if create.get("shards") else HARNESSES
+    for writer in writers:
+        writer_cmd = HARNESSES[writer]
         document = _run(writer_cmd, "trace", prefix)["document"]
         for reader, reader_cmd in HARNESSES.items():
             result = _run(reader_cmd, "trace", {"document": document, **suffix})
@@ -246,6 +332,15 @@ INVALID_TRACES = {
     "unsafe_integer_dimension": {"operations": [
         {"op": "create_array", "path": "a", "dtype": "uint8",
          "shape": [9007199254740993], "chunks": [1]}]},
+    "shard_rank_mismatch": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8",
+         "shape": [4, 4], "chunks": [2, 2], "shards": [[4]]}]},
+    "shard_not_divisible_by_chunks": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8",
+         "shape": [6], "chunks": [2], "shards": [[3]]}]},
+    "null_shards": {"operations": [
+        {"op": "create_array", "path": "a", "dtype": "uint8",
+         "shape": [4], "chunks": [2], "shards": None}]},
     "leading_slash_path": {"operations": [
         {"op": "create_array", "path": "/a", "dtype": "uint8",
          "shape": [1], "chunks": [1]}]},

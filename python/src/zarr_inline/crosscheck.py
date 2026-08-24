@@ -16,6 +16,7 @@ import sys
 from typing import Any
 
 import zarr
+from zarr.codecs import ShardingCodec
 
 from zarr_inline.backing import MemoryBacking
 from zarr_inline.codec import is_metadata_key, strict_loads
@@ -75,19 +76,61 @@ def _dtype_name(arr: Any) -> str:
 
 
 def _create_array(
-    store: ZarrInlineStore, path: str, dtype: str, shape: tuple[int, ...], chunks: tuple[int, ...]
+    store: ZarrInlineStore,
+    path: str,
+    dtype: str,
+    shape: tuple[int, ...],
+    chunks: tuple[int, ...],
+    shards: tuple[tuple[int, ...], ...] = (),
 ) -> Any:
     root = zarr.open_group(store=store, mode="a")
     # zarr-python refuses to create a node under an array and to overwrite an
     # existing node; explicit zero fill for every dtype.
+    codec: Any = JsonSerializer()
+    storage_chunks = chunks
+    for shard in shards:
+        codec = ShardingCodec(chunk_shape=storage_chunks, codecs=[codec])
+        storage_chunks = shard
     return root.create_array(
         path,
         shape=shape,
-        chunks=chunks,
+        chunks=storage_chunks,
         dtype=dtype,
-        serializer=JsonSerializer(),
+        serializer=codec,
         compressors=None,
     )
+
+
+def _shards(
+    value: Any, chunks: tuple[int, ...], what: str
+) -> tuple[tuple[int, ...], ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{what} must be a list of shard shapes")
+    result: list[tuple[int, ...]] = []
+    inner = chunks
+    for level, item in enumerate(value):
+        shard = _int_list(item, f"{what}[{level}]", min_value=1)
+        if len(shard) != len(inner) or any(s % c for s, c in zip(shard, inner)):
+            raise ValueError(
+                f"{what}[{level}] must match the rank of and be evenly divisible by "
+                "the preceding chunk shape"
+            )
+        result.append(shard)
+        inner = shard
+    return tuple(result)
+
+
+def _layout(metadata: dict[str, Any]) -> tuple[list[int], list[list[int]]]:
+    """Return leaf chunks and inner-to-outer shard shapes from v3 metadata."""
+    current = list(metadata["chunk_grid"]["configuration"]["chunk_shape"])
+    outer_to_inner: list[list[int]] = []
+    codecs = metadata["codecs"]
+    while len(codecs) == 1 and codecs[0].get("name") == "sharding_indexed":
+        outer_to_inner.append(current)
+        configuration = codecs[0]["configuration"]
+        current = list(configuration["chunk_shape"])
+        codecs = configuration["codecs"]
+    return current, list(reversed(outer_to_inner))
 
 
 def write(payload: dict[str, Any]) -> dict[str, Any]:
@@ -98,7 +141,8 @@ def write(payload: dict[str, Any]) -> dict[str, Any]:
         dtype = _dtype(spec.get("dtype"), f"array {path}: dtype")
         shape = _int_list(spec.get("shape"), f"array {path}: shape", min_value=0)
         chunks = _int_list(spec.get("chunks"), f"array {path}: chunks", min_value=1)
-        arr = _create_array(store, path, dtype, shape, chunks)
+        shards = _shards(spec.get("shards", []), chunks, f"array {path}: shards")
+        arr = _create_array(store, path, dtype, shape, chunks, shards)
         arr[...] = _to_native(spec["data"], shape, arr.metadata.data_type)
     return backing.load()
 
@@ -116,15 +160,17 @@ def read(document: dict[str, Any]) -> dict[str, Any]:
     arrays = []
     for path in paths:
         arr = zarr.open_array(store=store, path=path, mode="r")
-        arrays.append(
-            {
-                "path": path,
-                "dtype": _dtype_name(arr),
-                "shape": list(arr.shape),
-                "chunks": list(arr.chunks),
-                "data": _to_json(arr[...], arr.metadata.data_type),
-            }
-        )
+        chunks, shards = _layout(document[f"{path}/zarr.json"])
+        entry = {
+            "path": path,
+            "dtype": _dtype_name(arr),
+            "shape": list(arr.shape),
+            "chunks": chunks,
+            "data": _to_json(arr[...], arr.metadata.data_type),
+        }
+        if shards:
+            entry["shards"] = shards
+        arrays.append(entry)
     return {"arrays": arrays}
 
 
@@ -189,7 +235,10 @@ def trace(payload: dict[str, Any]) -> dict[str, Any]:
             chunks = _int_list(
                 operation.get("chunks"), f"operation {index}: chunks", min_value=1
             )
-            _create_array(store, path, dtype, shape, chunks)
+            shards = _shards(
+                operation.get("shards", []), chunks, f"operation {index}: shards"
+            )
+            _create_array(store, path, dtype, shape, chunks, shards)
         elif op in ("write_region", "read_region"):
             arr = zarr.open_array(
                 store=store, path=path, mode="r+" if op == "write_region" else "r"

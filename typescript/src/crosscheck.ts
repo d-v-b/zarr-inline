@@ -15,7 +15,7 @@
 import { pathToFileURL } from "node:url";
 
 import * as zarr from "zarrita";
-import type { Chunk, DataType, Scalar } from "zarrita";
+import type { Chunk, CodecMetadata, DataType, Scalar } from "zarrita";
 
 import { MemoryBacking, type Document } from "./backing.js";
 import {
@@ -41,6 +41,7 @@ interface ArraySpec {
 	dtype: string;
 	shape: number[];
 	chunks: number[];
+	shards?: number[][];
 	data: unknown;
 }
 
@@ -54,6 +55,7 @@ interface TraceOperation {
 	dtype?: string;
 	shape: unknown;
 	chunks?: unknown;
+	shards?: unknown;
 	origin?: unknown;
 	data?: unknown;
 }
@@ -82,6 +84,177 @@ const MAX_SAFE_DIMENSION = BigInt(Number.MAX_SAFE_INTEGER);
 
 const UTF8_ENCODER = new TextEncoder();
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
+
+type ShardingConfiguration = {
+	chunk_shape: number[];
+	codecs: CodecMetadata[];
+	index_codecs: CodecMetadata[];
+	index_location?: "start" | "end";
+};
+
+type ShardingMeta = {
+	dataType: DataType;
+	shape: number[];
+	codecs: CodecMetadata[];
+	fillValue: unknown;
+};
+
+const MAX_UINT64 = 2n ** 64n - 1n;
+
+function product(shape: number[]): number {
+	return shape.reduce((value, extent) => value * extent, 1);
+}
+
+function unravel(linear: number, shape: number[]): number[] {
+	const coordinates = new Array<number>(shape.length);
+	for (let axis = shape.length - 1; axis >= 0; axis--) {
+		coordinates[axis] = linear % shape[axis];
+		linear = Math.floor(linear / shape[axis]);
+	}
+	return coordinates;
+}
+
+function decodeNestedCodec(
+	bytes: Uint8Array,
+	shape: number[],
+	codecs: CodecMetadata[],
+	dataType: DataType,
+	fillValue: unknown,
+): Chunk<DataType> {
+	if (codecs.length !== 1) {
+		throw new Error("nested sharding conformance supports one inner codec per level");
+	}
+	const [codec] = codecs;
+	const meta: ShardingMeta = { dataType, shape, codecs, fillValue };
+	if (codec.name === "json") {
+		return JsonSerializer.fromConfig(codec.configuration, meta).decode(bytes);
+	}
+	if (codec.name === "sharding_indexed") {
+		return NestedShardingDecoder.fromConfig(codec.configuration, meta).decode(bytes);
+	}
+	throw new Error(`unsupported nested sharding codec ${JSON.stringify(codec.name)}`);
+}
+
+/**
+ * Zarrita handles the outer sharding layer itself. This codec supplies the
+ * missing recursive array-to-bytes step when another sharding_indexed codec
+ * appears inside it, decoding a complete inner shard from the bytes returned
+ * by the outer layer.
+ */
+class NestedShardingDecoder {
+	readonly kind = "array_to_bytes" as const;
+	#configuration: ShardingConfiguration;
+	#meta: ShardingMeta;
+
+	constructor(configuration: ShardingConfiguration, meta: ShardingMeta) {
+		this.#configuration = configuration;
+		this.#meta = meta;
+	}
+
+	static fromConfig(configuration: unknown, meta: ShardingMeta): NestedShardingDecoder {
+		if (!isPlainObject(configuration)) {
+			throw new Error("sharding_indexed configuration must be an object");
+		}
+		return new NestedShardingDecoder(
+			configuration as unknown as ShardingConfiguration,
+			meta,
+		);
+	}
+
+	encode(): never {
+		throw new Error("zarrita does not support writing sharded arrays");
+	}
+
+	decode(bytes: Uint8Array): Chunk<DataType> {
+		const { chunk_shape: innerShape, codecs, index_codecs: indexCodecs } =
+			this.#configuration;
+		const shardShape = this.#meta.shape;
+		if (
+			!Array.isArray(innerShape) ||
+			innerShape.length !== shardShape.length ||
+			innerShape.some(
+				(extent, axis) =>
+					!Number.isSafeInteger(extent) ||
+					extent < 1 ||
+					shardShape[axis] % extent !== 0,
+			)
+		) {
+			throw new Error("nested sharding chunk_shape must evenly divide its shard");
+		}
+		if (this.#configuration.index_location !== "end") {
+			throw new Error("nested sharding conformance requires index_location=end");
+		}
+		if (
+			!Array.isArray(indexCodecs) ||
+			indexCodecs.length < 1 ||
+			indexCodecs[0].name !== "bytes" ||
+			indexCodecs.slice(1).some((codec) => codec.name !== "crc32c")
+		) {
+			throw new Error("nested sharding conformance requires bytes + optional crc32c index codecs");
+		}
+
+		const gridShape = shardShape.map((extent, axis) => extent / innerShape[axis]);
+		const entryCount = product(gridShape);
+		const indexSize = entryCount * 16 + 4 * (indexCodecs.length - 1);
+		if (bytes.byteLength < indexSize) {
+			throw new Error("nested shard is shorter than its index");
+		}
+		const indexOffset = bytes.byteLength - indexSize;
+		const index = new DataView(
+			bytes.buffer,
+			bytes.byteOffset + indexOffset,
+			entryCount * 16,
+		);
+		const fill = this.#meta.fillValue ?? ZERO_FILL[this.#meta.dataType];
+		const output = new Array<unknown>(product(shardShape)).fill(fill);
+		const outputStride = cStrides(shardShape);
+
+		for (let entry = 0; entry < entryCount; entry++) {
+			const offset = index.getBigUint64(entry * 16, true);
+			const length = index.getBigUint64(entry * 16 + 8, true);
+			if (offset === MAX_UINT64 && length === MAX_UINT64) continue;
+			if (offset > BigInt(Number.MAX_SAFE_INTEGER) || length > BigInt(Number.MAX_SAFE_INTEGER)) {
+				throw new Error("nested shard index exceeds JavaScript's safe byte range");
+			}
+			const start = Number(offset);
+			const end = start + Number(length);
+			if (start < 0 || end > indexOffset) {
+				throw new Error("nested shard index points outside the data section");
+			}
+			const inner = decodeNestedCodec(
+				bytes.subarray(start, end),
+				innerShape,
+				codecs,
+				this.#meta.dataType,
+				fill,
+			);
+			const chunkCoordinate = unravel(entry, gridShape);
+			const elements = chunkElements(inner);
+			for (let element = 0; element < elements.length; element++) {
+				const local = unravel(element, innerShape);
+				let outputOffset = 0;
+				for (let axis = 0; axis < shardShape.length; axis++) {
+					outputOffset +=
+						(chunkCoordinate[axis] * innerShape[axis] + local[axis]) *
+						outputStride[axis];
+				}
+				output[outputOffset] = elements[element];
+			}
+		}
+
+		return {
+			data: makeTypedArray(this.#meta.dataType, output),
+			shape: shardShape,
+			stride: outputStride,
+		};
+	}
+}
+
+type RegistryValue = Parameters<typeof zarr.registry.set>[1];
+zarr.registry.set(
+	"sharding_indexed",
+	(async () => NestedShardingDecoder) as unknown as RegistryValue,
+);
 
 /**
  * Serialize payload JSON SORT-PRESERVING for the codec's decoder: bigint
@@ -251,6 +424,60 @@ function intList(value: unknown, what: string, minValue: number): number[] {
 	return value.map(Number);
 }
 
+function shardShapes(value: unknown, chunks: number[], what: string): number[][] {
+	if (value === undefined) return [];
+	if (!Array.isArray(value)) {
+		throw new Error(`${what} must be a list of shard shapes`);
+	}
+	const result: number[][] = [];
+	let inner = chunks;
+	for (let level = 0; level < value.length; level++) {
+		const shard = intList(value[level], `${what}[${level}]`, 1);
+		if (
+			shard.length !== inner.length ||
+			shard.some((extent, axis) => extent % inner[axis] !== 0)
+		) {
+			throw new Error(
+				`${what}[${level}] must match the rank of and be evenly divisible by ` +
+					"the preceding chunk shape",
+			);
+		}
+		result.push(shard);
+		inner = shard;
+	}
+	return result;
+}
+
+function arrayLayout(document: Document, path: string): {
+	chunks: number[];
+	shards: number[][];
+} {
+	const metadata = document[`${path}/${METADATA_SUFFIX}`];
+	if (!isPlainObject(metadata)) throw new Error(`array ${path}: invalid metadata`);
+	const chunkGrid = metadata.chunk_grid;
+	if (!isPlainObject(chunkGrid) || !isPlainObject(chunkGrid.configuration)) {
+		throw new Error(`array ${path}: invalid chunk grid`);
+	}
+	let current = (chunkGrid.configuration.chunk_shape as unknown[]).map(Number);
+	let codecs = metadata.codecs as unknown[];
+	const outerToInner: number[][] = [];
+	while (
+		Array.isArray(codecs) &&
+		codecs.length === 1 &&
+		isPlainObject(codecs[0]) &&
+		codecs[0].name === "sharding_indexed"
+	) {
+		outerToInner.push(current);
+		const configuration = codecs[0].configuration;
+		if (!isPlainObject(configuration) || !Array.isArray(configuration.chunk_shape)) {
+			throw new Error(`array ${path}: invalid sharding configuration`);
+		}
+		current = configuration.chunk_shape.map(Number);
+		codecs = configuration.codecs as unknown[];
+	}
+	return { chunks: current, shards: outerToInner.reverse() };
+}
+
 function portablePath(value: unknown, what: string): string {
 	if (typeof value !== "string" || value.length === 0) {
 		throw new Error(`${what} must be a non-empty string`);
@@ -286,6 +513,10 @@ async function write(payload: Payload): Promise<Document> {
 		const dtype = portableDtype(spec.dtype, `array ${path}: dtype`);
 		const shape = intList(spec.shape, `array ${path}: shape`, 0);
 		const chunks = intList(spec.chunks, `array ${path}: chunks`, 1);
+		const shards = shardShapes(spec.shards, chunks, `array ${path}: shards`);
+		if (shards.length > 0) {
+			throw new Error("zarrita does not support writing sharded arrays");
+		}
 		const arr = await createArray(backing, root, path, dtype, shape, chunks);
 		await setRegion(arr, null, spec.data, shape, dtype);
 	}
@@ -313,9 +544,11 @@ async function read(document: Document): Promise<Payload> {
 		const arr = await zarr.open.v3(root.resolve(path), { kind: "array" });
 		const dtype = arr.dtype as string;
 		const shape = [...arr.shape];
-		const chunks = [...arr.chunks];
+		const { chunks, shards } = arrayLayout(document, path);
 		const data = await getRegion(arr, null, shape, dtype);
-		arrays.push({ path, dtype, shape, chunks, data });
+		const entry: ArraySpec = { path, dtype, shape, chunks, data };
+		if (shards.length > 0) entry.shards = shards;
+		arrays.push(entry);
 	}
 	return { arrays };
 }
@@ -381,6 +614,14 @@ async function trace(
 			const dtype = portableDtype(operation.dtype, `operation ${index}: dtype`);
 			const shape = intList(operation.shape, `operation ${index}: shape`, 0);
 			const chunks = intList(operation.chunks, `operation ${index}: chunks`, 1);
+			const shards = shardShapes(
+				operation.shards,
+				chunks,
+				`operation ${index}: shards`,
+			);
+			if (shards.length > 0) {
+				throw new Error("zarrita does not support writing sharded arrays");
+			}
 			await createArray(backing, root, path, dtype, shape, chunks);
 			continue;
 		}
