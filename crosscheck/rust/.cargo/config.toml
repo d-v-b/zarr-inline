@@ -1,0 +1,4 @@
+[build]
+# Share the library crate's target directory so zarrs and the dependency
+# tree compile once for both the library and the harness.
+target-dir = "../../rust/target"

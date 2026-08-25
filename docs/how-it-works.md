@@ -280,7 +280,11 @@ All three share one internal shape:
 - **serializer** — the `json` codec registered with the host: zarr-python
   via `register_codec`, zarrita via its codec `registry` map, zarrs via
   `inventory`-based plugin registration mirroring its own `bytes` codec.
-- **harnesses** — the conformance and crosscheck CLIs (§6).
+- **harnesses** — the conformance CLI (§6.1) ships with each
+  implementation (it doubles as a document validator); the array-level
+  crosscheck harnesses live in the separate, unpublished `crosscheck/`
+  packages (§6.2) — they are conformance infrastructure, not part of the
+  libraries.
 
 Language-specific points worth knowing:
 
@@ -393,7 +397,7 @@ with `crosscheck` in place of `conformance` and a `write` or `read`
 argument. Paths and dimension lists use the portable domain defined for
 traces below.
 
-`python/tests/test_crosscheck.py` runs the full writer × reader matrix (nine
+`crosscheck/python/tests/test_crosscheck.py` runs the full writer × reader matrix (nine
 combinations) over a fixed unsharded payload — every portable dtype, edge
 chunks, a nested group path, non-finite floats, int64 across its full
 range including values JavaScript carries only as BigInt — and requires
@@ -408,7 +412,10 @@ implementations as readers.
 
 ### 6.3 Operation-trace protocol
 
-Whole-array payloads do not exercise state transitions. Each crosscheck CLI
+The crosscheck harnesses are per-language packages under `crosscheck/`
+(depending on the libraries by path; never published — consumers of
+zarr-inline do not need them). Whole-array payloads do not exercise state
+transitions. Each crosscheck CLI
 therefore also accepts `trace`, with a JSON message that can start from an
 empty store or from a document emitted by another implementation:
 
@@ -535,7 +542,8 @@ docs/specification.md    normative specification
 docs/how-it-works.md     this document
 mkdocs.yml               documentation-site configuration
 examples/                shared fixtures (valid/, invalid/, MANIFEST.json)
-python/                  zarr-python implementation; owns the cross-implementation tests
+python/                  zarr-python implementation; owns the conformance property test
+crosscheck/              unpublished per-language crosscheck harnesses + writer x reader matrix
 typescript/              zarrita implementation
 rust/                    zarrs implementation
 ```

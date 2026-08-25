@@ -18,7 +18,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 
 # The portable payload: every dtype all three host libraries support, edge
 # chunks (shape not divisible by chunks), a nested group path, non-finite
@@ -76,16 +76,17 @@ def _available(name: str, probe: Path, build: list[list[str]], cwd: Path) -> boo
 
 
 def _harnesses() -> dict[str, list[str]]:
-    out = {"python": [sys.executable, "-m", "zarr_inline.crosscheck"]}
-    ts = REPO / "typescript" / "dist" / "crosscheck.js"
+    out = {"python": [sys.executable, "-m", "zarr_inline_crosscheck"]}
+    ts = REPO / "crosscheck" / "typescript" / "dist" / "crosscheck.js"
     if _available(
         "ts", ts,
         [["npm", "install", "--no-audit", "--no-fund"], ["npm", "run", "build"]],
-        REPO / "typescript",
+        REPO / "crosscheck" / "typescript",
     ):
         out["typescript"] = ["node", str(ts)]
+    # The harness crate shares the library's target dir (.cargo/config.toml).
     rs = REPO / "rust" / "target" / "debug" / "zarr-inline-crosscheck"
-    if _available("rust", rs, [["cargo", "build"]], REPO / "rust"):
+    if _available("rust", rs, [["cargo", "build"]], REPO / "crosscheck" / "rust"):
         out["rust"] = [str(rs)]
     return out
 

@@ -1,0 +1,23 @@
+{
+  "name": "zarr-inline-crosscheck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-implementation conformance harness for zarr-inline (not published)",
+  "type": "module",
+  "engines": {
+    "node": ">=21"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
+    "test": "npm run build && node --test \"dist/tests/*.test.js\""
+  },
+  "dependencies": {
+    "zarr-inline": "file:../../typescript",
+    "zarrita": "^0.7.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0"
+  }
+}

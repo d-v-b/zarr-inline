@@ -19,24 +19,27 @@ import { pathToFileURL } from "node:url";
 import * as zarr from "zarrita";
 import type { Chunk, CodecMetadata, DataType, Scalar } from "zarrita";
 
-import { MemoryBacking, type Document } from "./backing.js";
+import { MemoryBacking, ZarrInlineStore, type Document } from "zarr-inline";
 import {
 	METADATA_SUFFIX,
 	canonicalStringify,
 	compareCodePoints,
 	isMetadataKey,
 	strictParse,
-} from "./document.js";
+} from "zarr-inline";
 import {
 	JsonSerializer,
 	cStrides,
 	chunkElements,
 	makeTypedArray,
 	registerJsonCodec,
-} from "./serializer.js";
-import { ZarrInlineStore } from "./store.js";
+} from "zarr-inline/internal";
 
-registerJsonCodec();
+
+// Register into THIS package's zarrita instance: the file: dependency
+// gives zarr-inline its own copy of zarrita, so the default registry the
+// library registers into is not the one `zarr.create` here consults.
+registerJsonCodec(zarr.registry);
 
 interface ArraySpec {
 	path: string;

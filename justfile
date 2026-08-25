@@ -26,7 +26,7 @@ setup-typescript:
 
 # Run Python's implementation-specific tests.
 test-python: setup-python
-    cd python && uv run pytest -q --ignore=tests/test_conformance_property.py --ignore=tests/test_crosscheck.py
+    cd python && uv run pytest -q --ignore=tests/test_conformance_property.py
 
 # Run TypeScript's implementation-specific tests.
 test-typescript: setup-typescript
@@ -48,6 +48,9 @@ build-rust-conformance-minimal:
 build-harnesses: setup-python setup-typescript
     cd typescript && npm run build
     cd rust && cargo build --bins
+    cd crosscheck/python && uv sync
+    cd crosscheck/typescript && npm install --no-audit --no-fund && npm run build
+    cd crosscheck/rust && cargo build
 
 # Compare validation, decoding, and encoding across implementations.
 cross-conformance: build-harnesses
@@ -56,12 +59,12 @@ cross-conformance: build-harnesses
 # Run the whole-array writer x reader matrix and OME fixture (every
 # crosscheck test that is not a trace test, so new tests are never skipped).
 cross-arrays: build-harnesses
-    cd python && ZARR_INLINE_REQUIRE_HARNESSES=1 uv run pytest -q \
+    cd crosscheck/python && ZARR_INLINE_REQUIRE_HARNESSES=1 uv run pytest -q \
       tests/test_crosscheck.py -k "not trace"
 
 # Run fixed, generated, and must-reject serialized operation traces.
 cross-traces: build-harnesses
-    cd python && ZARR_INLINE_REQUIRE_HARNESSES=1 uv run pytest -q --hypothesis-show-statistics \
+    cd crosscheck/python && ZARR_INLINE_REQUIRE_HARNESSES=1 uv run pytest -q --hypothesis-show-statistics \
       tests/test_crosscheck.py -k "trace"
 
 # Run all cross-implementation conformance phases.

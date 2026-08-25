@@ -305,7 +305,7 @@ MODES: dict[str, Callable[[dict[str, object]], object]] = {
 
 def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] not in MODES:
-        print(f"usage: python -m zarr_inline.crosscheck {'|'.join(MODES)}", file=sys.stderr)
+        print(f"usage: python -m zarr_inline_crosscheck {'|'.join(MODES)}", file=sys.stderr)
         return 1
     try:
         payload = strict_loads(sys.stdin.buffer.read())

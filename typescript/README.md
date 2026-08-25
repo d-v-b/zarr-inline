@@ -153,18 +153,9 @@ any size and the full float64 range are portable.
 
 ## Crosscheck harness
 
-```bash
-node dist/crosscheck.js write < payload.json   # payload -> document
-node dist/crosscheck.js read < document.json   # document -> payload
-```
-
-The array-layer harness from
-[crosscheck protocol](https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#62-crosscheck-protocol): `write`
-drives zarrita over a `ZarrInlineStore` to build a hierarchy of json-codec
-arrays from a payload, `read` opens every array in a document and reports
-its values using the `fill_value` scalar serialization. The Python test
-orchestrator (`python/tests/test_crosscheck.py`) runs the full
-writer × reader matrix across zarr-python, zarrita, and zarrs.
+The cross-implementation crosscheck harness lives in the separate,
+unpublished `crosscheck/typescript` package; this library ships only the
+`conformance` CLI.
 
 ## Tests
 

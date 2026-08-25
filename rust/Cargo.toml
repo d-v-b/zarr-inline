@@ -19,10 +19,6 @@ path = "src/lib.rs"
 name = "zarr-inline-conformance"
 path = "src/bin/conformance.rs"
 
-[[bin]]
-name = "zarr-inline-crosscheck"
-path = "src/bin/crosscheck.rs"
-required-features = ["zarrs"]
 
 [features]
 # The conformance harness (codec + validator + the `zarr-inline-conformance`
