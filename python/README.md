@@ -48,19 +48,28 @@ metadata field (attributes, `fill_value`, `dimension_names`,
 `chunk_key_encoding`) so nothing is silently lost:
 
 ```python
-from zarr_inline import from_zarr, to_zarr, write_document
+from zarr_inline import from_zarr, open_document, to_zarr, verify_document, write_document
 
 document = from_zarr("data.zarr")                    # chunks as JSON arrays
 document = from_zarr("data.zarr", inline_data=False) # byte-faithful: original
                                                      # codecs kept, chunks base64
-write_document("data.zarr", "data.json")             # straight to a pretty file
+document = write_document("data.zarr", "data.json")  # straight to a pretty
+                                                     # file; returns the document
+root = open_document("data.json")                    # the document as a zarr Group
+verify_document(document, "data.zarr")               # assert the round trip
 to_zarr(document, "restored.zarr")                   # back to a directory store
 ```
 
 `inline_data=True` (the default) re-encodes every array with the `json`
 codec — the legible form; the original codec chain (e.g. compression) is
-deliberately replaced, and an array whose dtype the codec cannot represent
-raises. `inline_data=False` copies every store key byte-for-byte instead.
+deliberately replaced. Every dtype with a Zarr v3 `fill_value` JSON form is
+supported — bool, all integer widths, floats (non-finite values as the
+strings `"NaN"` etc.), complex, fixed-length bytes, strings, datetimes; an
+unsupported dtype raises rather than silently falling back.
+`inline_data=False` copies every store key byte-for-byte instead.
+`verify_document` compares decoded *values* (attributes, dtypes, shapes,
+NaN-aware data), not bytes — the right notion for the legible form, whose
+encoding is deliberately different from the source's.
 See `examples/convert_hierarchy.py` at the repository root.
 
 ## Legible chunks: the `json` codec

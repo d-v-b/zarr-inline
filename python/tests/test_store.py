@@ -348,3 +348,21 @@ async def test_set_json_rejects_non_canonicalizable_values():
     store = ZarrInlineStore(MemoryBacking({}))
     with pytest.raises(ValueError, match="non-finite"):
         await store.set_json("a/c/0", [float("nan")])
+
+
+async def test_list_dir_accepts_prefix_without_trailing_slash():
+    # Regression: zarr-python calls list_dir("qc") with no trailing slash;
+    # the old code derived child "" and nested groups appeared empty.
+    from zarr_inline import MemoryBacking, ZarrInlineStore
+
+    store = ZarrJsonStore = ZarrInlineStore(
+        MemoryBacking(
+            {
+                "qc/zarr.json": {"zarr_format": 3, "node_type": "group"},
+                "qc/flags/zarr.json": {"zarr_format": 3, "node_type": "array"},
+                "qc/flags/c/0": "AAEC",
+            }
+        )
+    )
+    assert sorted([k async for k in store.list_dir("qc")]) == ["flags", "zarr.json"]
+    assert sorted([k async for k in store.list_dir("qc/")]) == ["flags", "zarr.json"]

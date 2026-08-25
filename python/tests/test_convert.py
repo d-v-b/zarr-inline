@@ -112,3 +112,42 @@ def test_to_zarr_rejects_unsupported_dest_type(hierarchy):
     document = from_zarr(hierarchy, inline_data=False)
     with pytest.raises(TypeError, match="dest must be"):
         to_zarr(document, 12345)
+
+
+def test_nested_group_members_traverse_through_the_document(hierarchy):
+    # End-to-end form of the list_dir regression: members() on a nested
+    # group of a reloaded document must see its children.
+    import zarr as _zarr
+
+    from zarr_inline import open_document
+
+    root = open_document(from_zarr(hierarchy))
+    assert [name for name, _ in root["qc"].members()] == ["flags"]
+    assert sorted(name for name, _ in root.members(max_depth=None)) == [
+        "qc",
+        "qc/flags",
+        "temp",
+    ]
+
+
+def test_open_document_reads_files_and_dicts(hierarchy, tmp_path):
+    from zarr_inline import open_document
+
+    out = tmp_path / "doc.json"
+    write_document(hierarchy, out)
+    for source in (out, json.loads(out.read_text())):
+        root = open_document(source)
+        assert root["temp"].shape == (4, 4)
+    with pytest.raises(Exception):
+        open_document(json.loads(out.read_text()))["temp"][0, 0] = 5.0  # read-only
+
+
+def test_verify_document_passes_and_names_the_mismatch(hierarchy):
+    from zarr_inline import verify_document
+
+    document = from_zarr(hierarchy)
+    verify_document(document, hierarchy)
+    broken = json.loads(json.dumps(document))
+    broken["qc/flags/c/0"] = [9, 9, 9, 9]
+    with pytest.raises(AssertionError, match="qc/flags: values differ"):
+        verify_document(broken, hierarchy)

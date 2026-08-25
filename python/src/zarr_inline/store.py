@@ -209,6 +209,10 @@ class ZarrInlineStore(Store):
             yield key
 
     async def list_dir(self, prefix: str) -> AsyncIterator[str]:
+        # zarr-python passes directory prefixes without a trailing slash
+        # (list_dir("qc")); normalize so children resolve.
+        if prefix and not prefix.endswith("/"):
+            prefix += "/"
         async with self._lock:
             keys = self._keys()
         seen: set[str] = set()

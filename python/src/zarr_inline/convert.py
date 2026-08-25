@@ -10,6 +10,9 @@ otherwise appends a default compressor and chunks silently become base64).
 - :func:`from_zarr` — any readable hierarchy -> a zarr-inline document.
 - :func:`write_document` — the same, saved to a pretty-printed ``.json`` file.
 - :func:`to_zarr` — a document materialized back onto a normal store.
+- :func:`open_document` — a document (or ``.json`` file) opened directly as
+  a zarr ``Group``.
+- :func:`verify_document` — assert a document round-trips a hierarchy.
 
 ``inline_data=True`` (the default) re-encodes every array with the ``json``
 codec so chunks appear as human-readable JSON arrays; the original codec
@@ -156,3 +159,61 @@ def to_zarr(document: "Document | str | Path", dest: Any) -> None:
     for key in sorted(document):
         data = decode_value(key, document[key])
         sync(dest.set(key, prototype.buffer.from_bytes(data)))
+
+
+def _load_document(document: "Document | str | Path") -> Document:
+    if isinstance(document, (str, Path)):
+        from zarr_inline.document import strict_loads
+
+        parsed = strict_loads(Path(document).read_text())
+        if not isinstance(parsed, dict):
+            raise ValueError("document file must hold a JSON object")
+        return parsed
+    return document
+
+
+def open_document(document: "Document | str | Path", *, mode: str = "r") -> zarr.Group:
+    """Open a zarr-inline document (parsed, or a ``.json`` file path) as a
+    zarr ``Group`` in one call.
+
+    ``mode="r"`` (the default) opens read-only over the parsed document;
+    other modes open writable — for a file path, mutations persist back to
+    the file automatically.
+    """
+    from zarr_inline.backing import FileBacking, MemoryBacking
+
+    read_only = mode == "r"
+    if isinstance(document, (str, Path)) and not read_only:
+        backing: Any = FileBacking(document)
+    else:
+        backing = MemoryBacking(_load_document(document))
+    store = ZarrInlineStore(backing, read_only=read_only)
+    return zarr.open_group(store=store, mode=mode)
+
+
+def verify_document(document: "Document | str | Path", source: Any) -> None:
+    """Assert that ``document`` round-trips ``source``: same nodes, same
+    attributes, same array data (NaN-aware). Raises ``AssertionError``
+    naming the first mismatching path.
+    """
+    import numpy as np
+
+    src_root = _open_group(source)
+    doc_root = open_document(document)
+    assert dict(doc_root.attrs) == dict(src_root.attrs), "root attributes differ"
+    src_members = dict(src_root.members(max_depth=None))
+    doc_members = dict(doc_root.members(max_depth=None))
+    assert src_members.keys() == doc_members.keys(), (
+        f"member sets differ: only in source {sorted(src_members.keys() - doc_members.keys())}, "
+        f"only in document {sorted(doc_members.keys() - src_members.keys())}"
+    )
+    for path, node in src_members.items():
+        other = doc_members[path]
+        assert dict(other.attrs) == dict(node.attrs), f"{path}: attributes differ"
+        if isinstance(node, zarr.Array):
+            assert node.shape == other.shape, f"{path}: shapes differ"
+            assert node.dtype == other.dtype, f"{path}: dtypes differ"
+            equal_nan = node.dtype.kind in "fc"
+            assert np.array_equal(node[...], other[...], equal_nan=equal_nan), (
+                f"{path}: values differ"
+            )

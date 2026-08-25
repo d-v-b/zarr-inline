@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import zarr
 
-from zarr_inline import MemoryBacking, ZarrInlineStore, from_zarr, to_zarr, write_document
+from zarr_inline import from_zarr, open_document, to_zarr, verify_document, write_document
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp = Path(tmp)
@@ -43,10 +43,10 @@ with tempfile.TemporaryDirectory() as tmp:
     faithful = from_zarr(source, inline_data=False)
     print("byte-faithful chunk:", faithful["temp/c/0/0"][:40], "...\n")
 
-    # The document is a normal Zarr store: read it back with zarr directly.
-    reloaded = zarr.open_group(
-        store=ZarrInlineStore(MemoryBacking(document), read_only=True), mode="r"
-    )
+    # The document is a normal Zarr store: open it as a group in one call,
+    # and assert the round trip.
+    reloaded = open_document(tmp / "survey.json")
+    verify_document(document, source)
     print("round trip:", reloaded["temp"][0].tolist(), "| attrs:", dict(reloaded.attrs))
 
     # And a document can be exploded back into an ordinary directory store.
