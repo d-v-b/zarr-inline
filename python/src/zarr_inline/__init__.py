@@ -1,6 +1,7 @@
 """zarr-inline: store a Zarr v3 hierarchy as a single JSON object."""
 
 from zarr_inline.backing import Backing, FileBacking, MemoryBacking, StringBacking
+from zarr_inline.convert import from_zarr, to_zarr, write_document
 from zarr_inline.serializer import JsonSerializer
 from zarr_inline.store import ZarrInlineStore
 from zarr_inline.validator import (
@@ -13,12 +14,15 @@ from zarr_inline.validator import (
 __all__ = [
     "Backing",
     "FileBacking",
+    "from_zarr",
     "JsonSerializer",
     "MemoryBacking",
     "StringBacking",
+    "to_zarr",
     "Strictness",
     "ValidationError",
     "ValidationIssue",
     "ZarrInlineStore",
     "validate",
+    "write_document",
 ]

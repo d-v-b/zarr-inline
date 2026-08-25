@@ -96,7 +96,9 @@ to be JSON text. The conversion array ↔ JSON could live in three places:
    implementation would carry a mini-codec;
 3. a hierarchy-level converter that rewrites codec chains on export —
    which composes with (1) rather than replacing it, and is the only sound
-   way to make an already-compressed array legible.
+   way to make an already-compressed array legible. The Python package
+   ships this as `from_zarr` / `write_document` / `to_zarr` (see
+   `examples/convert_hierarchy.py`).
 
 The codec keeps the container dumb: on `get` of an array value the store
 serializes canonical JSON text and the *host's* codec does all dtype
