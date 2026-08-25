@@ -1,5 +1,7 @@
 # zarr-inline (TypeScript)
 
+> **Unstable**: the zarr-inline format and this API may change incompatibly; see the repository README.
+
 Store a Zarr v3 hierarchy as a single JSON object. `ZarrInlineStore` is a
 read-write [zarrita](https://github.com/manzt/zarrita.js) store (the
 `AsyncMutable` interface from `@zarrita/storage`, including `getRange`

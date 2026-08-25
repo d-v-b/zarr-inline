@@ -1,5 +1,7 @@
 # zarr-inline (Rust)
 
+> **Unstable**: the zarr-inline format and this API may change incompatibly; see the repository README.
+
 Store a Zarr v3 hierarchy as a single JSON object. `ZarrInlineStore` is a
 read-write store implementing `zarrs`'s storage traits
 (`ReadableStorageTraits` + `WritableStorageTraits` + `ListableStorageTraits`,

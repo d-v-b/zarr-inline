@@ -1,5 +1,7 @@
 # zarr-inline (Python)
 
+> **Unstable**: the zarr-inline format and this API may change incompatibly; see the repository README.
+
 Store a Zarr v3 hierarchy as a single JSON object. `ZarrInlineStore` is a
 read-write `zarr.abc.store.Store` whose entire contents live in one JSON
 document — metadata keys (`zarr.json` or `*/zarr.json`) hold inline JSON

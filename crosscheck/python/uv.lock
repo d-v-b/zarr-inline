@@ -386,7 +386,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "rfc8785", specifier = ">=0.1.4" },
-    { name = "zarr", specifier = ">=3.0.0" },
+    { name = "zarr", specifier = ">=3.1.0" },
     { name = "zarr-metadata", specifier = ">=0.5.0" },
 ]
 

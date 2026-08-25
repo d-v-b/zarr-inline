@@ -7,9 +7,11 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "zarr-inline contributors" }]
 requires-python = ">=3.12"
+classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "rfc8785>=0.1.4",
-    "zarr>=3.0.0",
+    # 3.1 introduced zarr.core.dtype (ZDType), which the serializer imports.
+    "zarr>=3.1.0",
     "zarr-metadata>=0.5.0",
 ]
 

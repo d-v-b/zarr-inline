@@ -1,5 +1,10 @@
 # zarr-inline
 
+> [!WARNING]
+> **zarr-inline is unstable.** The format (specification 0.2.0-draft) and
+> the APIs of all three implementations may change incompatibly without
+> notice. Do not use it as the only copy of data you care about.
+
 A convention for storing Zarr v3 hierarchies in JSON documents. The goal is
 simple interchange of small Zarr hierarchies: one portable,
 human-inspectable, hand-editable file.

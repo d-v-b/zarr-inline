@@ -1,5 +1,10 @@
 # zarr-inline
 
+> [!WARNING]
+> **zarr-inline is unstable.** The format (specification 0.2.0-draft) and
+> the APIs of all three implementations may change incompatibly without
+> notice. Do not use it as the only copy of data you care about.
+
 zarr-inline is a convention for storing an entire Zarr v3 hierarchy in one
 JSON object. It is intended for small datasets that benefit from portable,
 human-inspectable, and hand-editable interchange.
