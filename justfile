@@ -32,6 +32,10 @@ test-python: setup-python
 test-typescript: setup-typescript
     cd typescript && npm test
 
+# Build and smoke-test the TypeScript browser example (single-file document browser).
+test-browser-example:
+    cd typescript/examples/browser && npm ci && npm run check
+
 # Run Rust's implementation-specific tests.
 test-rust:
     cd rust && cargo test
@@ -79,4 +83,4 @@ check-release-artifacts: setup-python setup-typescript
     cd rust && crate_version="$(cargo metadata --no-deps --format-version=1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')" && cargo test --manifest-path "target/package/zarr-inline-$crate_version/Cargo.toml"
 
 # Run every local, cross-implementation, and release-artifact check.
-check: docs-check test-python test-typescript test-rust lint-rust build-rust-conformance-minimal cross check-release-artifacts
+check: docs-check test-python test-typescript test-browser-example test-rust lint-rust build-rust-conformance-minimal cross check-release-artifacts

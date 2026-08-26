@@ -164,3 +164,11 @@ unpublished `crosscheck/typescript` package; this library ships only the
 ```bash
 cd typescript && npm test
 ```
+
+## Example: document browser
+
+[`examples/browser`](examples/browser) builds a single-file web app on
+this implementation: the hierarchy as a selectable DAG, metadata and
+chunks as editable JSON, and a multi-dimensional slice viewer for arrays.
+`npm install && npm run build` there produces a self-contained
+`dist/index.html`.

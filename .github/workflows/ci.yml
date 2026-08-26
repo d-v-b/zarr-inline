@@ -35,11 +35,14 @@ jobs:
         with:
           node-version: 22 # Supported baseline for JSON.parse reviver source access (BigInt)
           cache: npm
-          cache-dependency-path: typescript/package-lock.json
+          cache-dependency-path: |
+            typescript/package-lock.json
+            typescript/examples/browser/package-lock.json
       - uses: extractions/setup-just@v4
         with:
           just-version: "1.55.1"
       - run: just test-typescript
+      - run: just test-browser-example
 
   rust:
     name: Rust (zarrs)
