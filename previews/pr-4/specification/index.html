@@ -1,0 +1,1860 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Store a Zarr v3 hierarchy as a single JSON object">
+      
+      
+      
+        <link rel="canonical" href="https://d-v-b.github.io/zarr-inline/specification/">
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../how-it-works/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Specification - zarr-inline</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#zarr-inline-specification" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="zarr-inline" class="md-header__button md-logo" aria-label="zarr-inline" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            zarr-inline
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Specification
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/d-v-b/zarr-inline" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    d-v-b/zarr-inline
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="zarr-inline" class="md-nav__button md-logo" aria-label="zarr-inline" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    zarr-inline
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/d-v-b/zarr-inline" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    d-v-b/zarr-inline
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specification
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-overview-non-normative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Overview (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-terminology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Terminology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Keys
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Keys">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-well-formed-keys-rule-r1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Well-formed keys (rule R1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-metadata-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Metadata keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-relation-to-zarr-v3-non-normative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Relation to Zarr v3 (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-values-rule-r2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Values (rule R2)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Values (rule R2)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-byte-strings-base64" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Byte strings (base64)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-inline-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Inline values
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-canonical-json-serialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Canonical JSON serialization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Canonical JSON serialization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Data model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-strings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Strings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-numbers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Numbers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-properties-non-normative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Properties (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-strict-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Strict parsing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-byte-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Byte semantics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Byte semantics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-decoding-document-value-bytes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Decoding (document value → bytes)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-encoding-bytes-document-value" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Encoding (bytes → document value)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-normal-form-and-equivalence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Normal form and equivalence
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-validity-and-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Validity and errors
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Validity and errors">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-store-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Store behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-error-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 Error classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-the-json-arraybytes-codec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. The json array→bytes codec
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. The json array→bytes codec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Encoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-decoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Decoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#93-composition-and-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.3 Composition and restrictions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#94-conformance-vectors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.4 Conformance vectors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-portability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Portability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-security-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Security considerations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-conformance-non-normative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Conformance (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How it works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../browser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Document browser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-overview-non-normative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Overview (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-terminology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Terminology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Keys
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Keys">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-well-formed-keys-rule-r1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Well-formed keys (rule R1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-metadata-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Metadata keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-relation-to-zarr-v3-non-normative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Relation to Zarr v3 (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-values-rule-r2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Values (rule R2)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Values (rule R2)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-byte-strings-base64" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Byte strings (base64)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-inline-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Inline values
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-canonical-json-serialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Canonical JSON serialization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Canonical JSON serialization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Data model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-strings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Strings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-numbers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Numbers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-properties-non-normative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Properties (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-strict-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Strict parsing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-byte-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Byte semantics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Byte semantics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-decoding-document-value-bytes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Decoding (document value → bytes)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-encoding-bytes-document-value" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Encoding (bytes → document value)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-normal-form-and-equivalence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Normal form and equivalence
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-validity-and-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Validity and errors
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Validity and errors">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-store-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Store behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-error-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 Error classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-the-json-arraybytes-codec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. The json array→bytes codec
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. The json array→bytes codec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Encoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-decoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Decoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#93-composition-and-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.3 Composition and restrictions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#94-conformance-vectors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.4 Conformance vectors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-portability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Portability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-security-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Security considerations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-conformance-non-normative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Conformance (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="zarr-inline-specification">zarr-inline Specification<a class="headerlink" href="#zarr-inline-specification" title="Permanent link">&para;</a></h1>
+<p><strong>Version:</strong> 0.2.0-draft
+<strong>Date:</strong> 2026-08-23
+<strong>Status:</strong> Draft (revised after adversarial spec review)</p>
+<p>zarr-inline is a convention for storing a Zarr v3 hierarchy as a single JSON
+document, for simple interchange of small hierarchies: one portable,
+human-inspectable, hand-editable file.</p>
+<p>The key words MUST, MUST NOT, SHOULD, SHOULD NOT, MAY, RECOMMENDED, and
+NOT RECOMMENDED are to be interpreted as described in RFC 2119.</p>
+<h2 id="1-overview-non-normative">1. Overview (non-normative)<a class="headerlink" href="#1-overview-non-normative" title="Permanent link">&para;</a></h2>
+<p>A Zarr v3 store is an association of <em>keys</em> to <em>byte strings</em>. zarr-inline
+encodes such a store as one JSON object whose member names are the store
+keys and whose values carry the bytes in one of three forms: metadata
+documents as inline JSON objects, opaque bytes as base64 strings, and any
+payload that IS byte-stable canonical JSON — such as chunks encoded with
+the <code>json</code> codec (§9) — as an inline JSON array or object. For a given key
+class, the value's JSON type determines its meaning: string = bytes,
+array/object = inline JSON.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">&quot;zarr.json&quot;</span><span class="p">:</span><span class="w">         </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;zarr_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;node_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;group&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;attributes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">&quot;a/zarr.json&quot;</span><span class="p">:</span><span class="w">       </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;zarr_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;node_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;array&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;...&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">&quot;a/c/0&quot;</span><span class="p">:</span><span class="w">             </span><span class="p">[</span><span class="mf">1.5</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;NaN&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mf">3.25</span><span class="p">],</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">&quot;b/zarr.json&quot;</span><span class="p">:</span><span class="w">       </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;zarr_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;node_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;array&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;...&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">&quot;b/c/0&quot;</span><span class="p">:</span><span class="w">             </span><span class="s2">&quot;H4sIAOq/hmoA...&quot;</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="2-terminology">2. Terminology<a class="headerlink" href="#2-terminology" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>document</strong> — a zarr-inline document: JSON text (RFC 8259) whose
+  top-level value is an object.</li>
+<li><strong>store key</strong> (or <strong>key</strong>) — a member name of the document. Keys are
+  intended to hold Zarr v3 store keys (but see §3.3).</li>
+<li><strong>metadata key</strong> — a key that names a Zarr v3 metadata document (§3.2).</li>
+<li><strong>byte key</strong> — any key that is not a metadata key.</li>
+<li><strong>inline value</strong> — a JSON array or object appearing as the value of a
+  byte key.</li>
+<li><strong>canonical serialization</strong> — the byte-exact JSON text form defined in §5.</li>
+<li><strong>decoded bytes</strong> — the byte string a key's value denotes (§7.1).</li>
+<li><strong>strict-parse</strong> — the parsing discipline defined in §6.</li>
+<li><strong>error classes</strong> — <em>document error</em>, <em>validity issue</em>, <em>decode error</em>,
+  <em>codec error</em>; defined in §8.3.</li>
+</ul>
+<h2 id="3-keys">3. Keys<a class="headerlink" href="#3-keys" title="Permanent link">&para;</a></h2>
+<h3 id="31-well-formed-keys-rule-r1">3.1 Well-formed keys (rule R1)<a class="headerlink" href="#31-well-formed-keys-rule-r1" title="Permanent link">&para;</a></h3>
+<p>A key MUST be a string. The empty string is well-formed and denotes the store's
+root resource. A non-empty key MUST NOT begin or end with <code>/</code> and, when split
+on <code>/</code>, MUST yield no segment that is empty, <code>.</code>, or <code>..</code>.</p>
+<p>Keys are compared by exact code-point sequence: no case folding and no
+Unicode normalization. Keys differing only in normalization form (e.g.
+<code>é</code> vs <code>é</code>) are distinct.</p>
+<h3 id="32-metadata-keys">3.2 Metadata keys<a class="headerlink" href="#32-metadata-keys" title="Permanent link">&para;</a></h3>
+<p>A key is a <em>metadata key</em> if and only if it is exactly <code>zarr.json</code> or its
+final <code>/</code>-separated segment is <code>zarr.json</code>. The comparison is exact and
+case-sensitive: <code>Zarr.json</code> and <code>xyzarr.json</code> are byte keys. Every other
+key, including the empty key, is a <em>byte key</em>.</p>
+<h3 id="33-relation-to-zarr-v3-non-normative">3.3 Relation to Zarr v3 (non-normative)<a class="headerlink" href="#33-relation-to-zarr-v3-non-normative" title="Permanent link">&para;</a></h3>
+<p>R1 is deliberately broader than Zarr v3's node-name rules: v3 additionally
+forbids node names consisting only of periods and reserves names beginning
+with <code>__</code>. zarr-inline does not re-validate hierarchy-level naming — as with
+all hierarchy coherence (§8), that is deferred to the Zarr layer. Valid
+zarr-inline documents therefore exist whose keys no conforming Zarr v3
+hierarchy would produce.</p>
+<h2 id="4-values-rule-r2">4. Values (rule R2)<a class="headerlink" href="#4-values-rule-r2" title="Permanent link">&para;</a></h2>
+<p>By key class:</p>
+<ul>
+<li>The value of a <strong>metadata key</strong> MUST be a JSON object.</li>
+<li>The value of a <strong>byte key</strong> MUST be a JSON string (base64-encoded
+  bytes, §4.1), or a JSON array or object (inline values, §4.2).</li>
+</ul>
+<p>Any other value type (a number, boolean, or null at any key; a string or
+array at a metadata key) is a validity issue (§8). Future revisions of
+this specification may assign meaning to currently-invalid value types;
+R2 is the format's extension point, and lenient readers (§8) therefore
+skip, rather than fail on, values they do not recognize.</p>
+<h3 id="41-byte-strings-base64">4.1 Byte strings (base64)<a class="headerlink" href="#41-byte-strings-base64" title="Permanent link">&para;</a></h3>
+<p>A byte-key string value MUST be base64 per RFC 4648 §4: zero or more
+four-character groups from the standard alphabet (<code>A–Z a–z 0–9 + /</code>),
+where only the final group may carry padding, in one of the two forms
+<code>XX==</code> or <code>XXX=</code>. No whitespace or other characters are permitted.
+(Consequently <code>""</code> denotes zero bytes, and strings such as <code>"===="</code> or
+<code>"A==="</code> are not base64.)</p>
+<p><em>Canonical base64</em> additionally has zero non-zero trailing padding bits
+(RFC 4648 §3.5): the encoding an encoder produces from bytes. Encoders
+MUST emit canonical base64. Decoders MUST accept any string meeting the
+grammar above, including non-canonical trailing padding bits (<code>"AB=="</code>
+denotes the single byte <code>0x00</code>).</p>
+<p>A string value that does not meet the grammar is a <em>decode error</em> for
+that key (§8.3); it is not a validity issue.</p>
+<h3 id="42-inline-values">4.2 Inline values<a class="headerlink" href="#42-inline-values" title="Permanent link">&para;</a></h3>
+<p>A byte-key array or object value denotes the UTF-8 bytes of its canonical
+serialization (§5). Any array or object whose canonical serialization is
+defined is permitted; in practice inline arrays are produced by the
+<code>json</code> codec (§9) and hold chunk data, and inline objects arise from
+payloads that are themselves canonical JSON documents. A value whose
+canonical serialization fails (e.g. it contains a lone surrogate) is a
+<em>decode error</em> for that key.</p>
+<p>A top-level JSON <strong>string</strong> can never be an inline value: the string type
+is the base64 channel (§4.1), and that reservation is what keeps every
+value decodable.</p>
+<h2 id="5-canonical-json-serialization">5. Canonical JSON serialization<a class="headerlink" href="#5-canonical-json-serialization" title="Permanent link">&para;</a></h2>
+<p>Canonical serialization maps a JSON value (in the data model of §5.1) to
+UTF-8 text. It is deterministic: for any given value it yields exactly one
+byte sequence, identical across implementations.</p>
+<h3 id="51-data-model">5.1 Data model<a class="headerlink" href="#51-data-model" title="Permanent link">&para;</a></h3>
+<p>A JSON value is <code>null</code>, <code>true</code>, <code>false</code>, a string, a number, an array of
+values, or an object of (name, value) members in a defined order. A
+<strong>number is one of two sorts</strong>:</p>
+<ul>
+<li>an <strong>integer</strong>: arbitrary precision, unbounded magnitude;</li>
+<li>a <strong>float64</strong>: an IEEE-754 binary64 value (finite; non-finite values
+  are not representable — see §5.5).</li>
+</ul>
+<p>Parsing maps a number token that is an <em>integer literal</em> — no <code>.</code>, <code>e</code>,
+or <code>E</code> — to an integer, and every other number token to the nearest
+float64. Programmatic APIs MUST preserve the distinction; host-language
+integer types map to integers, floating-point types to float64.
+Implementations MUST preserve integer values exactly at any magnitude,
+through parse, storage, and serialization.</p>
+<h3 id="52-structure">5.2 Structure<a class="headerlink" href="#52-structure" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>No whitespace.</strong> Separators are exactly <code>,</code> and <code>:</code>.</li>
+<li><strong>Object members</strong> serialize in the value's member order (§5.1) —
+   document order for parsed values, insertion order for constructed
+   ones. Member names are <strong>not</strong> sorted. <em>(This deliberately departs
+   from RFC 8785, which sorts.)</em></li>
+<li><code>true</code>, <code>false</code>, <code>null</code> serialize as those literals.</li>
+</ol>
+<h3 id="53-strings">5.3 Strings<a class="headerlink" href="#53-strings" title="Permanent link">&para;</a></h3>
+<p>JSON escaping with the two-character forms <code>\"</code> <code>\\</code> <code>\b</code> <code>\f</code> <code>\n</code> <code>\r</code>
+<code>\t</code>, <code>\u00xx</code> (lowercase hex) for the remaining control characters
+U+0000–U+001F, and no escaping of any other character (non-ASCII,
+including U+007F, is written directly as UTF-8). A string that is not
+well-formed Unicode (contains a lone surrogate) has no canonical
+serialization: serializing it is a <em>canonicalization error</em>.</p>
+<h3 id="54-numbers">5.4 Numbers<a class="headerlink" href="#54-numbers" title="Permanent link">&para;</a></h3>
+<ul>
+<li>An <strong>integer</strong> serializes as its exact decimal digits with a leading
+  <code>-</code> if negative, at any magnitude. There is exactly one form: the
+  integer 0 serializes as <code>0</code> (the token <code>-0</code> parses to it). <em>(This rule
+  is this specification's own; it extends RFC 8785, which is limited to
+  float64.)</em></li>
+<li>A <strong>float64</strong> serializes per RFC 8785 §3.2.2.3, i.e. ECMAScript
+  <code>Number::toString</code>: shortest round-trip digits; no decimal point for
+  integral values (<code>1.0</code> → <code>1</code>); negative zero → <code>0</code>; fixed notation for
+  magnitudes in <code>[1e-6, 1e21)</code>, otherwise exponential with an explicit
+  mantissa sign convention of ECMAScript (<code>1e+21</code>, <code>1e-7</code> — exponent
+  unpadded, <code>+</code> only for non-negative exponents ≥ 21).</li>
+<li>Serializing a non-finite float64 is a <em>canonicalization error</em>.</li>
+</ul>
+<p>Implementers MUST use a proven shortest-round-trip implementation of
+ECMAScript <code>Number::toString</code> (for example Ryu with the ECMAScript notation
+thresholds). Formatting with a fixed number of significant or fractional
+digits, or printing the exact integer represented by an integral binary64,
+is not conforming. Required boundary and rounding vectors are:</p>
+<table>
+<thead>
+<tr>
+<th>binary64 value</th>
+<th>canonical text</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-0.0</code></td>
+<td><code>0</code></td>
+</tr>
+<tr>
+<td><code>1.0</code></td>
+<td><code>1</code></td>
+</tr>
+<tr>
+<td><code>1e-6</code></td>
+<td><code>0.000001</code></td>
+</tr>
+<tr>
+<td><code>1e-7</code></td>
+<td><code>1e-7</code></td>
+</tr>
+<tr>
+<td><code>1e20</code></td>
+<td><code>100000000000000000000</code></td>
+</tr>
+<tr>
+<td><code>1e21</code></td>
+<td><code>1e+21</code></td>
+</tr>
+<tr>
+<td><code>5e-324</code></td>
+<td><code>5e-324</code></td>
+</tr>
+<tr>
+<td>binary64 <code>-0x1.17664b157641dp+59</code></td>
+<td><code>-629151929367400100</code></td>
+</tr>
+</tbody>
+</table>
+<p>The last value is the binary64 number commonly displayed as
+<code>-6.291519293674001e17</code>; its exact integer value is
+<code>-629151929367400064</code>, but that longer decimal is <strong>not</strong> the ECMAScript
+shortest representation.</p>
+<p>When a host already exposes correctly rounded shortest-round-trip digits
+(for example modern Python's <code>repr(float)</code>), an implementation may split
+that shortest mantissa and exponent and move the decimal point to meet the
+fixed/exponential thresholds above. It MUST preserve those digits while
+doing so. It MUST NOT switch to a fixed-precision formatter such as <code>.15f</code>:
+that asks a different rounding question and produces the exact wrong result
+for vectors such as the last row.</p>
+<h3 id="55-properties-non-normative">5.5 Properties (non-normative)<a class="headerlink" href="#55-properties-non-normative" title="Permanent link">&para;</a></h3>
+<p><code>serialize ∘ parse</code> is the identity on canonical text, and
+<code>parse ∘ serialize</code> is the identity on the data model. Note that the
+integer 1 and the float64 1.0 both serialize as <code>1</code>; the distinction is
+not recoverable from canonical text, which is harmless here because every
+consumer of these values (Zarr metadata semantics, the <code>json</code> codec's
+dtype-driven decoding) interprets numbers by context, not token sort.</p>
+<h2 id="6-strict-parsing">6. Strict parsing<a class="headerlink" href="#6-strict-parsing" title="Permanent link">&para;</a></h2>
+<p><em>Strict-parse</em> is a JSON-text parser and may return <strong>any</strong> JSON value. It is
+not the same operation as reading a zarr-inline document: reading a document
+first strict-parses the text and then requires the result to be an object,
+while embedded parses accept the value type their caller requires (an object
+for metadata bytes, an array or object for the byte-key inlining check, and any
+shape-appropriate JSON value for chunk bytes).</p>
+<p>Reading a document, and every embedded parse this specification calls for
+(metadata bytes in §7.2, chunk bytes in §9.2), MUST use the following
+strict-parse discipline:</p>
+<ul>
+<li>everything RFC 8259 rejects is rejected — in particular the non-JSON
+  tokens <code>NaN</code>, <code>Infinity</code>, <code>-Infinity</code>;</li>
+<li>a non-integer number token whose value overflows float64 (e.g. <code>1e999</code>)
+  is rejected;</li>
+<li>integer-literal tokens are preserved exactly at any magnitude (§5.1);</li>
+<li>an object with duplicate member names parses to a single member per
+  name: the <strong>last</strong> value in text order, at the position of the <strong>first</strong>
+  occurrence. (Writers never emit duplicates: canonical serialization is
+  defined over the data model, which cannot hold them.)</li>
+</ul>
+<p>Implementations whose host JSON parser cannot meet these requirements
+(e.g. cannot preserve big integers or detect overflow) MUST use a
+conforming parser instead.</p>
+<p>A document whose text is not strict-parseable, or whose top-level value
+is not a JSON object, is a <em>document error</em> in both validation modes. A
+document SHOULD NOT begin with a byte-order mark; readers MAY reject one.</p>
+<h2 id="7-byte-semantics">7. Byte semantics<a class="headerlink" href="#7-byte-semantics" title="Permanent link">&para;</a></h2>
+<h3 id="71-decoding-document-value-bytes">7.1 Decoding (document value → bytes)<a class="headerlink" href="#71-decoding-document-value-bytes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>metadata key → the canonical serialization (§5) of its object, as UTF-8.</li>
+<li>byte key, string value → the base64-decoded bytes (§4.1).</li>
+<li>byte key, array or object value → its canonical serialization, as
+  UTF-8.</li>
+</ul>
+<p>Failures (bad base64, canonicalization errors) are <em>decode errors</em>,
+scoped to the key (§8.3).</p>
+<h3 id="72-encoding-bytes-document-value">7.2 Encoding (bytes → document value)<a class="headerlink" href="#72-encoding-bytes-document-value" title="Permanent link">&para;</a></h3>
+<p>Writers (e.g. a store's <code>set</code>) MUST proceed:</p>
+<ul>
+<li>metadata key: strict-parse the bytes; the result MUST be a JSON object;
+  store it inline. Anything else is a <em>codec error</em>, and the document
+  MUST be left unchanged.</li>
+<li>byte key: anything that losslessly round-trips as byte-stable
+  (canonical) JSON of a self-describing type is written inline — if the
+  bytes strict-parse to a JSON <strong>array or object</strong> whose canonical
+  serialization is byte-identical to the input, store that value
+  (<em>lossless inlining</em>); otherwise store the canonical base64 of the
+  bytes. (A top-level string never inlines; see §4.2.)</li>
+</ul>
+<p>In pseudocode, the byte-key branch is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>parsed = try strict_parse_json(bytes)  # accepts any JSON top-level type
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>if parsed succeeded AND parsed is array or object
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                    AND utf8(canonical_serialize(parsed)) == bytes:
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    return parsed
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>return canonical_base64(bytes)
+</code></pre></div>
+<p>(The object-only top-level check of document reading does not apply here:
+the inlining branch must accept arrays and objects.)</p>
+<p>The inlining rule is lossless by construction: whatever the bytes were,
+decoding the stored value reproduces them exactly.</p>
+<h3 id="73-normal-form-and-equivalence">7.3 Normal form and equivalence<a class="headerlink" href="#73-normal-form-and-equivalence" title="Permanent link">&para;</a></h3>
+<p>A document value is in <em>normal form</em> when it is what §7.2 would produce
+for its decoded bytes; a document is in normal form when every value is.
+Normal form constrains each value's content, not the document's
+inter-member whitespace — a normal-form document may be pretty-printed.
+Writers produce normal-form values (a consequence of §7.2); a write cycle
+(<code>get</code> then <code>set</code>) normalizes a key.</p>
+<p>Two documents are <strong>equivalent</strong> when they have the same key set, every
+key decodes in both, and the decoded bytes agree per key. Equivalence,
+not textual equality, is the round-trip guarantee. Documents with an
+undecodable key have no equivalents.</p>
+<h2 id="8-validity-and-errors">8. Validity and errors<a class="headerlink" href="#8-validity-and-errors" title="Permanent link">&para;</a></h2>
+<p>A document is <strong>valid</strong> when every key satisfies R1 (§3.1) and every
+value satisfies R2 (§4). That is all: validity does not require a root
+<code>zarr.json</code>, does not forbid orphan chunks, and does not check that the
+document forms a coherent Zarr hierarchy — a Zarr store is valid while
+empty or partially populated, so a document under construction is valid
+throughout. The empty document <code>{}</code> is valid.</p>
+<p>Validators SHOULD report at most one issue per key, checking R1 first and
+reporting R2 only for keys that pass R1.</p>
+<h3 id="81-modes">8.1 Modes<a class="headerlink" href="#81-modes" title="Permanent link">&para;</a></h3>
+<p>Implementations SHOULD offer a <strong>strict</strong> mode (any validity issue
+rejects the document) and a <strong>lenient</strong> mode (issues are diagnostics;
+offending entries are skipped and behave as absent, and all remaining
+entries stay fully usable, including listing operations). Lenient is the
+RECOMMENDED default for readers.</p>
+<h3 id="82-store-behavior">8.2 Store behavior<a class="headerlink" href="#82-store-behavior" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>set</code> with a key violating R1 MUST be rejected without mutating the
+  document, so a store driven through its API always produces a valid
+  document. A failed <code>set</code> of any kind MUST leave the document unchanged.</li>
+<li><code>get</code> of an absent key (including entries skipped in lenient mode)
+  yields the host store interface's key-not-found condition.</li>
+<li><code>delete</code> of any key, present or not, is permitted; deleting the last
+  key leaves the valid empty document.</li>
+<li>Stores SHOULD offer a <code>set_json(key, value)</code> convenience defined as
+  <code>set(key, canonical_serialization(value))</code>, restricted to the value type
+  R2 permits at the key (object at metadata keys, array or object at
+  byte keys).
+  Because canonical bytes always satisfy the inlining check, the value is
+  guaranteed to land in the document as its inline JSON representation —
+  callers get the legible form without producing canonical text
+  themselves.</li>
+</ul>
+<p>For example, a lenient store constructed from
+<code>{"bad/c/0":1,"ok/c/0":"AAEC"}</code> MUST report the R2 issue for
+<code>bad/c/0</code>; <code>get("bad/c/0")</code> is not-found, <code>exists("bad/c/0")</code> is false,
+and every listing omits it. The invalid entry may remain in the serialized
+document. After <code>set("bad/c/0", b"[1,2]")</code>, it is live, decodes to those
+five bytes, and its document value is the inline array <code>[1,2]</code>.</p>
+<h3 id="83-error-classes">8.3 Error classes<a class="headerlink" href="#83-error-classes" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>class</th>
+<th>trigger</th>
+<th>scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>document error</td>
+<td>text not strict-parseable; top level not an object</td>
+<td>whole document</td>
+</tr>
+<tr>
+<td>validity issue</td>
+<td>R1 or R2 violation</td>
+<td>per key; document in strict mode</td>
+</tr>
+<tr>
+<td>decode error</td>
+<td>base64 grammar failure; canonicalization failure on read</td>
+<td>per key</td>
+</tr>
+<tr>
+<td>codec error</td>
+<td><code>json</code>-codec encode/decode failure (§9); metadata bytes not an object (§7.2)</td>
+<td>per operation</td>
+</tr>
+</tbody>
+</table>
+<p>Decode errors are per-key: they MUST NOT affect access to other keys and
+MUST NOT cause document rejection in either mode.</p>
+<h2 id="9-the-json-arraybytes-codec">9. The <code>json</code> array→bytes codec<a class="headerlink" href="#9-the-json-arraybytes-codec" title="Permanent link">&para;</a></h2>
+<p>An array→bytes codec (Zarr v3 "serializer") whose metadata is exactly
+<code>{"name": "json"}</code>; a <code>configuration</code> member MUST be absent or an empty
+object, and readers SHOULD reject unrecognized configuration members.
+Arrays encoded with it appear in the document as inline JSON arrays of
+their decoded values.</p>
+<p><em>(Registration note: <code>json</code> is not yet a registered Zarr v3 extension
+name; registration with the zarr-extensions registry is intended. Until
+then, stock Zarr implementations without this codec cannot read such
+arrays — though they can read the rest of the document.)</em></p>
+<h3 id="91-encoding">9.1 Encoding<a class="headerlink" href="#91-encoding" title="Permanent link">&para;</a></h3>
+<p>A chunk of rank ≥ 1 encodes as the canonical serialization (§5) of a
+nested JSON array: the chunk's elements in C (row-major) order, nested by
+the chunk shape, each element serialized with the <strong>Zarr v3 <code>fill_value</code>
+scalar convention</strong> for the array's data type:</p>
+<table>
+<thead>
+<tr>
+<th>data type family</th>
+<th>element JSON</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bool</td>
+<td><code>true</code> / <code>false</code></td>
+</tr>
+<tr>
+<td>integers (any width)</td>
+<td>integer (exact digits)</td>
+</tr>
+<tr>
+<td>floats</td>
+<td>float64 per §5.4; non-finite as the strings <code>"NaN"</code>, <code>"Infinity"</code>, <code>"-Infinity"</code></td>
+</tr>
+<tr>
+<td>complex</td>
+<td>two-element array <code>[re, im]</code>, each per the float rule</td>
+</tr>
+<tr>
+<td>fixed-length bytes / raw</td>
+<td>base64 string</td>
+</tr>
+<tr>
+<td>strings</td>
+<td>JSON string</td>
+</tr>
+</tbody>
+</table>
+<p>Encoders MUST NOT emit the bit-pattern hex-string float forms that Zarr
+v3 permits for <code>fill_value</code> (e.g. <code>"0x7fc00000"</code>); decoder acceptance of
+those forms is implementation-defined, so documents containing them are
+not portable (§10). Lossiness is confined to float bit patterns: the sign
+of negative zero is not preserved (§5.4), and NaN payload/signaling bits
+are not preserved — decoders produce a quiet NaN.</p>
+<p>Because every Zarr v3 data type must define a <code>fill_value</code> serialization
+to be representable in metadata at all, this codec's encoding is defined
+for every data type by construction; a given implementation supports the
+data types its host Zarr library supports.</p>
+<h3 id="92-decoding">9.2 Decoding<a class="headerlink" href="#92-decoding" title="Permanent link">&para;</a></h3>
+<p>Chunk bytes MUST be strict-parsed (§6). Decoding is then shape-driven:
+recurse through the nested arrays exactly <code>rank</code> levels (a scalar's JSON
+form may itself be an array — complex — so recursion depth comes from the
+chunk shape, never from the values), and the nesting MUST match the chunk
+shape exactly.</p>
+<p>Element parsing MUST be strict, by the number sorts of §5.1:</p>
+<ul>
+<li>integer types: the element MUST be an integer within the type's range;
+  a float64 element (e.g. the token <code>1.0</code>) is a codec error even when
+  integral.</li>
+<li>float types: integer and float64 elements are both accepted (the
+  integer converted to the nearest float64), plus the three non-finite
+  strings.</li>
+<li>all types: out-of-range values and malformed scalars are codec errors,
+  never coerced. For float types, <em>range</em> means the type's finite range: a
+  finite JSON number whose conversion to the target type is not finite
+  (e.g. <code>1e39</code> for <code>float32</code>, or an integer token beyond float64) is out of
+  range; non-finite values are representable only through the three
+  strings.</li>
+</ul>
+<h3 id="93-composition-and-restrictions">9.3 Composition and restrictions<a class="headerlink" href="#93-composition-and-restrictions" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>json</code> codec SHOULD be the only codec in the chain. <code>bytes→bytes</code>
+  codecs after it (compression) produce opaque chunks, defeating the
+  purpose; <code>array→array</code> codecs before it (e.g. <code>transpose</code>) are
+  <strong>implementation-defined</strong> and currently not interoperable.</li>
+<li>The codec does not support partial (sub-chunk) decoding; combining it
+  with sharding is legal per Zarr v3 but produces illegible shards and is
+  NOT RECOMMENDED.</li>
+<li>A <strong>rank-0</strong> chunk encodes as its element's scalar JSON form alone
+  (not nested). When that form is not an array or object (every family
+  except complex), §7.2 stores the chunk base64-encoded; a rank-0 complex
+  chunk's <code>[re, im]</code> form is itself an array and is inlined.</li>
+</ul>
+<h3 id="94-conformance-vectors">9.4 Conformance vectors<a class="headerlink" href="#94-conformance-vectors" title="Permanent link">&para;</a></h3>
+<p>These vectors summarize §§9.1–9.2. A conforming codec MUST pass them.
+“Values” are typed host-array values; “bytes” are the array→bytes codec
+output before §7.2 decides whether to inline it.</p>
+<table>
+<thead>
+<tr>
+<th>dtype</th>
+<th style="text-align: right;">chunk shape</th>
+<th>values</th>
+<th>encoded bytes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bool</code></td>
+<td style="text-align: right;"><code>[2]</code></td>
+<td><code>[true,false]</code></td>
+<td><code>[true,false]</code></td>
+</tr>
+<tr>
+<td><code>uint8</code></td>
+<td style="text-align: right;"><code>[2,2]</code></td>
+<td><code>[[0,1],[254,255]]</code></td>
+<td><code>[[0,1],[254,255]]</code></td>
+</tr>
+<tr>
+<td><code>int64</code></td>
+<td style="text-align: right;"><code>[2]</code></td>
+<td><code>[-9223372036854775808,9223372036854775807]</code></td>
+<td>same JSON text</td>
+</tr>
+<tr>
+<td><code>float64</code></td>
+<td style="text-align: right;"><code>[4]</code></td>
+<td><code>[1.5, NaN, +Infinity, -Infinity]</code></td>
+<td><code>[1.5,"NaN","Infinity","-Infinity"]</code></td>
+</tr>
+<tr>
+<td><code>complex128</code></td>
+<td style="text-align: right;"><code>[1]</code></td>
+<td><code>[1+2i]</code></td>
+<td><code>[[1,2]]</code></td>
+</tr>
+<tr>
+<td>two-byte raw</td>
+<td style="text-align: right;"><code>[2]</code></td>
+<td><code>[0x6162,0x00ff]</code></td>
+<td><code>["YWI=","AP8="]</code></td>
+</tr>
+<tr>
+<td>UTF-8 string</td>
+<td style="text-align: right;"><code>[2]</code></td>
+<td><code>["é","x"]</code></td>
+<td><code>["é","x"]</code></td>
+</tr>
+<tr>
+<td><code>int32</code></td>
+<td style="text-align: right;"><code>[]</code></td>
+<td><code>7</code></td>
+<td><code>7</code></td>
+</tr>
+<tr>
+<td><code>complex128</code></td>
+<td style="text-align: right;"><code>[]</code></td>
+<td><code>1+2i</code></td>
+<td><code>[1,2]</code></td>
+</tr>
+</tbody>
+</table>
+<p>A decoder smoke suite SHOULD separately reject <code>[1.0]</code>, <code>[true]</code>, and
+<code>["1"]</code> for <code>int32</code>; <code>[1]</code> for <code>bool</code>; <code>["nan"]</code> for <code>float64</code>;
+<code>[1e39]</code> for <code>float32</code>; <code>[[1e39,0]]</code> for <code>complex64</code>; and any nesting or
+length that does not match the chunk shape. Encoding MUST perform the same
+dtype scalar conversion as Zarr v3 <code>fill_value</code> serialization; merely
+canonicalizing the host values without dtype-aware conversion is incorrect.</p>
+<h2 id="10-portability">10. Portability<a class="headerlink" href="#10-portability" title="Permanent link">&para;</a></h2>
+<p>A <em>portable</em> document additionally satisfies (violations are
+implementation-defined, not invalid):</p>
+<ul>
+<li>Nesting depth at most 100, counting one level per object or array
+  opened within a single member value (the top-level document object and
+  member names are not counted; the value of a key is depth ≥ 1).</li>
+<li>No lone surrogates in any string; no leading BOM.</li>
+<li>No hex-string float forms in chunk data (§9.1).</li>
+<li>Object member names anywhere in the document data model — within metadata
+  or within an inline byte-key array/object — SHOULD NOT be integer-like
+  strings (<code>"0"</code>, <code>"42"</code>): JavaScript's native object semantics reorder
+  such names, and an implementation built on them cannot preserve §5.2
+  member order for those values. §5's determinism guarantee holds for
+  portable documents.</li>
+</ul>
+<p>Numbers carry no portability constraints: integers of any size and the
+full float64 range round-trip exactly.</p>
+<p>Interchange notes: the RECOMMENDED file extension is <code>.zarr-inline.json</code>; where
+a media type is needed, <code>application/zarr-inline+json</code> is suggested. A
+document does not self-identify — there is no version or magic member;
+whether JSON text is a zarr-inline document is established by context.
+Filesystems that normalize Unicode filenames (e.g. APFS) can collide
+distinct keys if a document is ever exploded into files; keys are
+code-point-exact (§3.1).</p>
+<h2 id="11-security-considerations">11. Security considerations<a class="headerlink" href="#11-security-considerations" title="Permanent link">&para;</a></h2>
+<p>Documents may come from untrusted sources. Implementations SHOULD bound
+input size and parser recursion, and MUST NOT assume hierarchy coherence
+(orphan keys, dangling metadata, and mismatched chunk shapes are all
+representable). Decode and codec errors MUST surface as errors, never as
+silently corrupted data. A zarr-inline document contains no executable
+content.</p>
+<h2 id="12-conformance-non-normative">12. Conformance (non-normative)<a class="headerlink" href="#12-conformance-non-normative" title="Permanent link">&para;</a></h2>
+<p>Three reference implementations (Python/zarr-python,
+TypeScript/zarrita — requires Node ≥ 21 for §6's integer preservation —
+and Rust/zarrs) live in this repository, with shared fixtures in
+<code>examples/</code> (verdicts in <code>MANIFEST.json</code>), a conformance-harness
+protocol, a property-based cross-implementation test, an array-level
+crosscheck matrix, and JSON operation traces that create arrays and write or
+read regions across chunk boundaries. The array and trace matrices cover
+unsharded arrays, one-level sharding, and nested <code>sharding_indexed</code> codecs; see
+<a href="../how-it-works/#6-testing-and-conformance">testing and conformance</a>.</p>
+<h2 id="13-references">13. References<a class="headerlink" href="#13-references" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Zarr v3 core specification (stores, keys, metadata, codecs, fill_value).</li>
+<li>RFC 8259 (JSON), RFC 4648 §§3.5, 4 (base64), RFC 8785 §3.2.2.3 (float64
+  serialization), RFC 2119 (key words).</li>
+<li>ECMA-262, <code>Number::toString</code>.</li>
+<li>OME-NGFF 0.5 (the example in <code>examples/valid/ome_zarr_0.5_image.json</code>).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.sections", "navigation.top"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
