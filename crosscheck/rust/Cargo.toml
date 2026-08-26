@@ -1,0 +1,19 @@
+[package]
+name = "zarr-inline-crosscheck"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Cross-implementation conformance harness for zarr-inline (not published)"
+
+[[bin]]
+name = "zarr-inline-crosscheck"
+path = "src/main.rs"
+
+[dependencies]
+zarr-inline = { path = "../../rust", features = ["zarrs"] }
+serde_json = { version = "1", features = [
+    "preserve_order",
+    "float_roundtrip",
+    "arbitrary_precision",
+] }
+zarrs = { version = "0.23", default-features = false, features = ["crc32c", "sharding"] }

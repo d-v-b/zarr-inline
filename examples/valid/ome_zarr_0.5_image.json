@@ -1,0 +1,248 @@
+{
+  "zarr.json": {
+    "attributes": {
+      "ome": {
+        "version": "0.5",
+        "multiscales": [
+          {
+            "name": "example",
+            "axes": [
+              {
+                "name": "y",
+                "type": "space",
+                "unit": "micrometer"
+              },
+              {
+                "name": "x",
+                "type": "space",
+                "unit": "micrometer"
+              }
+            ],
+            "datasets": [
+              {
+                "path": "0",
+                "coordinateTransformations": [
+                  {
+                    "type": "scale",
+                    "scale": [
+                      1.0,
+                      1.0
+                    ]
+                  }
+                ]
+              },
+              {
+                "path": "1",
+                "coordinateTransformations": [
+                  {
+                    "type": "scale",
+                    "scale": [
+                      2.0,
+                      2.0
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "zarr_format": 3,
+    "node_type": "group"
+  },
+  "0/zarr.json": {
+    "shape": [
+      8,
+      8
+    ],
+    "data_type": "uint8",
+    "chunk_grid": {
+      "name": "regular",
+      "configuration": {
+        "chunk_shape": [
+          4,
+          4
+        ]
+      }
+    },
+    "chunk_key_encoding": {
+      "name": "default",
+      "configuration": {
+        "separator": "/"
+      }
+    },
+    "fill_value": 0,
+    "codecs": [
+      {
+        "name": "json"
+      }
+    ],
+    "attributes": {},
+    "zarr_format": 3,
+    "node_type": "array",
+    "storage_transformers": []
+  },
+  "0/c/0/0": [
+    [
+      0,
+      1,
+      2,
+      3
+    ],
+    [
+      8,
+      9,
+      10,
+      11
+    ],
+    [
+      16,
+      17,
+      18,
+      19
+    ],
+    [
+      24,
+      25,
+      26,
+      27
+    ]
+  ],
+  "0/c/0/1": [
+    [
+      4,
+      5,
+      6,
+      7
+    ],
+    [
+      12,
+      13,
+      14,
+      15
+    ],
+    [
+      20,
+      21,
+      22,
+      23
+    ],
+    [
+      28,
+      29,
+      30,
+      31
+    ]
+  ],
+  "0/c/1/0": [
+    [
+      32,
+      33,
+      34,
+      35
+    ],
+    [
+      40,
+      41,
+      42,
+      43
+    ],
+    [
+      48,
+      49,
+      50,
+      51
+    ],
+    [
+      56,
+      57,
+      58,
+      59
+    ]
+  ],
+  "0/c/1/1": [
+    [
+      36,
+      37,
+      38,
+      39
+    ],
+    [
+      44,
+      45,
+      46,
+      47
+    ],
+    [
+      52,
+      53,
+      54,
+      55
+    ],
+    [
+      60,
+      61,
+      62,
+      63
+    ]
+  ],
+  "1/zarr.json": {
+    "shape": [
+      4,
+      4
+    ],
+    "data_type": "uint8",
+    "chunk_grid": {
+      "name": "regular",
+      "configuration": {
+        "chunk_shape": [
+          4,
+          4
+        ]
+      }
+    },
+    "chunk_key_encoding": {
+      "name": "default",
+      "configuration": {
+        "separator": "/"
+      }
+    },
+    "fill_value": 0,
+    "codecs": [
+      {
+        "name": "json"
+      }
+    ],
+    "attributes": {},
+    "zarr_format": 3,
+    "node_type": "array",
+    "storage_transformers": []
+  },
+  "1/c/0/0": [
+    [
+      0,
+      2,
+      4,
+      6
+    ],
+    [
+      16,
+      18,
+      20,
+      22
+    ],
+    [
+      32,
+      34,
+      36,
+      38
+    ],
+    [
+      48,
+      50,
+      52,
+      54
+    ]
+  ]
+}

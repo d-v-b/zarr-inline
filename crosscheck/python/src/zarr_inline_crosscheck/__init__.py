@@ -1,0 +1,323 @@
+"""Cross-language array crosscheck harness (zarr-python side).
+
+See the `crosscheck protocol
+<https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#62-crosscheck-protocol>`_
+and `operation-trace protocol
+<https://github.com/d-v-b/zarr-inline/blob/main/docs/how-it-works.md#63-operation-trace-protocol>`_.
+All conversions
+between payload JSON and native arrays go through the json codec itself
+(serializer.encode_chunk / decode_chunk), so what this harness accepts is
+definitionally what the codec accepts: strict scalar sorts, finite ranges,
+exact nesting. Harness-level rules (in-bounds regions, valid initial
+documents, group-only parents, explicit zero fill) follow the trace input
+contract documented by the operation-trace protocol.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from collections.abc import Callable
+from typing import cast
+
+import zarr
+from zarr.abc.codec import ArrayBytesCodec
+from zarr.codecs import ShardingCodec
+from zarr.core.dtype import ZDType
+from zarr_metadata import (
+    SHARDING_INDEXED_CODEC_NAME,
+    ZARR_V3_ARRAY_METADATA_STORE_KEY,
+    RegularChunkGridMetadata,
+    ShardingIndexedCodecMetadata,
+    ZarrV3ArrayMetadataJSON,
+)
+
+from zarr_inline.backing import Document, MemoryBacking
+from zarr_inline.document import is_metadata_key, strict_loads
+from zarr_inline.serializer import JsonSerializer, decode_chunk, encode_chunk
+from zarr_inline.store import ZarrInlineStore
+from zarr_inline.validator import Strictness
+
+PORTABLE_DTYPES = frozenset(
+    {"bool", "uint8", "int32", "int64", "float32", "float64"}
+)
+MAX_SAFE_DIMENSION = 2**53 - 1
+
+
+def _path(value: object, what: str) -> str:
+    """Return a portable relative Zarr node path shared by all harnesses."""
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{what} must be a non-empty string")
+    segments = value.split("/")
+    if any(
+        not segment or segment.startswith("__") or set(segment) == {"."}
+        for segment in segments
+    ):
+        raise ValueError(
+            f"{what} must be a portable relative Zarr node path "
+            "(no empty, reserved '__', or all-period segments)"
+        )
+    return value
+
+
+def _dtype(value: object, what: str) -> str:
+    if not isinstance(value, str) or value not in PORTABLE_DTYPES:
+        allowed = ", ".join(sorted(PORTABLE_DTYPES))
+        raise ValueError(f"{what} must be one of: {allowed}")
+    return value
+
+
+def _to_native(
+    data: object, shape: tuple[int, ...], zdtype: ZDType[object, object]
+) -> object:
+    """Payload JSON -> native array, via the codec's decoder.
+
+    The payload is re-serialized SORT-PRESERVING (json.dumps keeps 1.0 as a
+    float token), not canonically: canonicalization would turn the float
+    token 1.0 into the integer token 1 and launder a value the codec must
+    reject for integer dtypes (SPEC 9.2).
+    """
+    text = json.dumps(data, ensure_ascii=False, allow_nan=False)
+    return decode_chunk(text.encode("utf-8"), shape, zdtype)
+
+
+def _to_json(nd: object, zdtype: ZDType[object, object]) -> object:
+    """Native array -> payload JSON, via the codec's encoder."""
+    return strict_loads(encode_chunk(nd, zdtype))
+
+
+def _dtype_name(arr: zarr.Array) -> str:
+    meta = arr.metadata.data_type.to_json(zarr_format=3)
+    return meta["name"] if isinstance(meta, dict) else meta
+
+
+def _create_array(
+    store: ZarrInlineStore,
+    path: str,
+    dtype: str,
+    shape: tuple[int, ...],
+    chunks: tuple[int, ...],
+    shards: tuple[tuple[int, ...], ...] = (),
+) -> zarr.Array:
+    root = zarr.open_group(store=store, mode="a")
+    # zarr-python refuses to create a node under an array and to overwrite an
+    # existing node; explicit zero fill for every dtype.
+    codec: ArrayBytesCodec = JsonSerializer()
+    storage_chunks = chunks
+    for shard in shards:
+        codec = ShardingCodec(chunk_shape=storage_chunks, codecs=[codec])
+        storage_chunks = shard
+    return root.create_array(
+        path,
+        shape=shape,
+        chunks=storage_chunks,
+        dtype=dtype,
+        serializer=codec,
+        compressors=None,
+    )
+
+
+def _shards(
+    value: object, chunks: tuple[int, ...], what: str
+) -> tuple[tuple[int, ...], ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{what} must be a list of shard shapes")
+    result: list[tuple[int, ...]] = []
+    inner = chunks
+    for level, item in enumerate(value):
+        shard = _int_list(item, f"{what}[{level}]", min_value=1)
+        if len(shard) != len(inner) or any(s % c for s, c in zip(shard, inner)):
+            raise ValueError(
+                f"{what}[{level}] must match the rank of and be evenly divisible by "
+                "the preceding chunk shape"
+            )
+        result.append(shard)
+        inner = shard
+    return tuple(result)
+
+
+def _layout(metadata: ZarrV3ArrayMetadataJSON) -> tuple[list[int], list[list[int]]]:
+    """Return leaf chunks and inner-to-outer shard shapes from v3 metadata."""
+    grid = cast(RegularChunkGridMetadata, metadata["chunk_grid"])
+    current = list(grid["configuration"]["chunk_shape"])
+    outer_to_inner: list[list[int]] = []
+    codecs = metadata["codecs"]
+    while len(codecs) == 1 and codecs[0].get("name") == SHARDING_INDEXED_CODEC_NAME:
+        outer_to_inner.append(current)
+        sharding = cast(ShardingIndexedCodecMetadata, codecs[0])
+        configuration = sharding["configuration"]
+        current = list(configuration["chunk_shape"])
+        codecs = configuration["codecs"]
+    return current, list(reversed(outer_to_inner))
+
+
+def write(payload: dict[str, object]) -> Document:
+    backing = MemoryBacking({})
+    store = ZarrInlineStore(backing)
+    arrays = payload.get("arrays")
+    if not isinstance(arrays, list):
+        raise ValueError("write payload needs an arrays list")
+    for raw_spec in arrays:
+        if not isinstance(raw_spec, dict):
+            raise ValueError("each array specification must be an object")
+        spec = cast(dict[str, object], raw_spec)
+        path = _path(spec.get("path"), "array path")
+        dtype = _dtype(spec.get("dtype"), f"array {path}: dtype")
+        shape = _int_list(spec.get("shape"), f"array {path}: shape", min_value=0)
+        chunks = _int_list(spec.get("chunks"), f"array {path}: chunks", min_value=1)
+        shards = _shards(spec.get("shards", []), chunks, f"array {path}: shards")
+        arr = _create_array(store, path, dtype, shape, chunks, shards)
+        arr[...] = _to_native(spec["data"], shape, arr.metadata.data_type)
+    return backing.load()
+
+
+def read(document: Document) -> dict[str, object]:
+    store = ZarrInlineStore(MemoryBacking(document), read_only=True)
+    paths = sorted(
+        key.removesuffix("/" + ZARR_V3_ARRAY_METADATA_STORE_KEY)
+        for key, value in document.items()
+        if key != ZARR_V3_ARRAY_METADATA_STORE_KEY
+        and is_metadata_key(key)
+        and isinstance(value, dict)
+        and value.get("node_type") == "array"
+    )
+    arrays = []
+    for path in paths:
+        arr = zarr.open_array(store=store, path=path, mode="r")
+        metadata = cast(
+            ZarrV3ArrayMetadataJSON,
+            document[f"{path}/{ZARR_V3_ARRAY_METADATA_STORE_KEY}"],
+        )
+        chunks, shards = _layout(metadata)
+        entry = {
+            "path": path,
+            "dtype": _dtype_name(arr),
+            "shape": list(arr.shape),
+            "chunks": chunks,
+            "data": _to_json(arr[...], arr.metadata.data_type),
+        }
+        if shards:
+            entry["shards"] = shards
+        arrays.append(entry)
+    return {"arrays": arrays}
+
+
+def _int_list(value: object, what: str, *, min_value: int) -> tuple[int, ...]:
+    if not isinstance(value, list) or not all(
+        isinstance(v, int)
+        and not isinstance(v, bool)
+        and min_value <= v <= MAX_SAFE_DIMENSION
+        for v in value
+    ):
+        raise ValueError(
+            f"{what} must be a list of integer tokens in "
+            f"[{min_value}, {MAX_SAFE_DIMENSION}]"
+        )
+    return tuple(value)
+
+
+def _region(
+    operation: dict[str, object], arr: zarr.Array, index: int
+) -> tuple[tuple[int, ...], object]:
+    """Validate a region against the array protocol: same rank, every
+    extent >= 1, and origin + shape within the array shape."""
+    origin = _int_list(operation.get("origin"), f"operation {index}: origin", min_value=0)
+    shape = _int_list(operation.get("shape"), f"operation {index}: shape", min_value=1)
+    if len(origin) != len(arr.shape) or len(shape) != len(arr.shape):
+        raise ValueError(f"operation {index}: region dimensionality mismatch")
+    for axis, (start, size, extent) in enumerate(zip(origin, shape, arr.shape)):
+        if start + size > extent:
+            raise ValueError(
+                f"operation {index}: region [{start}, {start + size}) exceeds "
+                f"array extent {extent} on axis {axis}"
+            )
+    if not shape:
+        return shape, (...)
+    return shape, tuple(slice(start, start + size) for start, size in zip(origin, shape))
+
+
+def trace(payload: dict[str, object]) -> dict[str, object]:
+    """Execute portable create/write/read operations and return the store.
+
+    The optional initial ``document`` (which MUST be a valid zarr-inline
+    document) permits a document emitted by any implementation to be used
+    as the starting store for another.
+    """
+    initial = payload.get("document", {})
+    if not isinstance(initial, dict):
+        raise ValueError("trace document must be an object")
+    operations = payload.get("operations")
+    if not isinstance(operations, list):
+        raise ValueError("trace payload needs an operations array")
+    backing = MemoryBacking(cast(Document, initial))
+    try:
+        store = ZarrInlineStore(backing, strictness=Strictness.STRICT)
+    except Exception as exc:  # noqa: BLE001 - harness boundary
+        raise ValueError(f"invalid initial document: {exc}") from exc
+    reads: list[dict[str, object]] = []
+
+    for index, raw_operation in enumerate(operations):
+        if not isinstance(raw_operation, dict):
+            raise ValueError(f"operation {index} must be an object")
+        operation = cast(dict[str, object], raw_operation)
+        op = operation.get("op")
+        path = _path(operation.get("path"), f"operation {index}: path")
+        if op == "create_array":
+            dtype = _dtype(operation.get("dtype"), f"operation {index}: dtype")
+            shape = _int_list(operation.get("shape"), f"operation {index}: shape", min_value=0)
+            chunks = _int_list(
+                operation.get("chunks"), f"operation {index}: chunks", min_value=1
+            )
+            shards = _shards(
+                operation.get("shards", []), chunks, f"operation {index}: shards"
+            )
+            _create_array(store, path, dtype, shape, chunks, shards)
+        elif op in ("write_region", "read_region"):
+            arr = zarr.open_array(
+                store=store, path=path, mode="r+" if op == "write_region" else "r"
+            )
+            region_shape, selection = _region(operation, arr, index)
+            if op == "write_region":
+                if "data" not in operation:
+                    raise ValueError(f"operation {index}: write_region needs data")
+                arr[selection] = _to_native(
+                    operation["data"], region_shape, arr.metadata.data_type
+                )
+            else:
+                reads.append(
+                    {
+                        "operation": index,
+                        "data": _to_json(arr[selection], arr.metadata.data_type),
+                    }
+                )
+        else:
+            raise ValueError(f"operation {index}: unknown op {op!r}")
+
+    return {"document": backing.load(), "reads": reads}
+
+
+MODES: dict[str, Callable[[dict[str, object]], object]] = {
+    "write": write,
+    "read": cast(Callable[[dict[str, object]], object], read),
+    "trace": trace,
+}
+
+
+def main() -> int:
+    if len(sys.argv) != 2 or sys.argv[1] not in MODES:
+        print(f"usage: python -m zarr_inline_crosscheck {'|'.join(MODES)}", file=sys.stderr)
+        return 1
+    try:
+        payload = strict_loads(sys.stdin.buffer.read())
+        if not isinstance(payload, dict):
+            raise ValueError("crosscheck payload must be an object")
+        result = MODES[sys.argv[1]](cast(dict[str, object], payload))
+    except Exception as exc:  # noqa: BLE001 - harness boundary
+        print(f"crosscheck {sys.argv[1]} failed: {exc}", file=sys.stderr)
+        return 1
+    json.dump(result, sys.stdout, ensure_ascii=False)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

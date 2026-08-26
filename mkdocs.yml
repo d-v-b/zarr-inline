@@ -1,0 +1,29 @@
+site_name: zarr-inline
+site_description: Store a Zarr v3 hierarchy as a single JSON object
+site_url: https://d-v-b.github.io/zarr-inline/
+repo_url: https://github.com/d-v-b/zarr-inline
+repo_name: d-v-b/zarr-inline
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Specification: specification.md
+  - How it works: how-it-works.md

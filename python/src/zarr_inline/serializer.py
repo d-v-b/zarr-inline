@@ -1,0 +1,224 @@
+"""The ``json`` array->bytes codec: chunks as canonical JSON arrays.
+
+Encoding is the Zarr v3 fill_value scalar serialization, applied elementwise
+and nested by shape in C order. Every Zarr v3 data type must define a JSON
+scalar serialization to be representable in the ``fill_value`` metadata
+field, so this codec covers every dtype (including extension dtypes) by
+construction: NaN/Infinity become the strings "NaN"/"Infinity", complex
+values become [re, im] pairs, fixed-length bytes become base64 strings, and
+so on. zarr-python exposes the serialization as ZDType.to_json_scalar /
+from_json_scalar. (Covered in principle is not usable in practice for every
+dtype: zarr-python pins variable-length strings to VLenUTF8Codec, so this
+codec cannot be installed on such arrays — creation fails with a
+ValueError rather than mis-encoding.)
+
+Output is canonical JSON (see document.canonical_dumps), which is what lets
+ZarrInlineStore inline these chunks as real JSON arrays in the document.
+
+A rank-0 chunk serializes to a bare JSON scalar; the store only inlines
+arrays, so rank-0 chunks are stored base64-encoded.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Self
+
+import numpy as np
+from zarr.abc.codec import ArrayBytesCodec
+from zarr.core.common import JSON
+from zarr.core.dtype import ZDType
+from zarr.registry import register_codec
+from zarr_metadata import JSONValue
+
+from zarr_inline.document import canonical_dumps, strict_loads
+
+if TYPE_CHECKING:
+    from zarr.core.array_spec import ArraySpec
+    from zarr.core.buffer import Buffer, NDBuffer
+
+
+def _nest(flat: list[JSONValue], shape: tuple[int, ...]) -> JSONValue:
+    if len(shape) == 0:
+        return flat[0]
+    if len(shape) == 1:
+        return flat
+    step = len(flat) // shape[0]
+    return [_nest(flat[i * step : (i + 1) * step], shape[1:]) for i in range(shape[0])]
+
+
+def _flatten(nested: object, shape: tuple[int, ...]) -> list[object]:
+    # Shape-driven: a scalar's JSON form may itself be a list (complex ->
+    # [re, im]), so recursion must stop at the last dimension, not at
+    # non-list values.
+    if len(shape) == 0:
+        return [nested]
+    if not isinstance(nested, list) or len(nested) != shape[0]:
+        raise ValueError(f"json codec: chunk JSON does not match chunk shape {shape}")
+    if len(shape) == 1:
+        return list(nested)
+    out: list[object] = []
+    for sub in nested:
+        out.extend(_flatten(sub, shape[1:]))
+    return out
+
+
+_NON_FINITE = ("NaN", "Infinity", "-Infinity")
+
+
+def _is_float_sort(v: object) -> bool:
+    return (isinstance(v, (int, float)) and not isinstance(v, bool)) or v in _NON_FINITE
+
+
+_INTEGER_DATA_TYPES = frozenset(
+    {
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    }
+)
+_FLOAT_DATA_TYPES = frozenset({"float16", "float32", "float64", "bfloat16"})
+_COMPLEX_DATA_TYPES = frozenset({"complex64", "complex128"})
+
+
+def _data_type_name(zdtype: ZDType[object, object]) -> str | None:
+    """Return a v3 data-type name, including names in extension objects."""
+    metadata = zdtype.to_json(zarr_format=3)
+    if isinstance(metadata, str):
+        return metadata
+    if isinstance(metadata, dict) and isinstance(metadata.get("name"), str):
+        return metadata["name"]
+    return None
+
+
+def _check_scalar_sort(value: object, zdtype: ZDType[object, object]) -> None:
+    """Enforce SPEC 9.2 element sorts before delegating to zarr-python's
+    lenient from_json_scalar (which accepts 1.0, true, and "1" for int32,
+    and 1 for bool). Integer dtypes take integer tokens only; bool takes
+    booleans only; floats take integers, floats, or the non-finite strings;
+    complex takes a [re, im] pair of float-sort values.
+    """
+    data_type = _data_type_name(zdtype)
+    ok = True
+    if data_type in _INTEGER_DATA_TYPES:
+        ok = isinstance(value, int) and not isinstance(value, bool)
+    elif data_type == "bool":
+        ok = isinstance(value, bool)
+    elif data_type in _FLOAT_DATA_TYPES:
+        ok = _is_float_sort(value)
+    elif data_type in _COMPLEX_DATA_TYPES:
+        ok = (
+            isinstance(value, (list, tuple))
+            and len(value) == 2
+            and all(_is_float_sort(part) for part in value)
+        )
+    if not ok:
+        raise ValueError(
+            f"json codec: invalid {data_type} scalar {value!r}: wrong JSON number sort"
+        )
+
+
+def _check_finite(
+    value: object, scalar: object, zdtype: ZDType[object, object]
+) -> None:
+    """SPEC 9.2: a finite JSON number that overflows the target float type's
+    finite range is out of range (a codec error), never Infinity; non-finite
+    values are representable only through the explicit strings.
+    """
+    data_type = _data_type_name(zdtype)
+    if data_type not in _FLOAT_DATA_TYPES | _COMPLEX_DATA_TYPES:
+        return
+    numeric = (
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        if data_type in _FLOAT_DATA_TYPES
+        else all(isinstance(p, (int, float)) and not isinstance(p, bool) for p in value)
+    )
+    if numeric and not np.isfinite(scalar):
+        raise ValueError(
+            f"json codec: {data_type} value {value!r} is out of range (not finite after "
+            'conversion); use "NaN"/"Infinity"/"-Infinity" for non-finite values'
+        )
+
+
+def encode_chunk(nd: object, zdtype: ZDType[object, object]) -> bytes:
+    """Encode a native array as canonical JSON chunk bytes (SPEC 9.1).
+
+    The synchronous core of the codec; also used by the crosscheck harness so
+    that harness conversions are definitionally the codec's conversions.
+    """
+    nd = np.asarray(nd)
+    flat = [zdtype.to_json_scalar(v, zarr_format=3) for v in nd.ravel()]
+    return canonical_dumps(_nest(flat, tuple(nd.shape))).encode("utf-8")
+
+
+def decode_chunk(
+    data: bytes, shape: tuple[int, ...], zdtype: ZDType[object, object]
+) -> object:
+    """Decode canonical JSON chunk bytes into a native array (SPEC 9.2):
+    strict parse, shape-driven nesting, strict scalar sorts, finite range.
+    """
+    # SPEC 9.2: chunk bytes are strict-parsed (no NaN/Infinity tokens, no
+    # float64 overflow literals).
+    nested = strict_loads(data)
+    flat = _flatten(nested, tuple(shape))
+    native = zdtype.to_native_dtype()
+    for v in flat:
+        _check_scalar_sort(v, zdtype)
+    scalars = []
+    for v in flat:
+        try:
+            scalar = zdtype.from_json_scalar(v, zarr_format=3)
+        except OverflowError as exc:  # e.g. a 400-digit integer token -> float
+            raise ValueError(
+                f"json codec: {native} value {v!r} is out of range: {exc}"
+            ) from exc
+        _check_finite(v, scalar, zdtype)
+        scalars.append(scalar)
+    return np.asarray(scalars, dtype=native).reshape(tuple(shape))
+
+
+@dataclass(frozen=True)
+class JsonSerializer(ArrayBytesCodec):
+    """Array->bytes codec encoding chunks as canonical UTF-8 JSON arrays."""
+
+    is_fixed_size = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, JSON]) -> Self:
+        if data.get("name") != "json":
+            raise ValueError(f"expected codec name 'json', got {data.get('name')!r}")
+        if data.get("configuration") not in (None, {}):
+            raise ValueError(
+                "json codec takes no configuration; got "
+                f"{data.get('configuration')!r}"
+            )
+        return cls()
+
+    def to_dict(self) -> dict[str, JSON]:
+        return {"name": "json"}
+
+    async def _encode_single(
+        self, chunk_array: NDBuffer, chunk_spec: ArraySpec
+    ) -> Buffer:
+        data = encode_chunk(chunk_array.as_ndarray_like(), chunk_spec.dtype)
+        return chunk_spec.prototype.buffer.from_bytes(data)
+
+    async def _decode_single(
+        self, chunk_bytes: Buffer, chunk_spec: ArraySpec
+    ) -> NDBuffer:
+        arr = decode_chunk(
+            chunk_bytes.to_bytes(), tuple(chunk_spec.shape), chunk_spec.dtype
+        )
+        return chunk_spec.prototype.nd_buffer.from_ndarray_like(arr)
+
+    def compute_encoded_size(self, input_byte_length: int, chunk_spec: ArraySpec) -> int:
+        raise NotImplementedError("json codec output size is not fixed")
+
+
+register_codec("json", JsonSerializer)

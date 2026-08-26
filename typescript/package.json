@@ -1,0 +1,51 @@
+{
+  "name": "zarr-inline",
+  "version": "0.1.0",
+  "description": "Store a Zarr v3 hierarchy as a single JSON object (TypeScript reference implementation)",
+  "license": "MIT",
+  "author": "zarr-inline contributors",
+  "homepage": "https://github.com/d-v-b/zarr-inline#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/d-v-b/zarr-inline.git",
+    "directory": "typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/d-v-b/zarr-inline/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js"
+    }
+  },
+  "files": [
+    "dist/*.js",
+    "dist/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
+    "prepack": "npm run build",
+    "test": "npm run build && node --test \"dist/tests/*.test.js\""
+  },
+  "dependencies": {
+    "zarrita": "^0.7.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}

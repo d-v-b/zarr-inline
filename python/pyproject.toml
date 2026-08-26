@@ -1,17 +1,34 @@
 [project]
-name = "zarr-json"
+name = "zarr-inline"
 version = "0.1.0"
 description = "Store a Zarr v3 hierarchy as a single JSON object"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "zarr-inline contributors" }]
 requires-python = ">=3.12"
+classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
-    "zarr>=3.0.0",
+    "rfc8785>=0.1.4",
+    # 3.1 introduced zarr.core.dtype (ZDType), which the serializer imports.
+    "zarr>=3.1.0",
+    "zarr-metadata>=0.5.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/d-v-b/zarr-inline"
+Repository = "https://github.com/d-v-b/zarr-inline"
+Issues = "https://github.com/d-v-b/zarr-inline/issues"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "numpy>=2.0.0",
+    "hypothesis>=6.165.10",
+]
+docs = [
+    "mkdocs-material>=9.6.0",
 ]
 
 [build-system]
@@ -19,7 +36,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/zarr_json"]
+packages = ["src/zarr_inline"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -2,11 +2,15 @@ import json
 
 import pytest
 
-from zarr_json.validator import Strictness, ValidationError, validate
+from zarr_inline.validator import Strictness, ValidationError, validate
 
 
 def test_empty_document_is_valid():
     assert validate({}) == []
+
+
+def test_empty_root_key_is_valid():
+    assert validate({"": "AAEC"}) == []
 
 
 def test_valid_group_document_passes():
@@ -21,10 +25,8 @@ def test_metadata_key_with_non_object_value_reports_r2():
     assert errors[0].key == "zarr.json"
 
 
-def test_byte_key_with_non_string_value_reports_r2():
-    errors = validate({"a/c/0": {"not": "a string"}})
-    assert len(errors) == 1
-    assert errors[0].rule == "R2"
+def test_byte_key_with_inline_object_is_valid():
+    assert validate({"a/c/0": {"an": "inline object"}}) == []
 
 
 def test_leading_slash_key_reports_r1():
@@ -79,3 +81,13 @@ def test_multiple_bad_keys_accumulate_issues():
     errors = validate({"/leading": "x", "trailing/": "y"})
     assert len(errors) == 2
     assert all(e.rule == "R1" for e in errors)
+
+
+def test_byte_key_with_inline_json_array_is_valid():
+    assert validate({"a/c/0": [[0, 1], [2, 3]]}) == []
+
+
+def test_byte_key_with_number_value_reports_r2():
+    errors = validate({"a/c/0": 123})
+    assert len(errors) == 1
+    assert errors[0].rule == "R2"

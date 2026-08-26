@@ -1,0 +1,53 @@
+[package]
+name = "zarr-inline"
+version = "0.1.0"
+edition = "2021"
+description = "Store a Zarr v3 hierarchy as a single JSON object (Rust reference implementation)"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/d-v-b/zarr-inline"
+homepage = "https://github.com/d-v-b/zarr-inline"
+documentation = "https://docs.rs/zarr-inline"
+keywords = ["zarr", "json", "storage", "array"]
+categories = ["encoding", "filesystem", "science"]
+
+[lib]
+name = "zarr_inline"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zarr-inline-conformance"
+path = "src/bin/conformance.rs"
+
+
+[features]
+# The conformance harness (codec + validator + the `zarr-inline-conformance`
+# binary) has no
+# zarrs dependency; the store and the `json` serializer codec do. Keeping zarrs
+# behind an on-by-default feature means the harness can always be built with
+# `cargo build --no-default-features` even if zarrs breaks.
+default = ["zarrs"]
+zarrs = ["dep:zarrs", "dep:inventory"]
+
+[dependencies]
+# preserve_order is mandatory: canonical serialization must preserve object
+# member order for lossless metadata round-trips. float_roundtrip pins float
+# parsing to the correctly-rounded value so parse -> serialize round-trips
+# match the Python reference implementation.
+serde_json = { version = "1", features = [
+    "preserve_order",
+    "float_roundtrip",
+    # arbitrary_precision: numbers keep their raw token text, so integers
+    # of any size round-trip exactly (matching Python and TypeScript) and
+    # the canonical formatter re-formats floats from the raw text.
+    "arbitrary_precision",
+] }
+# serde: to drive serde_json's Serializer with the canonical Formatter.
+# ryu: shortest-round-trip float digits, re-formatted to ECMAScript
+# Number::toString per RFC 8785 (JCS). Both are already serde_json deps.
+serde = "1"
+ryu = "1"
+base64 = "0.22"
+zarrs = { version = "0.23", default-features = false, features = ["crc32c", "sharding"], optional = true }
+# For registering the `json` codec plugin with zarrs (compile-time registry).
+inventory = { version = "0.3", optional = true }

@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (zarr-python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      # Cross-implementation tests run in the `cross` job with all toolchains.
+      - run: just test-python
+      - run: just docs-check
+
+  typescript:
+    name: TypeScript (zarrita)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # Supported baseline for JSON.parse reviver source access (BigInt)
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      - run: just test-typescript
+
+  rust:
+    name: Rust (zarrs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      - run: just test-rust
+      - run: just lint-rust
+      # The conformance harness must stay buildable without the zarrs feature.
+      - run: just build-rust-conformance-minimal
+
+  cross:
+    name: Cross-implementation (documents + arrays + operation traces)
+    runs-on: ubuntu-latest
+    needs: [python, typescript, rust]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      - name: Cross-implementation conformance
+        run: just cross
+
+  release-artifacts:
+    name: Release artifacts (wheel + npm package + crate)
+    runs-on: ubuntu-latest
+    needs: [python, typescript, rust]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      - run: just check-release-artifacts

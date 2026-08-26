@@ -1,8 +1,0 @@
-{
-  "zarr.json": {
-    "zarr_format": 3,
-    "node_type": "group",
-    "attributes": {}
-  },
-  "myarray/c/0": { "not": "a string" }
-}

@@ -1,6 +1,6 @@
 import json
 
-from zarr_json.backing import Backing, FileBacking, MemoryBacking, StringBacking
+from zarr_inline.backing import Backing, FileBacking, MemoryBacking, StringBacking
 
 
 def test_memory_backing_load_returns_initial_object():
@@ -39,6 +39,13 @@ def test_file_backing_load_missing_file_returns_empty_document(tmp_path):
     assert backing.load() == {}
 
 
+def test_file_backing_requires_a_path():
+    import pytest
+
+    with pytest.raises(TypeError):
+        FileBacking(None)  # type: ignore[arg-type]
+
+
 def test_all_backings_satisfy_backing_protocol():
     assert isinstance(MemoryBacking({}), Backing)
     assert isinstance(StringBacking("{}"), Backing)
@@ -55,3 +62,25 @@ def test_file_backing_persist_creates_missing_parent_directories(tmp_path):
     backing = FileBacking(path)
     backing.persist({"a/c/0": "AAA="})
     assert json.loads(path.read_text()) == {"a/c/0": "AAA="}
+
+
+def test_string_backing_rejects_nan_token_document():
+    import pytest
+
+    from zarr_inline.backing import StringBacking
+
+    with pytest.raises(ValueError, match="not a JSON token"):
+        StringBacking('{"a/c/0": [NaN]}').load()
+
+
+def test_backings_reject_non_object_top_level_document():
+    import pytest
+
+    from zarr_inline.backing import MemoryBacking, StringBacking
+
+    with pytest.raises(ValueError, match="top-level value must be a JSON object"):
+        StringBacking('["AA=="]').load()
+    with pytest.raises(ValueError, match="top-level value must be a JSON object"):
+        StringBacking("42").load()
+    with pytest.raises(ValueError, match="top-level value must be a JSON object"):
+        MemoryBacking(["AA=="])  # type: ignore[arg-type]
