@@ -143,3 +143,44 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  docs-preview:
+    name: Docs preview (PR)
+    # Same-repo PRs only: preview deploys run with Pages write access.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: typescript/examples/browser/package-lock.json
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      - run: just docs-check
+      # The viewer is one self-contained file: downloadable preview that
+      # works even where Pages preview deployments are unavailable.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: viewer-single-file
+          path: typescript/examples/browser/dist/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          preview: true
