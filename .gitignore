@@ -7,3 +7,6 @@ __pycache__/
 # uv
 # (uv.lock is committed; the virtualenv is not)
 site/
+
+# Generated docs assets (built browser example)
+docs/viewer/

@@ -12,12 +12,19 @@ setup-python:
 setup-docs:
     cd python && uv sync --group docs
 
+# Build the browser example and stage it into the docs tree (docs/viewer).
+docs-assets:
+    cd typescript/examples/browser && npm ci && node build.mjs
+    mkdir -p docs/viewer
+    cp typescript/examples/browser/dist/index.html docs/viewer/index.html
+    cp typescript/examples/browser/src/demo-document.json.txt docs/viewer/demo-document.json
+
 # Build the project documentation with warnings treated as errors.
-docs-check: setup-docs
+docs-check: setup-docs docs-assets
     cd python && uv run --group docs mkdocs build --strict --clean --config-file ../mkdocs.yml
 
 # Serve the project documentation locally.
-docs-serve: setup-docs
+docs-serve: setup-docs docs-assets
     cd python && uv run --group docs mkdocs serve --config-file ../mkdocs.yml
 
 # Install the locked TypeScript environment.
@@ -31,6 +38,10 @@ test-python: setup-python
 # Run TypeScript's implementation-specific tests.
 test-typescript: setup-typescript
     cd typescript && npm test
+
+# Build and smoke-test the TypeScript browser example (single-file document browser).
+test-browser-example:
+    cd typescript/examples/browser && npm ci && npm run check
 
 # Run Rust's implementation-specific tests.
 test-rust:
@@ -79,4 +90,4 @@ check-release-artifacts: setup-python setup-typescript
     cd rust && crate_version="$(cargo metadata --no-deps --format-version=1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')" && cargo test --manifest-path "target/package/zarr-inline-$crate_version/Cargo.toml"
 
 # Run every local, cross-implementation, and release-artifact check.
-check: docs-check test-python test-typescript test-rust lint-rust build-rust-conformance-minimal cross check-release-artifacts
+check: docs-check test-python test-typescript test-browser-example test-rust lint-rust build-rust-conformance-minimal cross check-release-artifacts

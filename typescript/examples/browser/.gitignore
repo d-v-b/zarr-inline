@@ -1,0 +1,5 @@
+node_modules/
+dist/
+shots/
+smoke-entry.mts
+smoke-bundle.mjs

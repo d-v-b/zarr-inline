@@ -1,0 +1,20 @@
+{
+  "name": "zarr-inline-browser-example",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Single-file browser for zarr-inline documents: hierarchy DAG, editable JSON, multi-dimensional array viewer",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node build.mjs --serve",
+    "check": "node build.mjs && node smoke.mjs"
+  },
+  "dependencies": {
+    "zarrita": "^0.7.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}
