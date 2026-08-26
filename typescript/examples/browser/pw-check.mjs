@@ -38,24 +38,46 @@ const canvasStats = () =>
 		return { w: canvas.width, h: canvas.height, opaque, total: data.length / 4 };
 	});
 
-// Click DAG nodes by their exact path (the <title> element).
-const clickNode = (path) =>
-	page.evaluate((p) => {
-		for (const node of document.querySelectorAll("#dag g.node")) {
-			const title = node.querySelector("title")?.textContent;
-			if (title === p || (p === "" && title === "/ (root)")) {
-				node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-				return true;
-			}
-		}
-		return false;
-	}, path);
+// Navigate the left pane's flat member list to a node path.
+const clickNode = async (path) => {
+	await page.locator('#tree-panel .breadcrumb [data-path=""]').first().click();
+	await page.waitForTimeout(150);
+	if (path === "") return;
+	let acc = "";
+	for (const segment of path.split("/")) {
+		acc = acc === "" ? segment : `${acc}/${segment}`;
+		const row = page.locator(`#tree-panel .list-row[data-path="${acc}"] .list-row-head`);
+		if ((await row.count()) > 0) await row.first().click();
+		await page.waitForTimeout(150);
+	}
+};
 
 // Select the volume array in the DAG.
 await clickNode("volume");
 await page.waitForTimeout(900);
 const volumeStats = await canvasStats();
 await page.screenshot({ path: join(shotDir, "2-volume.png") });
+
+// Flat key list: tags and prefix search (c/ filters to chunks).
+const metaTag = await page
+	.locator('#json-panel .list-row[data-path="volume/zarr.json"] .chip')
+	.textContent();
+const chunkTag = await page
+	.locator('#json-panel .list-row[data-path="volume/c/0/0/0/0"] .chip')
+	.textContent();
+await page.fill("#json-panel .list-search", "c/");
+await page.waitForTimeout(200);
+const filteredRows = await page.locator("#json-panel .list-row").count();
+await page.fill("#json-panel .list-search", "");
+await page.waitForTimeout(200);
+// Syntax highlighting in the expanded (zarr.json) editor.
+const highlightSpans = await page
+	.locator("#json-panel .json-editor-layer .j-key")
+	.count();
+// Left pane tags: members are Group / Array.
+const groupTag = await page
+	.locator('#tree-panel .list-row[data-path="tables"] .chip')
+	.textContent();
 
 // Move the t slider and confirm the image changes.
 const before = await page.evaluate(() =>
@@ -179,6 +201,11 @@ console.log(
 			editStatus,
 			editedAttrs,
 			tablesCards: cards,
+			metaTag,
+			chunkTag,
+			filteredRows,
+			highlightSpans,
+			groupTag,
 			countersStats,
 			bareStatus,
 			demoHash,

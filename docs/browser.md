@@ -11,10 +11,15 @@ zarr-inline documents, built on the TypeScript implementation and
   document; paste a document, open a local `.json` file, or fetch one
   from a URL.
 
-The left panel shows the hierarchy as a selectable DAG of groups and
-arrays. The middle panel exposes the selected node's `zarr.json` and chunk
-keys as editable JSON — edits are canonicalized through the format's
-decode/encode pair and re-validated live. The right panel displays the
+The left panel browses the hierarchy as a flat, searchable list of the
+current group's members, each tagged **Group** or **Array**, with a
+breadcrumb for moving up. The middle panel lists every document key owned
+by the selected node — its `zarr.json` and its chunks — as one flat,
+prefix-searchable collection (type `c/` to see only chunks), each key
+tagged with its encoding (**JSON Object**, **JSON Array**, or **base64**)
+and expandable into a syntax-highlighted JSON editor; edits are
+canonicalized through the format's decode/encode pair and re-validated
+live. The right panel displays the
 node: groups as attribute + children cards, arrays in a multi-dimensional
 slice viewer with X/Y dimension assignment, sliders for the remaining
 dimensions, lookup tables (including a `text` mode that prints each

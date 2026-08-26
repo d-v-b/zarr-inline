@@ -3,14 +3,16 @@
 A single-file web app for exploring and editing zarr-inline documents,
 built on the TypeScript implementation and [zarrita](https://zarrita.dev).
 
-- **Hierarchy DAG** (left): every group and array in the document as a
-  selectable node graph. Dashed outlines mark paths that exist only as
-  prefixes of other keys.
-- **JSON panel** (middle): the selected node's `zarr.json` metadata and its
-  chunk keys, each editable as JSON. Applying an edit round-trips the value
+- **Hierarchy pane** (left): the current group's members as a flat list
+  in a bounded container — each row tagged **Group** or **Array** — with
+  prefix search and a breadcrumb for moving up.
+- **JSON panel** (middle): every document key owned by the selected node
+  (`zarr.json` plus chunk/data keys) as one flat, prefix-searchable list
+  (`c/` filters to chunks), each key tagged with its encoding — **JSON
+  Object**, **JSON Array**, or **base64** — and expandable into a
+  syntax-highlighted editor. Applying an edit round-trips the value
   through the zarr-inline decode/encode pair, so whatever you type is
-  stored canonically — inline JSON when it is byte-stable, base64
-  otherwise — and the whole document is re-validated live.
+  stored canonically, and the whole document is re-validated live.
 - **Display panel** (right): groups show their attributes and children;
   arrays open in a multi-dimensional slice viewer — assign any two
   dimensions to X/Y, scrub the rest with sliders, pick a lookup table
