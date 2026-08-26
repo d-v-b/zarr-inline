@@ -9,8 +9,13 @@ A convention for storing Zarr v3 hierarchies in JSON documents. The goal is
 simple interchange of small Zarr hierarchies: one portable,
 human-inspectable, hand-editable file.
 
-Read the [project documentation](docs/index.md) or go directly to the
-[specification](docs/specification.md) and [design guide](docs/how-it-works.md).
+Read the [project documentation](https://d-v-b.github.io/zarr-inline/) or go
+directly to the [specification](https://d-v-b.github.io/zarr-inline/specification/)
+and [design guide](https://d-v-b.github.io/zarr-inline/how-it-works/). The docs
+also host an in-browser [document browser](https://d-v-b.github.io/zarr-inline/browser/)
+— [open the demo](https://d-v-b.github.io/zarr-inline/viewer/#url=demo-document.json)
+to explore and edit a zarr-inline document, with shareable URLs. (The same
+content lives in-repo under [docs/](docs/index.md).)
 
 The project is licensed under the [MIT License](LICENSE).
 
