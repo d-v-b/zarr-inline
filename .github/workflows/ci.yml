@@ -136,7 +136,9 @@ jobs:
       # Publish the site root on the gh-pages branch; previews/ survives.
       - env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/deploy-gh-pages.sh "$GITHUB_WORKSPACE/site" "" "docs: deploy ${GITHUB_SHA}"
+        run: >
+          bash .github/scripts/deploy-gh-pages.sh "$GITHUB_WORKSPACE/site" ""
+          "docs deploy ${GITHUB_SHA}"
 
   docs-preview:
     name: Docs preview (PR)
@@ -163,7 +165,10 @@ jobs:
       - run: just docs-check
       - env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/deploy-gh-pages.sh "$GITHUB_WORKSPACE/site" "previews/pr-${{ github.event.number }}" "docs: preview PR #${{ github.event.number }} @ ${GITHUB_SHA}"
+        run: >
+          bash .github/scripts/deploy-gh-pages.sh "$GITHUB_WORKSPACE/site"
+          "previews/pr-${{ github.event.number }}"
+          "docs preview PR ${{ github.event.number }} @ ${GITHUB_SHA}"
       - name: Sticky preview comment
         env:
           GH_TOKEN: ${{ github.token }}
