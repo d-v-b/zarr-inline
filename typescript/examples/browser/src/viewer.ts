@@ -16,10 +16,13 @@ export interface ViewerState {
 	xDim: number;
 	yDim: number; // -1 for 1-D arrays
 	index: number[];
+	/** A colormap name, or "text" to render each element as its value. */
 	cmap: string;
 	auto: boolean;
 	vmin: number;
 	vmax: number;
+	/** Draw chunk boundaries (when the chunk shape is known). */
+	showChunks: boolean;
 	zoom: number | null; // null = fit on next render
 	panX: number;
 	panY: number;
@@ -35,6 +38,7 @@ export function initialViewerState(shape: number[]): ViewerState {
 		auto: true,
 		vmin: 0,
 		vmax: 1,
+		showChunks: true,
 		zoom: null,
 		panX: 0,
 		panY: 0,
@@ -112,6 +116,7 @@ export function renderArrayViewer(
 	array: ArrayData,
 	dimNames: string[],
 	state: ViewerState,
+	chunkShape: number[] | null = null,
 ): void {
 	container.replaceChildren();
 	const { shape, stride } = array;
@@ -177,7 +182,7 @@ export function renderArrayViewer(
 				}
 			}
 			state.zoom = null;
-			renderArrayViewer(container, array, dimNames, state);
+			renderArrayViewer(container, array, dimNames, state, chunkShape);
 		});
 		row.append(label, role);
 		if (role.value === "slice" && shape[d] > 1) {
@@ -201,10 +206,10 @@ export function renderArrayViewer(
 	const optionsRow = document.createElement("div");
 	optionsRow.className = "dim-row";
 	const cmapSelect = document.createElement("select");
-	for (const name of Object.keys(COLORMAPS)) {
+	for (const name of [...Object.keys(COLORMAPS), "text"]) {
 		const o = document.createElement("option");
 		o.value = name;
-		o.textContent = name;
+		o.textContent = name === "text" ? "text (values)" : name;
 		cmapSelect.append(o);
 	}
 	cmapSelect.value = state.cmap;
@@ -239,13 +244,28 @@ export function renderArrayViewer(
 		redraw();
 	});
 	optionsRow.append(cmapSelect, autoLabel, vminInput, vmaxInput, fit);
+	if (chunkShape !== null) {
+		const chunkLabel = document.createElement("label");
+		const chunkBox = document.createElement("input");
+		chunkBox.type = "checkbox";
+		chunkBox.checked = state.showChunks;
+		chunkBox.className = "chunk-toggle";
+		chunkBox.addEventListener("change", () => {
+			state.showChunks = chunkBox.checked;
+			drawOverlay();
+		});
+		chunkLabel.append(chunkBox, document.createTextNode(" chunk grid"));
+		optionsRow.append(chunkLabel);
+	}
 	controls.append(optionsRow);
 
 	// --- canvas ---------------------------------------------------------
 	const viewport = document.createElement("div");
 	viewport.className = "viewer-viewport checker";
 	const canvas = document.createElement("canvas");
-	viewport.append(canvas);
+	const overlay = document.createElement("canvas");
+	overlay.className = "viewer-overlay";
+	viewport.append(canvas, overlay);
 	const readout = document.createElement("div");
 	readout.className = "viewer-readout";
 	readout.textContent = "—";
@@ -256,6 +276,7 @@ export function renderArrayViewer(
 	canvas.width = width;
 	canvas.height = height;
 	const context = canvas.getContext("2d")!;
+	const overlayContext = overlay.getContext("2d")!;
 
 	const offsetFor = (px: number, py: number): number => {
 		let offset = 0;
@@ -295,39 +316,211 @@ export function renderArrayViewer(
 			state.panY = (availH - height * state.zoom) / 2;
 		}
 		canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+		drawOverlay();
 	}
 
 	function drawImage(): void {
-		let [lo, hi] = [state.vmin, state.vmax];
-		if (state.auto) {
-			[lo, hi] = sliceRange();
-			state.vmin = lo;
-			state.vmax = hi;
-			vminInput.value = formatNumber(lo);
-			vmaxInput.value = formatNumber(hi);
-		}
-		const stops = COLORMAPS[state.cmap] ?? COLORMAPS.viridis;
-		const image = context.createImageData(width, height);
-		const pixels = image.data;
-		let cursor = 0;
-		for (let py = 0; py < height; py++) {
-			for (let px = 0; px < width; px++) {
-				const v = toNumber(accessor(offsetFor(px, py)));
-				if (Number.isFinite(v)) {
-					const [r, g, b] = colorAt(stops, (v - lo) / (hi - lo || 1));
-					pixels[cursor] = r;
-					pixels[cursor + 1] = g;
-					pixels[cursor + 2] = b;
-					pixels[cursor + 3] = 255;
-				} else {
-					pixels[cursor + 3] = 0; // NaN/±Inf: transparent over checkerboard
-				}
-				cursor += 4;
+		const textMode = state.cmap === "text";
+		canvas.style.display = textMode ? "none" : "";
+		if (!textMode) {
+			let [lo, hi] = [state.vmin, state.vmax];
+			if (state.auto) {
+				[lo, hi] = sliceRange();
+				state.vmin = lo;
+				state.vmax = hi;
+				vminInput.value = formatNumber(lo);
+				vmaxInput.value = formatNumber(hi);
 			}
+			const stops = COLORMAPS[state.cmap] ?? COLORMAPS.viridis;
+			const image = context.createImageData(width, height);
+			const pixels = image.data;
+			let cursor = 0;
+			for (let py = 0; py < height; py++) {
+				for (let px = 0; px < width; px++) {
+					const v = toNumber(accessor(offsetFor(px, py)));
+					if (Number.isFinite(v)) {
+						const [r, g, b] = colorAt(stops, (v - lo) / (hi - lo || 1));
+						pixels[cursor] = r;
+						pixels[cursor + 1] = g;
+						pixels[cursor + 2] = b;
+						pixels[cursor + 3] = 255;
+					} else {
+						pixels[cursor + 3] = 0; // NaN/±Inf: transparent over checkerboard
+					}
+					cursor += 4;
+				}
+			}
+			context.putImageData(image, 0, 0);
 		}
-		context.putImageData(image, 0, 0);
 		applyTransform();
 	}
+
+	// --- screen-space overlay: cell values, chunk grid, axes ------------
+
+	/** Smallest 1/2/5·10^k step whose screen spacing is at least minPx. */
+	function niceStep(zoom: number, minPx: number): number {
+		let step = 1;
+		while (step * zoom < minPx) {
+			const digits = Math.floor(Math.log10(step));
+			const lead = step / 10 ** digits;
+			step = (lead === 1 ? 2 : lead === 2 ? 5 : 10) * 10 ** digits;
+		}
+		return step;
+	}
+
+	function formatCell(value: unknown, zoom: number): string {
+		if (typeof value === "number") {
+			if (!Number.isFinite(value)) return String(value);
+			if (Number.isInteger(value)) return String(value);
+			const digits = zoom >= 64 ? 5 : zoom >= 40 ? 4 : 3;
+			return String(Number(value.toPrecision(digits)));
+		}
+		return String(value);
+	}
+
+	function drawOverlay(): void {
+		const zoom = state.zoom ?? 1;
+		const viewWidth = viewport.clientWidth || 400;
+		const viewHeight = viewport.clientHeight || 300;
+		const dpr = window.devicePixelRatio || 1;
+		if (overlay.width !== Math.round(viewWidth * dpr)) {
+			overlay.width = Math.round(viewWidth * dpr);
+		}
+		if (overlay.height !== Math.round(viewHeight * dpr)) {
+			overlay.height = Math.round(viewHeight * dpr);
+		}
+		const ctx = overlayContext;
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		ctx.clearRect(0, 0, viewWidth, viewHeight);
+		const toScreenX = (arrayX: number) => state.panX + arrayX * zoom;
+		const toScreenY = (arrayY: number) => state.panY + arrayY * zoom;
+		// Visible cell range (inclusive).
+		const x0 = Math.max(0, Math.floor(-state.panX / zoom));
+		const x1 = Math.min(width - 1, Math.ceil((viewWidth - state.panX) / zoom));
+		const y0 = Math.max(0, Math.floor(-state.panY / zoom));
+		const y1 = Math.min(height - 1, Math.ceil((viewHeight - state.panY) / zoom));
+
+		// Cell values (the "text" lookup table).
+		if (state.cmap === "text") {
+			if (zoom >= 14 && (x1 - x0 + 1) * (y1 - y0 + 1) <= 5000) {
+				ctx.strokeStyle = "rgba(215, 221, 229, 0.12)";
+				ctx.lineWidth = 1;
+				for (let px = x0; px <= x1 + 1; px++) {
+					ctx.beginPath();
+					ctx.moveTo(toScreenX(px), toScreenY(y0));
+					ctx.lineTo(toScreenX(px), toScreenY(y1 + 1));
+					ctx.stroke();
+				}
+				for (let py = y0; py <= y1 + 1; py++) {
+					ctx.beginPath();
+					ctx.moveTo(toScreenX(x0), toScreenY(py));
+					ctx.lineTo(toScreenX(x1 + 1), toScreenY(py));
+					ctx.stroke();
+				}
+				const fontSize = Math.min(13, Math.max(8, zoom * 0.3));
+				ctx.font = `${fontSize}px ui-monospace, Menlo, Consolas, monospace`;
+				ctx.textAlign = "center";
+				ctx.textBaseline = "middle";
+				for (let py = y0; py <= y1; py++) {
+					for (let px = x0; px <= x1; px++) {
+						const value = accessor(offsetFor(px, py));
+						const numeric = toNumber(value);
+						ctx.fillStyle = Number.isFinite(numeric)
+							? "#d7dde5"
+							: "rgba(255, 107, 107, 0.85)";
+						ctx.fillText(
+							formatCell(value, zoom),
+							toScreenX(px) + zoom / 2,
+							toScreenY(py) + zoom / 2,
+							zoom - 3, // squeeze rather than overflow the cell
+						);
+					}
+				}
+			} else {
+				ctx.font = "12px system-ui, sans-serif";
+				ctx.textAlign = "center";
+				ctx.fillStyle = "#8b96a5";
+				ctx.fillText("zoom in to read values", viewWidth / 2, 30);
+			}
+		}
+
+		// Chunk boundaries.
+		if (state.showChunks && chunkShape !== null) {
+			const chunkW = chunkShape[state.xDim];
+			const chunkH = state.yDim >= 0 ? chunkShape[state.yDim] : Number.NaN;
+			ctx.strokeStyle = "rgba(226, 163, 78, 0.9)";
+			ctx.lineWidth = 1.5;
+			ctx.setLineDash([6, 4]);
+			const clipTop = Math.max(toScreenY(0), 0);
+			const clipBottom = Math.min(toScreenY(height), viewHeight);
+			const clipLeft = Math.max(toScreenX(0), 0);
+			const clipRight = Math.min(toScreenX(width), viewWidth);
+			if (Number.isFinite(chunkW) && chunkW > 0) {
+				for (let cx = 0; cx <= width; cx += chunkW) {
+					const sx = toScreenX(cx);
+					if (sx < 0 || sx > viewWidth) continue;
+					ctx.beginPath();
+					ctx.moveTo(sx, clipTop);
+					ctx.lineTo(sx, clipBottom);
+					ctx.stroke();
+				}
+			}
+			if (Number.isFinite(chunkH) && chunkH > 0) {
+				for (let cy = 0; cy <= height; cy += chunkH) {
+					const sy = toScreenY(cy);
+					if (sy < 0 || sy > viewHeight) continue;
+					ctx.beginPath();
+					ctx.moveTo(clipLeft, sy);
+					ctx.lineTo(clipRight, sy);
+					ctx.stroke();
+				}
+			}
+			ctx.setLineDash([]);
+		}
+
+		// Axes: always-on x/y coordinate labels along the top and left edges.
+		const axisH = 16;
+		const axisW = 10 + 7 * String(Math.max(height - 1, 0)).length;
+		ctx.fillStyle = "rgba(16, 19, 24, 0.86)";
+		ctx.fillRect(0, 0, viewWidth, axisH);
+		ctx.fillRect(0, 0, axisW, viewHeight);
+		ctx.strokeStyle = "rgba(215, 221, 229, 0.25)";
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		ctx.moveTo(0, axisH + 0.5);
+		ctx.lineTo(viewWidth, axisH + 0.5);
+		ctx.moveTo(axisW + 0.5, 0);
+		ctx.lineTo(axisW + 0.5, viewHeight);
+		ctx.stroke();
+		ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+		const step = niceStep(zoom, 44);
+		ctx.fillStyle = "#aeb8c4";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "alphabetic";
+		for (let ax = Math.ceil(x0 / step) * step; ax <= x1 + 1; ax += step) {
+			const sx = toScreenX(ax) + (zoom >= 14 ? zoom / 2 : 0);
+			if (sx < axisW + 8 || sx > viewWidth - 4) continue;
+			ctx.fillText(String(ax), sx, 11);
+			ctx.fillRect(sx - 0.5, axisH - 3, 1, 3);
+		}
+		ctx.textAlign = "right";
+		for (let ay = Math.ceil(y0 / step) * step; ay <= y1 + 1; ay += step) {
+			const sy = toScreenY(ay) + (zoom >= 14 ? zoom / 2 : 0);
+			if (sy < axisH + 10 || sy > viewHeight - 4) continue;
+			ctx.fillText(String(ay), axisW - 4, sy + 3);
+			ctx.fillRect(axisW - 3, sy - 0.5, 3, 1);
+		}
+		// Dimension names in the corner.
+		ctx.fillStyle = "#4da3ff";
+		ctx.textAlign = "left";
+		const xName = dimNames[state.xDim] ?? `d${state.xDim}`;
+		const yName = state.yDim >= 0 ? (dimNames[state.yDim] ?? `d${state.yDim}`) : "";
+		ctx.fillText(`${xName} →`, axisW + 6, 11);
+		if (yName !== "") ctx.fillText(`${yName} ↓`, 3, axisH + 12);
+	}
+
+	const resizeObserver = new ResizeObserver(() => drawOverlay());
+	resizeObserver.observe(viewport);
 
 	// --- zoom / pan / hover --------------------------------------------
 	viewport.addEventListener("wheel", (event) => {

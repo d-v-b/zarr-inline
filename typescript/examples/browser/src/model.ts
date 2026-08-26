@@ -102,6 +102,17 @@ export function arrayDtype(node: NodeInfo): string | null {
 	return null;
 }
 
+export function chunkShape(node: NodeInfo): number[] | null {
+	const grid = node.meta?.["chunk_grid"];
+	if (grid === null || typeof grid !== "object") return null;
+	const config = (grid as Record<string, unknown>)["configuration"];
+	if (config === null || typeof config !== "object") return null;
+	const shape = (config as Record<string, unknown>)["chunk_shape"];
+	return Array.isArray(shape) && shape.every((n) => typeof n === "number")
+		? (shape as number[])
+		: null;
+}
+
 export function dimensionNames(node: NodeInfo): string[] | null {
 	const names = node.meta?.["dimension_names"];
 	return Array.isArray(names) ? names.map((n, i) => (typeof n === "string" ? n : `d${i}`)) : null;

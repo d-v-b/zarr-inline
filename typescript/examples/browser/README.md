@@ -13,10 +13,13 @@ built on the TypeScript implementation and [zarrita](https://zarrita.dev).
   otherwise — and the whole document is re-validated live.
 - **Display panel** (right): groups show their attributes and children;
   arrays open in a multi-dimensional slice viewer — assign any two
-  dimensions to X/Y, scrub the rest with sliders, pick a colormap, zoom
-  and pan (wheel/drag), and hover for exact values. NaN renders as
-  transparent checkerboard. Big int64 values stay exact end to end
-  (strict parsing preserves them as BigInt).
+  dimensions to X/Y, scrub the rest with sliders, pick a lookup table
+  (gray/viridis/magma/coolwarm, or **text**, which renders every element
+  as its numeric value), zoom and pan (wheel/drag), and hover for exact
+  values. X/Y axis coordinate labels are always shown, chunk boundaries
+  can be overlaid as dashed lines, and NaN renders as transparent
+  checkerboard. Big int64 values stay exact end to end (strict parsing
+  preserves them as BigInt).
 
 ## Build and run
 

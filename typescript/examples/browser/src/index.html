@@ -185,6 +185,13 @@
     transform-origin: 0 0;
     image-rendering: pixelated;
   }
+  .viewer-viewport canvas.viewer-overlay {
+    width: 100%;
+    height: 100%;
+    image-rendering: auto;
+    pointer-events: none;
+  }
+  .dim-row label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
   .viewer-readout {
     flex: none;
     margin-top: 6px;

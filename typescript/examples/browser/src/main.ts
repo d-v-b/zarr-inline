@@ -19,6 +19,7 @@ import { prettyJson, renderJsonPanel } from "./jsonpanel.js";
 import {
 	arrayShape,
 	buildHierarchy,
+	chunkShape,
 	dimensionNames,
 	nodeSubtitle,
 	type Hierarchy,
@@ -171,7 +172,7 @@ function renderDisplay(node: NodeInfo | null): void {
 			host.style.minHeight = "0";
 			el.display.append(host);
 			const names = dimensionNames(node) ?? shape.map((_, i) => `d${i}`);
-			renderArrayViewer(host, data, names, state);
+			renderArrayViewer(host, data, names, state, chunkShape(node));
 		},
 		(error) => {
 			if (epoch !== displayEpoch) return;
