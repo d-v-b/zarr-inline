@@ -2,6 +2,7 @@
 
 from zarr_inline.backing import Backing, FileBacking, MemoryBacking, StringBacking
 from zarr_inline.convert import (
+    DocumentMismatchError,
     from_zarr,
     open_document,
     to_zarr,
@@ -19,6 +20,7 @@ from zarr_inline.validator import (
 
 __all__ = [
     "Backing",
+    "DocumentMismatchError",
     "FileBacking",
     "from_zarr",
     "JsonSerializer",

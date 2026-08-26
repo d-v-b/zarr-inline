@@ -12,6 +12,7 @@ from zarr_inline import (
     from_zarr,
     to_zarr,
     validate,
+    verify_document,
     write_document,
 )
 
@@ -143,11 +144,53 @@ def test_open_document_reads_files_and_dicts(hierarchy, tmp_path):
 
 
 def test_verify_document_passes_and_names_the_mismatch(hierarchy):
-    from zarr_inline import verify_document
+    from zarr_inline import DocumentMismatchError, verify_document
 
     document = from_zarr(hierarchy)
     verify_document(document, hierarchy)
     broken = json.loads(json.dumps(document))
     broken["qc/flags/c/0"] = [9, 9, 9, 9]
-    with pytest.raises(AssertionError, match="qc/flags: values differ"):
+    # A real exception type (not AssertionError): it must survive python -O.
+    with pytest.raises(DocumentMismatchError, match="qc/flags: values differ"):
         verify_document(broken, hierarchy)
+
+
+def test_from_zarr_names_the_array_that_cannot_be_inlined(tmp_path):
+    import zarr as _zarr
+
+    path = tmp_path / "hostile.zarr"
+    root = _zarr.open_group(str(path), mode="w")
+    arr = root.create_array("names", shape=(2,), chunks=(2,), dtype=str)
+    arr[:] = ["a", "b"]
+    with pytest.raises(ValueError, match="'names'.*inline_data=False"):
+        from_zarr(path)
+    # The suggested fallbacks work.
+    assert validate(from_zarr(path, inline_data=False)) == []
+    assert validate(from_zarr(path, inline_data="auto")) == []
+
+
+def test_from_zarr_auto_inlines_supported_arrays_and_byte_copies_the_rest(tmp_path):
+    import zarr as _zarr
+
+    path = tmp_path / "mixed.zarr"
+    root = _zarr.open_group(str(path), mode="w")
+    plain = root.create_array("plain", shape=(4,), chunks=(4,), dtype="uint8")
+    plain[:] = [1, 2, 3, 4]
+    names = root.create_array("names", shape=(2,), chunks=(2,), dtype=str)
+    names[:] = ["a", "b"]
+
+    document = from_zarr(path, inline_data="auto")
+    assert validate(document) == []
+    # The supported array is legible; the vlen-string one stays base64.
+    assert isinstance(document["plain/c/0"], list)
+    assert isinstance(document["names/c/0"], str)
+    verify_document(document, path)
+
+
+def test_from_zarr_rejects_unknown_inline_data_value(tmp_path):
+    import zarr as _zarr
+
+    path = tmp_path / "h.zarr"
+    _zarr.open_group(str(path), mode="w")
+    with pytest.raises(ValueError, match="inline_data must be"):
+        from_zarr(path, inline_data="always")

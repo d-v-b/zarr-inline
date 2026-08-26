@@ -40,6 +40,9 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # The byte-faithful variant keeps the original codecs (chunks are
     # base64-encoded compressed bytes) — exact, but not human-readable.
+    # (inline_data="auto" splits the difference: arrays the json codec
+    # cannot serve, e.g. variable-length strings, stay byte-faithful while
+    # everything else is inlined.)
     faithful = from_zarr(source, inline_data=False)
     print("byte-faithful chunk:", faithful["temp/c/0/0"][:40], "...\n")
 

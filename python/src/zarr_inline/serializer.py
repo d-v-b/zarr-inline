@@ -7,7 +7,10 @@ field, so this codec covers every dtype (including extension dtypes) by
 construction: NaN/Infinity become the strings "NaN"/"Infinity", complex
 values become [re, im] pairs, fixed-length bytes become base64 strings, and
 so on. zarr-python exposes the serialization as ZDType.to_json_scalar /
-from_json_scalar.
+from_json_scalar. (Covered in principle is not usable in practice for every
+dtype: zarr-python pins variable-length strings to VLenUTF8Codec, so this
+codec cannot be installed on such arrays — creation fails with a
+ValueError rather than mis-encoding.)
 
 Output is canonical JSON (see document.canonical_dumps), which is what lets
 ZarrInlineStore inline these chunks as real JSON arrays in the document.

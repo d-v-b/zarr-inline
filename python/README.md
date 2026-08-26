@@ -50,9 +50,11 @@ metadata field (attributes, `fill_value`, `dimension_names`,
 ```python
 from zarr_inline import from_zarr, open_document, to_zarr, verify_document, write_document
 
-document = from_zarr("data.zarr")                    # chunks as JSON arrays
-document = from_zarr("data.zarr", inline_data=False) # byte-faithful: original
-                                                     # codecs kept, chunks base64
+document = from_zarr("data.zarr")                       # chunks as JSON arrays
+document = from_zarr("data.zarr", inline_data=False)    # byte-faithful: original
+                                                        # codecs kept, chunks base64
+document = from_zarr("data.zarr", inline_data="auto")   # inline what the codec
+                                                        # supports, base64 the rest
 document = write_document("data.zarr", "data.json")  # straight to a pretty
                                                      # file; returns the document
 root = open_document("data.json")                    # the document as a zarr Group
@@ -64,12 +66,20 @@ to_zarr(document, "restored.zarr")                   # back to a directory store
 codec — the legible form; the original codec chain (e.g. compression) is
 deliberately replaced. Every dtype with a Zarr v3 `fill_value` JSON form is
 supported — bool, all integer widths, floats (non-finite values as the
-strings `"NaN"` etc.), complex, fixed-length bytes, strings, datetimes; an
-unsupported dtype raises rather than silently falling back.
-`inline_data=False` copies every store key byte-for-byte instead.
+strings `"NaN"` etc.), complex, fixed-length bytes, datetimes; an
+unsupported dtype (e.g. variable-length strings) raises a `ValueError`
+naming the array rather than silently falling back. Sharded sources
+convert fine (the data is re-chunked plainly). Conversion reads each array
+fully into memory — like the format itself, it is intended for small
+hierarchies.
+`inline_data="auto"` inlines every array the codec supports and copies the
+rest byte-for-byte, so one stubborn dtype does not cost the whole document
+its legibility. `inline_data=False` copies every store key byte-for-byte
+instead.
 `verify_document` compares decoded *values* (attributes, dtypes, shapes,
 NaN-aware data), not bytes — the right notion for the legible form, whose
-encoding is deliberately different from the source's.
+encoding is deliberately different from the source's. On mismatch it
+raises `DocumentMismatchError` naming the first differing path.
 See `examples/convert_hierarchy.py` at the repository root.
 
 ## Legible chunks: the `json` codec
