@@ -1,0 +1,19 @@
+name: Preview cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Remove PR docs preview
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/deploy-gh-pages.sh - "previews/pr-${{ github.event.number }}" "docs: remove preview for closed PR #${{ github.event.number }}"

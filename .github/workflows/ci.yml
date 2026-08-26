@@ -117,12 +117,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -138,19 +133,19 @@ jobs:
         with:
           just-version: "1.55.1"
       - run: just docs-check
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      # Publish the site root on the gh-pages branch; previews/ survives.
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/deploy-gh-pages.sh "$GITHUB_WORKSPACE/site" "" "docs: deploy ${GITHUB_SHA}"
 
   docs-preview:
-    name: Viewer preview (PR)
-    # The github-pages environment only deploys from main, so PR previews
-    # are downloadable artifacts: the viewer is one self-contained HTML
-    # file, and the full docs site rides along.
-    if: github.event_name == 'pull_request'
+    name: Docs preview (PR)
+    # Same-repo PRs only: fork PRs get a read-only token anyway.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -166,18 +161,19 @@ jobs:
         with:
           just-version: "1.55.1"
       - run: just docs-check
-      - uses: actions/upload-artifact@v4
-        with:
-          name: viewer-single-file
-          path: typescript/examples/browser/dist/index.html
-      - uses: actions/upload-artifact@v4
-        with:
-          name: docs-site
-          path: site
-      - run: |
-          {
-            echo "## Preview this PR's build"
-            echo
-            echo "- **viewer-single-file** (Artifacts, above): download, unzip, open \`index.html\` — the whole app is one file, no server needed."
-            echo "- **docs-site**: the full documentation site; serve locally with \`python -m http.server\` from its root."
-          } >> "$GITHUB_STEP_SUMMARY"
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/deploy-gh-pages.sh "$GITHUB_WORKSPACE/site" "previews/pr-${{ github.event.number }}" "docs: preview PR #${{ github.event.number }} @ ${GITHUB_SHA}"
+      - name: Sticky preview comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+        run: |
+          BASE="https://d-v-b.github.io/zarr-inline/previews/pr-${PR}"
+          BODY="<!-- docs-preview -->📖 **Docs preview**: ${BASE}/ · **[viewer](${BASE}/viewer/)** · [demo](${BASE}/viewer/#url=demo-document.json) — rebuilt on every push to this PR. _(automated comment)_"
+          EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --jq '.[] | select(.body | startswith("<!-- docs-preview -->")) | .id' | head -1)
+          if [ -n "$EXISTING" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${EXISTING}" -f body="$BODY" > /dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$BODY" > /dev/null
+          fi
