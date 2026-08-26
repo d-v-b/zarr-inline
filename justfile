@@ -12,12 +12,19 @@ setup-python:
 setup-docs:
     cd python && uv sync --group docs
 
+# Build the browser example and stage it into the docs tree (docs/viewer).
+docs-assets:
+    cd typescript/examples/browser && npm ci && node build.mjs
+    mkdir -p docs/viewer
+    cp typescript/examples/browser/dist/index.html docs/viewer/index.html
+    cp typescript/examples/browser/src/demo-document.json.txt docs/viewer/demo-document.json
+
 # Build the project documentation with warnings treated as errors.
-docs-check: setup-docs
+docs-check: setup-docs docs-assets
     cd python && uv run --group docs mkdocs build --strict --clean --config-file ../mkdocs.yml
 
 # Serve the project documentation locally.
-docs-serve: setup-docs
+docs-serve: setup-docs docs-assets
     cd python && uv run --group docs mkdocs serve --config-file ../mkdocs.yml
 
 # Install the locked TypeScript environment.

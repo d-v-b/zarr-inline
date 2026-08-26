@@ -9,9 +9,11 @@
 import * as zarr from "zarrita";
 
 import { MemoryBacking, toNullPrototype, type Document } from "../../../src/backing.js";
+import { canonicalStringify } from "../../../src/document.js";
 import { registerJsonCodec } from "../../../src/serializer.js";
 import { ZarrInlineStore } from "../../../src/store.js";
 import { validate, type ValidationIssue } from "../../../src/validator.js";
+import { fragmentForDocument, decompressFromParam, parseFragment } from "./url-state.js";
 
 import { renderDag } from "./dag.js";
 import demoText from "./demo-document.json.txt";
@@ -42,9 +44,12 @@ const el = {
 	status: document.getElementById("status")!,
 	open: document.getElementById("open") as HTMLButtonElement,
 	file: document.getElementById("file") as HTMLInputElement,
+	paste: document.getElementById("paste") as HTMLButtonElement,
+	fromUrl: document.getElementById("from-url") as HTMLButtonElement,
 	demo: document.getElementById("demo") as HTMLButtonElement,
 	download: document.getElementById("download") as HTMLButtonElement,
 	copy: document.getElementById("copy") as HTMLButtonElement,
+	copyLink: document.getElementById("copy-link") as HTMLButtonElement,
 };
 
 let doc: Document | null = null;
@@ -54,23 +59,93 @@ let displayEpoch = 0;
 const viewerStates = new Map<string, ViewerState>();
 const arrayCache = new Map<string, Promise<ArrayData>>();
 
-function loadDocumentText(text: string, sourceName: string): void {
+/**
+ * URL sync policy for a load: "auto" re-encodes the document into a
+ * #doc= fragment, a literal string is written verbatim (e.g. #url=...),
+ * and null leaves the address bar untouched (fragment-initiated loads).
+ */
+type FragmentPolicy = "auto" | string | null;
+
+function loadDocumentText(
+	text: string,
+	sourceName: string,
+	fragment: FragmentPolicy = "auto",
+): boolean {
 	let parsed: unknown;
 	try {
 		parsed = parseJsonText(text).value;
 	} catch (error) {
 		el.status.replaceChildren(badSpan(`${sourceName}: ${String(error)}`));
-		return;
+		return false;
 	}
 	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
 		el.status.replaceChildren(badSpan(`${sourceName}: document must be a JSON object`));
-		return;
+		return false;
 	}
 	doc = toNullPrototype(parsed as Document);
 	selectedPath = "";
 	viewerStates.clear();
 	refresh();
+	if (fragment === "auto") scheduleUrlSync();
+	else if (fragment !== null) writeFragment(fragment);
+	return true;
 }
+
+// --- URL state (the document travels in the fragment) -------------------
+
+let urlShareable = true;
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let syncEpoch = 0;
+
+function writeFragment(fragment: string): void {
+	history.replaceState(null, "", `${location.pathname}${location.search}${fragment}`);
+}
+
+function scheduleUrlSync(): void {
+	if (syncTimer !== null) clearTimeout(syncTimer);
+	syncTimer = setTimeout(() => {
+		syncTimer = null;
+		if (doc === null) return;
+		const epoch = ++syncEpoch;
+		void fragmentForDocument(canonicalStringify(doc) as string).then((fragment) => {
+			if (epoch !== syncEpoch) return; // a newer sync superseded this one
+			const shareable = fragment !== null;
+			if (shareable) writeFragment(fragment);
+			else writeFragment("#");
+			if (shareable !== urlShareable) {
+				urlShareable = shareable;
+				updateStatus();
+			}
+		});
+	}, 250);
+}
+
+async function initFromLocation(): Promise<void> {
+	const state = parseFragment(location.hash);
+	if (state.kind === "doc") {
+		try {
+			loadDocumentText(await decompressFromParam(state.value), "URL document", null);
+			return;
+		} catch (error) {
+			el.status.replaceChildren(badSpan(`URL document: ${String(error)}`));
+		}
+	} else if (state.kind === "url") {
+		try {
+			const response = await fetch(state.value);
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+			loadDocumentText(await response.text(), state.value, null);
+			return;
+		} catch (error) {
+			el.status.replaceChildren(badSpan(`${state.value}: ${String(error)}`));
+		}
+	}
+	// Bare viewer: an empty document, ready for paste / open / demo.
+	loadDocumentText("{}", "empty", null);
+}
+
+window.addEventListener("hashchange", () => {
+	void initFromLocation();
+});
 
 function refresh(renderJson = true): void {
 	if (doc === null) return;
@@ -92,7 +167,10 @@ function renderSelection(renderJson = true): void {
 		renderJsonPanel(el.json, doc, node, {
 			// Keep the editor DOM (and its "applied" feedback) in place;
 			// the editor already shows the canonicalized value itself.
-			onDocumentChanged: () => refresh(false),
+			onDocumentChanged: () => {
+				refresh(false);
+				scheduleUrlSync();
+			},
 		});
 	}
 	renderDisplay(node);
@@ -104,7 +182,7 @@ function updateStatus(): void {
 	const bytes = new TextEncoder().encode(prettyJson(doc)).length;
 	const issues: ValidationIssue[] = validate(doc);
 	const stats = document.createElement("span");
-	stats.textContent = `${keys} keys · ${(bytes / 1024).toFixed(1)} KiB · `;
+	stats.textContent = `${keys} keys · ${(bytes / 1024).toFixed(1)} KiB · ${urlShareable ? "" : "too large for URL sharing · "}`;
 	const verdict = document.createElement("span");
 	if (issues.length === 0) {
 		verdict.className = "ok";
@@ -252,6 +330,61 @@ el.file.addEventListener("change", async () => {
 	el.file.value = "";
 });
 el.demo.addEventListener("click", () => loadDocumentText(demoText, "demo"));
+el.paste.addEventListener("click", () => {
+	const overlay = document.createElement("div");
+	overlay.className = "modal-overlay";
+	const box = document.createElement("div");
+	box.className = "modal";
+	const label = document.createElement("p");
+	label.textContent = "Paste a zarr-inline JSON document:";
+	const textarea = document.createElement("textarea");
+	textarea.spellcheck = false;
+	const row = document.createElement("div");
+	row.className = "editor-buttons";
+	const load = document.createElement("button");
+	load.textContent = "Load";
+	const cancel = document.createElement("button");
+	cancel.textContent = "Cancel";
+	const close = () => overlay.remove();
+	cancel.addEventListener("click", close);
+	overlay.addEventListener("click", (event) => {
+		if (event.target === overlay) close();
+	});
+	load.addEventListener("click", () => {
+		if (loadDocumentText(textarea.value, "pasted document")) close();
+	});
+	row.append(load, cancel);
+	box.append(label, textarea, row);
+	overlay.append(box);
+	document.body.append(overlay);
+	textarea.focus();
+});
+el.fromUrl.addEventListener("click", async () => {
+	const url = window.prompt("URL of a zarr-inline JSON document:");
+	if (url === null || url.trim() === "") return;
+	try {
+		const response = await fetch(url.trim());
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		loadDocumentText(
+			await response.text(),
+			url.trim(),
+			`#url=${encodeURIComponent(url.trim())}`,
+		);
+	} catch (error) {
+		el.status.replaceChildren(badSpan(`${url.trim()}: ${String(error)}`));
+	}
+});
+el.copyLink.addEventListener("click", async () => {
+	try {
+		await navigator.clipboard.writeText(location.href);
+		el.copyLink.textContent = "Copied!";
+	} catch {
+		el.copyLink.textContent = "Copy failed";
+	}
+	setTimeout(() => {
+		el.copyLink.textContent = "Copy link";
+	}, 1200);
+});
 el.download.addEventListener("click", () => {
 	if (doc === null) return;
 	const blob = new Blob([`${prettyJson(doc)}\n`], { type: "application/json" });
@@ -289,5 +422,6 @@ window.addEventListener("drop", async (event) => {
 	if (file) loadDocumentText(await file.text(), file.name);
 });
 
-// Start on the demo so the page is never empty.
-loadDocumentText(demoText, "demo");
+// The URL fragment is the source of truth: #doc= (inline, compressed),
+// #url= (fetched), or nothing — a bare viewer with an empty document.
+void initFromLocation();

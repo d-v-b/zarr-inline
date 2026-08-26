@@ -29,11 +29,22 @@ npm run build     # writes dist/index.html — a single self-contained file
 ```
 
 Open `dist/index.html` directly in a browser (no server needed), or run
-`npm run serve` for a rebuild-on-change dev server. The page starts on an
-embedded demo document (a 4-D float32 volume, a uint8 label image, and a
-small table group, generated with the Python implementation's
-`from_zarr`); load your own with the Open button or by dropping a `.json`
-file anywhere on the page.
+`npm run serve` for a rebuild-on-change dev server. A bare viewer holds
+the empty document `{}`; load a document with Open/Paste/URL, drop a
+`.json` file anywhere on the page, or press Demo for the embedded demo
+hierarchy (a 4-D float32 volume, a uint8 label image, and a small table
+group, generated with the Python implementation's `from_zarr`).
+
+## Shareable URLs
+
+Neuroglancer-style, the whole document travels in the URL fragment:
+`#doc=<base64url(deflate-raw(canonical JSON))>` carries it inline (the
+address bar live-updates as you edit; Copy link shares the current
+state), `#url=<location>` fetches it from an http(s) server that allows
+cross-origin reads, and no fragment is the bare empty viewer. Documents
+too large for a practical URL stop syncing and the status line says so.
+The project docs host this app with the demo document served next to it,
+linked as `viewer/#url=demo-document.json`.
 
 ## Checks
 

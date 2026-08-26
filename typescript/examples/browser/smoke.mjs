@@ -19,6 +19,7 @@ import { buildHierarchy, arrayShape, arrayDtype, dimensionNames } from "./src/mo
 import { prettyJson } from "./src/jsonpanel.js";
 import { decodeValue, encodeValue } from "../../src/document.js";
 import { readFileSync } from "node:fs";
+import { compressToParam, decompressFromParam, parseFragment } from "./src/url-state.js";
 
 const assert = (cond, msg) => { if (!cond) throw new Error("FAIL: " + msg); };
 
@@ -66,6 +67,14 @@ assert(Math.abs(chunk.data[off] - (Math.round((Math.sin(7 / 6 + 0.9) * Math.cos(
 const big = await zarr.open(zarr.root(store).resolve("/tables/counters"), { kind: "array" });
 const bigChunk = await zarr.get(big);
 assert(bigChunk.data[1] === 9007199254740993n, "int64 exact through zarrita: " + bigChunk.data[1]);
+
+// URL state: compress/decompress round trip and fragment parsing
+const param = await compressToParam(text);
+assert(await decompressFromParam(param) === text, "doc param round-trips");
+assert(param.length < text.length / 3, "compression actually shrinks: " + param.length);
+assert(parseFragment("#doc=abc").kind === "doc", "doc fragment parses");
+assert(parseFragment("#url=https%3A%2F%2Fx%2Fd.json").value === "https://x/d.json", "url fragment decodes");
+assert(parseFragment("").kind === "empty", "no fragment means empty document");
 
 console.log("smoke OK");
 `;

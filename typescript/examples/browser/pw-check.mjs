@@ -19,8 +19,12 @@ page.on("pageerror", (e) => errors.push(String(e)));
 await page.goto(
 	pathToFileURL(join(import.meta.dirname, "dist/index.html")).href,
 );
+await page.waitForTimeout(600);
+const bareStatus = await page.locator("#status").textContent();
+await page.locator("#demo").click();
 await page.waitForTimeout(1200);
 await page.screenshot({ path: join(shotDir, "1-initial.png") });
+const demoHash = await page.evaluate(() => location.hash.slice(0, 5));
 
 const canvasStats = () =>
 	page.evaluate(() => {
@@ -135,6 +139,34 @@ const dataCanvasHidden = await page.evaluate(
 );
 await page.screenshot({ path: join(shotDir, "7-text-mode.png") });
 
+// URL state: an edited document's link restores the same document.
+const shareUrl = await page.evaluate(() => location.href);
+await page.goto("about:blank");
+await page.goto(shareUrl);
+await page.waitForTimeout(1200);
+const restoredStatus = await page.locator("#status").textContent();
+
+// #url= loading: fetch a hosted document (network stubbed).
+const fs = await import("node:fs");
+const demoText = fs.readFileSync(
+	join(import.meta.dirname, "src/demo-document.json.txt"),
+	"utf8",
+);
+await page.route("**/hosted-demo.json", (route) =>
+	route.fulfill({
+		body: demoText,
+		contentType: "application/json",
+		headers: { "access-control-allow-origin": "*" },
+	}),
+);
+await page.goto(
+	pathToFileURL(join(import.meta.dirname, "dist/index.html")).href +
+		"#url=" +
+		encodeURIComponent("https://zarr-inline.test/hosted-demo.json"),
+);
+await page.waitForTimeout(1200);
+const urlLoadStatus = await page.locator("#status").textContent();
+
 const status = await page.locator("#status").textContent();
 console.log(
 	JSON.stringify(
@@ -148,6 +180,10 @@ console.log(
 			editedAttrs,
 			tablesCards: cards,
 			countersStats,
+			bareStatus,
+			demoHash,
+			restoredStatus,
+			urlLoadStatus,
 			axesDrawn: axesOnly > 0,
 			chunkOverlay: { on: chunkOverlayOn, off: chunkOverlayOff },
 			textOverlayGrew: textOverlay > axesOnly,

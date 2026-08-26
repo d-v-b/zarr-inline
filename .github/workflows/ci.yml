@@ -111,3 +111,35 @@ jobs:
         with:
           just-version: "1.55.1"
       - run: just check-release-artifacts
+
+  docs-deploy:
+    name: Docs (GitHub Pages)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: typescript/examples/browser/package-lock.json
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      - run: just docs-check
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
