@@ -345,7 +345,6 @@ function renderTreePanel(): void {
 		search: treeSearch,
 		onSearch: (value) => {
 			treeSearch = value;
-			renderTreePanel();
 		},
 		capacity: 100,
 		placeholder: "filter members by prefix…",

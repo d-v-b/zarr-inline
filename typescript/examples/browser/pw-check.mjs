@@ -70,6 +70,21 @@ await page.waitForTimeout(200);
 const filteredRows = await page.locator("#json-panel .list-row").count();
 await page.fill("#json-panel .list-search", "");
 await page.waitForTimeout(200);
+// Typing character-by-character must keep focus: the box filters in place.
+await page.click("#json-panel .list-search");
+await page.keyboard.type("c/0/");
+const searchFocusKept = await page.evaluate(() => {
+	const active = document.activeElement;
+	return active?.classList?.contains("list-search") ? active.value : null;
+});
+const typedRows = await page.locator("#json-panel .list-row").count();
+await page.fill("#json-panel .list-search", "");
+await page.waitForTimeout(200);
+// The expanded editor stretches to its content (no internal v-scroll).
+const editorAutosized = await page.evaluate(() => {
+	const ta = document.querySelector("#json-panel .json-editor textarea");
+	return ta ? ta.scrollHeight - ta.clientHeight < 4 : null;
+});
 // Syntax highlighting in the expanded (zarr.json) editor.
 const highlightSpans = await page
 	.locator("#json-panel .json-editor-layer .j-key")
@@ -213,6 +228,10 @@ await page.locator("#document-panel textarea").evaluate((ta) => {
 await page.locator("#document-panel button", { hasText: "Apply" }).click();
 await page.waitForTimeout(500);
 const docViewStatus = await page.locator("#document-panel .editor-status").textContent();
+const docViewStretched = await page.evaluate(() => {
+	const ta = document.querySelector("#document-panel textarea");
+	return ta !== null && ta.clientHeight > window.innerHeight;
+});
 await page.screenshot({ path: join(shotDir, "10-json-view.png") });
 await page.locator("#view-browser").click();
 await clickNode("");
@@ -271,6 +290,10 @@ console.log(
 			demoHash,
 			restoredStatus,
 			urlLoadStatus,
+			searchFocusKept,
+			typedRows,
+			editorAutosized,
+			docViewStretched,
 			docViewHasText,
 			docViewStatus,
 			docViewEditVisible,

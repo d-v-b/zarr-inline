@@ -75,6 +75,10 @@ export function createJsonEditor(initial: string): JsonEditor {
 		// Trailing newline keeps the layer's height in step with the caret
 		// on the textarea's last empty line.
 		code.innerHTML = `${highlightJson(textarea.value)}\n`;
+		// Stretch to the content's height; outer panels provide the
+		// scrollbar fallback. (Horizontal overflow still scrolls inside.)
+		textarea.style.height = "auto";
+		textarea.style.height = `${textarea.scrollHeight + 2}px`;
 	};
 	const sync = () => {
 		layer.scrollTop = textarea.scrollTop;
@@ -85,6 +89,11 @@ export function createJsonEditor(initial: string): JsonEditor {
 
 	textarea.value = initial;
 	repaint();
+	// The editor is measured while still detached (scrollHeight is 0);
+	// re-measure right after the caller mounts it.
+	requestAnimationFrame(() => {
+		if (textarea.isConnected) repaint();
+	});
 	return {
 		root,
 		textarea,

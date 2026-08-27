@@ -25,6 +25,11 @@ export interface ListRow {
 export interface FlatListOptions {
 	rows: ListRow[];
 	search: string;
+	/**
+	 * Called to persist the search string. Typing re-filters the list in
+	 * place — the input element is never recreated mid-keystroke, so the
+	 * caller must NOT re-render here, only store the value.
+	 */
 	onSearch: (value: string) => void;
 	/** Bounded display capacity: rows shown at once. */
 	capacity?: number;
@@ -34,12 +39,6 @@ export interface FlatListOptions {
 
 export function renderFlatList(container: HTMLElement, options: FlatListOptions): void {
 	const capacity = options.capacity ?? 100;
-	// Each keystroke re-renders the list; keep the caret in the search box.
-	const active = document.activeElement;
-	const hadFocus =
-		active instanceof HTMLElement &&
-		container.contains(active) &&
-		active.classList.contains("list-search");
 	container.replaceChildren();
 
 	const search = document.createElement("input");
@@ -47,64 +46,64 @@ export function renderFlatList(container: HTMLElement, options: FlatListOptions)
 	search.className = "list-search";
 	search.placeholder = options.placeholder ?? "filter by prefix…";
 	search.value = options.search;
-	search.addEventListener("input", () => options.onSearch(search.value));
-	container.append(search);
-	if (hadFocus) {
-		search.focus();
-		const end = search.value.length;
-		try {
-			search.setSelectionRange(end, end);
-		} catch {
-			// some input types refuse selection APIs; focus alone is fine
-		}
-	}
+	const body = document.createElement("div");
+	container.append(search, body);
 
-	const matches = options.rows.filter((row) => row.name.startsWith(options.search));
-	const list = document.createElement("ul");
-	list.className = "flat-list";
-	for (const row of matches.slice(0, capacity)) {
-		const item = document.createElement("li");
-		item.className = `list-row${row.selected ? " selected" : ""}`;
-		if (row.path !== undefined) item.dataset.path = row.path;
-		const head = document.createElement("div");
-		head.className = "list-row-head";
-		const name = document.createElement("code");
-		name.className = "list-name";
-		name.textContent = row.name;
-		const tag = document.createElement("span");
-		tag.className = `chip ${row.tagClass}`;
-		tag.textContent = row.tag;
-		head.append(name, tag);
-		if (row.detail !== undefined) {
-			const detail = document.createElement("span");
-			detail.className = "list-detail";
-			detail.textContent = row.detail;
-			head.append(detail);
+	const renderRows = (filter: string): void => {
+		body.replaceChildren();
+		const matches = options.rows.filter((row) => row.name.startsWith(filter));
+		const list = document.createElement("ul");
+		list.className = "flat-list";
+		for (const row of matches.slice(0, capacity)) {
+			const item = document.createElement("li");
+			item.className = `list-row${row.selected ? " selected" : ""}`;
+			if (row.path !== undefined) item.dataset.path = row.path;
+			const head = document.createElement("div");
+			head.className = "list-row-head";
+			const name = document.createElement("code");
+			name.className = "list-name";
+			name.textContent = row.name;
+			const tag = document.createElement("span");
+			tag.className = `chip ${row.tagClass}`;
+			tag.textContent = row.tag;
+			head.append(name, tag);
+			if (row.detail !== undefined) {
+				const detail = document.createElement("span");
+				detail.className = "list-detail";
+				detail.textContent = row.detail;
+				head.append(detail);
+			}
+			head.addEventListener("click", row.onSelect);
+			item.append(head);
+			if (row.expanded !== undefined) {
+				const slot = document.createElement("div");
+				slot.className = "list-expansion";
+				row.expanded(slot);
+				item.append(slot);
+			}
+			list.append(item);
 		}
-		head.addEventListener("click", row.onSelect);
-		item.append(head);
-		if (row.expanded !== undefined) {
-			const slot = document.createElement("div");
-			slot.className = "list-expansion";
-			row.expanded(slot);
-			item.append(slot);
-		}
-		list.append(item);
-	}
-	container.append(list);
+		body.append(list);
 
-	if (matches.length === 0) {
-		const empty = document.createElement("p");
-		empty.className = "hint";
-		empty.textContent =
-			options.search === ""
-				? (options.emptyText ?? "nothing here")
-				: `nothing matches “${options.search}”`;
-		container.append(empty);
-	} else if (matches.length > capacity) {
-		const more = document.createElement("p");
-		more.className = "hint list-more";
-		more.textContent = `+${matches.length - capacity} more — refine the search to see them`;
-		container.append(more);
-	}
+		if (matches.length === 0) {
+			const empty = document.createElement("p");
+			empty.className = "hint";
+			empty.textContent =
+				filter === ""
+					? (options.emptyText ?? "nothing here")
+					: `nothing matches “${filter}”`;
+			body.append(empty);
+		} else if (matches.length > capacity) {
+			const more = document.createElement("p");
+			more.className = "hint list-more";
+			more.textContent = `+${matches.length - capacity} more — refine the search to see them`;
+			body.append(more);
+		}
+	};
+
+	search.addEventListener("input", () => {
+		options.onSearch(search.value);
+		renderRows(search.value);
+	});
+	renderRows(options.search);
 }

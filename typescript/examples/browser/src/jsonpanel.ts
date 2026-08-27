@@ -134,7 +134,6 @@ export function renderJsonPanel(
 		search,
 		onSearch: (value) => {
 			search = value;
-			rerender();
 		},
 		capacity: 100,
 		placeholder: "filter keys by prefix (e.g. c/) …",

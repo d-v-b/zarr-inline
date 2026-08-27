@@ -67,7 +67,7 @@
   main[data-view="json"] > #json-panel,
   main[data-view="json"] > #display-panel { display: none; }
   main[data-view="json"] > #document-panel { display: block; }
-  #document-panel .json-editor textarea { height: calc(100vh - 140px); max-height: none; }
+
   #json-panel { border-right: 1px solid var(--border); padding: 10px 12px; }
   #display-panel { padding: 10px 12px; display: flex; flex-direction: column; }
 
@@ -170,9 +170,9 @@
     position: relative;
     display: block;
     min-height: 130px;
-    max-height: 45vh;
-    resize: vertical;
-    overflow: auto;
+    resize: none;
+    overflow-x: auto;
+    overflow-y: hidden;
     background: transparent;
     color: transparent;
     caret-color: var(--text);
