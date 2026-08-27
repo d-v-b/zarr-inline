@@ -52,18 +52,18 @@ const clickNode = async (path) => {
 	}
 };
 
-// Select the volume array in the DAG.
-await clickNode("volume");
+// Select the image array in the left pane.
+await clickNode("image");
 await page.waitForTimeout(900);
-const volumeStats = await canvasStats();
-await page.screenshot({ path: join(shotDir, "2-volume.png") });
+const imageStats = await canvasStats();
+await page.screenshot({ path: join(shotDir, "2-image.png") });
 
 // Flat key list: tags and prefix search (c/ filters to chunks).
 const metaTag = await page
-	.locator('#json-panel .list-row[data-path="volume/zarr.json"] .chip')
+	.locator('#json-panel .list-row[data-path="image/zarr.json"] .chip')
 	.textContent();
 const chunkTag = await page
-	.locator('#json-panel .list-row[data-path="volume/c/0/0/0/0"] .chip')
+	.locator('#json-panel .list-row[data-path="image/c/0/0/0"] .chip')
 	.textContent();
 await page.fill("#json-panel .list-search", "c/");
 await page.waitForTimeout(200);
@@ -134,11 +134,11 @@ const overlayStats = () =>
 		return opaque;
 	});
 
-// Chunk-grid overlay: labels has 2-D chunks (20, 24), so interior lines.
-await clickNode("labels");
+// Chunk-grid overlay: image chunks are (5,5,5), so in-plane lines every 5.
+await clickNode("image");
 await page.waitForTimeout(600);
 const chunkOverlayOn = await overlayStats();
-await page.screenshot({ path: join(shotDir, "6-labels-chunks.png") });
+await page.screenshot({ path: join(shotDir, "6-image-chunks.png") });
 await page.locator(".chunk-toggle").setChecked(false);
 await page.waitForTimeout(200);
 const chunkOverlayOff = await overlayStats();
@@ -160,6 +160,45 @@ const dataCanvasHidden = await page.evaluate(
 			.display === "none",
 );
 await page.screenshot({ path: join(shotDir, "7-text-mode.png") });
+
+// Live edits: turn the 3-D image into a 2-D image; the viewer follows
+// every Apply. Then add a fresh 2-D chunk key and delete it again.
+await clickNode("image");
+await page.waitForTimeout(600);
+await page.locator("#json-panel .json-editor textarea").first().evaluate((ta) => {
+	const meta = JSON.parse(ta.value);
+	meta.shape = [20, 20];
+	meta.chunk_grid.configuration.chunk_shape = [5, 5];
+	meta.dimension_names = ["y", "x"];
+	ta.value = JSON.stringify(meta, null, 2);
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.locator("#json-panel button", { hasText: "Apply" }).first().click();
+await page.waitForTimeout(900);
+const twoDStats = await canvasStats();
+await page.screenshot({ path: join(shotDir, "8-live-2d.png") });
+const beforeChunkAdd = await page.evaluate(() =>
+	document.querySelector(".viewer-viewport canvas").toDataURL(),
+);
+await page.fill(".add-key-row input", "c/0/0");
+await page.locator(".add-key-row button", { hasText: "Add key" }).click();
+await page.waitForTimeout(500);
+await page.locator("#json-panel .json-editor textarea").first().evaluate((ta) => {
+	const row = [0, 60, 120, 180, 240];
+	const grid = Array.from({ length: 5 }, (_, i) => row.map((v) => (v + i * 40) % 255));
+	ta.value = JSON.stringify(grid);
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.locator("#json-panel .list-row.selected button", { hasText: "Apply" }).click();
+await page.waitForTimeout(900);
+const afterChunkAdd = await page.evaluate(() =>
+	document.querySelector(".viewer-viewport canvas").toDataURL(),
+);
+const statusAfterAdd = await page.locator("#status").textContent();
+await page.screenshot({ path: join(shotDir, "9-live-chunk.png") });
+await page.locator("#json-panel button", { hasText: "Delete key" }).first().click();
+await page.waitForTimeout(500);
+const statusAfterDelete = await page.locator("#status").textContent();
 
 // URL state: an edited document's link restores the same document.
 const shareUrl = await page.evaluate(() => location.href);
@@ -195,7 +234,7 @@ console.log(
 		{
 			errors,
 			status,
-			volumeStats,
+			imageStats,
 			sliderChangedImage: before !== after,
 			readout,
 			editStatus,
@@ -211,6 +250,10 @@ console.log(
 			demoHash,
 			restoredStatus,
 			urlLoadStatus,
+			twoDStats,
+			liveChunkChanged: beforeChunkAdd !== afterChunkAdd,
+			statusAfterAdd,
+			statusAfterDelete,
 			axesDrawn: axesOnly > 0,
 			chunkOverlay: { on: chunkOverlayOn, off: chunkOverlayOff },
 			textOverlayGrew: textOverlay > axesOnly,

@@ -17,6 +17,9 @@ import { parseJsonText } from "./strict.js";
 export interface JsonPanelCallbacks {
 	/** Called after a successful edit was written into the document. */
 	onDocumentChanged: () => void;
+	/** Called when keys were added or removed: the hierarchy (and this
+	 * panel) must re-render from a rebuilt model. */
+	onKeysChanged: () => void;
 }
 
 /**
@@ -61,6 +64,9 @@ let search = "";
 let expandedKey: string | null = null;
 let lastNodePath: string | null = null;
 let rerender: () => void = () => {};
+// Editor feedback that survives the post-apply re-render (which refreshes
+// the row's encoding tag and byte size).
+let pendingStatus: { key: string; text: string; ok: boolean } | null = null;
 
 export function renderJsonPanel(
 	container: HTMLElement,
@@ -133,6 +139,48 @@ export function renderJsonPanel(
 		capacity: 100,
 		placeholder: "filter keys by prefix (e.g. c/) …",
 	});
+
+	container.append(addKeyRow(doc, node, callbacks));
+}
+
+/** Create a new key under the node (e.g. a 2-D chunk after a 3-D → 2-D
+ * metadata edit) and open it in the editor immediately. */
+function addKeyRow(
+	doc: Document,
+	node: NodeInfo,
+	callbacks: JsonPanelCallbacks,
+): HTMLElement {
+	const row = document.createElement("div");
+	row.className = "add-key-row";
+	const input = document.createElement("input");
+	input.type = "text";
+	input.className = "list-search";
+	input.placeholder = "new key (e.g. c/0/0) …";
+	const button = document.createElement("button");
+	button.textContent = "Add key";
+	const submit = () => {
+		const name = input.value.trim().replace(/^\/+|\/+$/g, "");
+		if (name === "") return;
+		const key = node.path === "" ? name : `${node.path}/${name}`;
+		if (key in doc) {
+			input.setCustomValidity("key already exists");
+			input.reportValidity();
+			return;
+		}
+		// An empty base64 payload is a valid starting value for any key
+		// class except metadata, which starts as an empty object.
+		doc[key] = key.endsWith("zarr.json") ? {} : "";
+		expandedKey = key;
+		search = "";
+		callbacks.onKeysChanged();
+	};
+	button.addEventListener("click", submit);
+	input.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") submit();
+		input.setCustomValidity("");
+	});
+	row.append(input, button);
+	return row;
 }
 
 function byteSize(key: string, value: unknown): string {
@@ -149,6 +197,11 @@ function editor(doc: Document, key: string, callbacks: JsonPanelCallbacks): HTML
 	const jsonEditor = createJsonEditor(prettyJson(doc[key]));
 	const status = document.createElement("div");
 	status.className = "editor-status";
+	if (pendingStatus !== null && pendingStatus.key === key) {
+		status.className = `editor-status ${pendingStatus.ok ? "ok" : "error"}`;
+		status.textContent = pendingStatus.text;
+		pendingStatus = null;
+	}
 	const apply = document.createElement("button");
 	apply.textContent = "Apply";
 	const revert = document.createElement("button");
@@ -164,20 +217,31 @@ function editor(doc: Document, key: string, callbacks: JsonPanelCallbacks): HTML
 			// Round-trip through bytes: the document stores the canonical form.
 			const bytes = decodeValue(key, parsed.value);
 			doc[key] = encodeValue(key, bytes);
-			jsonEditor.setValue(prettyJson(doc[key]));
-			status.className = "editor-status ok";
-			status.textContent = parsed.lossy
-				? "applied (this browser lacks JSON.parse source access; huge integers may have lost precision)"
-				: "applied";
+			pendingStatus = {
+				key,
+				ok: true,
+				text: parsed.lossy
+					? "applied (this browser lacks JSON.parse source access; huge integers may have lost precision)"
+					: "applied",
+			};
 			callbacks.onDocumentChanged();
+			rerender(); // refresh this row's encoding tag and byte size
 		} catch (error) {
 			status.className = "editor-status error";
 			status.textContent = String(error instanceof Error ? error.message : error);
 		}
 	});
+	const remove = document.createElement("button");
+	remove.textContent = "Delete key";
+	remove.className = "danger";
+	remove.addEventListener("click", () => {
+		delete doc[key];
+		if (expandedKey === key) expandedKey = null;
+		callbacks.onKeysChanged();
+	});
 	const row = document.createElement("div");
 	row.className = "editor-buttons";
-	row.append(apply, revert, status);
+	row.append(apply, revert, remove, status);
 	wrap.append(jsonEditor.root, row);
 	return wrap;
 }

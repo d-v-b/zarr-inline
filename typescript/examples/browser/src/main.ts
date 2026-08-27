@@ -169,6 +169,12 @@ function renderSelection(renderJson = true): void {
 				refresh(false);
 				scheduleUrlSync();
 			},
+			// Key set changed: rebuild the hierarchy and re-render the
+			// panel too (its module state keeps the expansion and search).
+			onKeysChanged: () => {
+				refresh(true);
+				scheduleUrlSync();
+			},
 		});
 	}
 	renderDisplay(node);

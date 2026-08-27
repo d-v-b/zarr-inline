@@ -12,7 +12,10 @@ built on the TypeScript implementation and [zarrita](https://zarrita.dev).
   Object**, **JSON Array**, or **base64** — and expandable into a
   syntax-highlighted editor. Applying an edit round-trips the value
   through the zarr-inline decode/encode pair, so whatever you type is
-  stored canonically, and the whole document is re-validated live.
+  stored canonically, and the whole document is re-validated live. Keys
+  can be added and deleted too, and the viewer updates on every change —
+  edit `zarr.json` to turn a 3-D image into a 2-D one, then add fresh
+  chunk keys (`c/0/0`) and watch the pixels appear.
 - **Display panel** (right): groups show their attributes and children;
   arrays open in a multi-dimensional slice viewer — assign any two
   dimensions to X/Y, scrub the rest with sliders, pick a lookup table
@@ -34,8 +37,9 @@ Open `dist/index.html` directly in a browser (no server needed), or run
 `npm run serve` for a rebuild-on-change dev server. A bare viewer holds
 the empty document `{}`; load a document with Open/Paste/URL, drop a
 `.json` file anywhere on the page, or press Demo for the embedded demo
-hierarchy (a 4-D float32 volume, a uint8 label image, and a small table
-group, generated with the Python implementation's `from_zarr`).
+hierarchy (a 20×20×20 uint8 volume in (5,5,5) chunks plus an int64
+table, generated with the Python implementation's `from_zarr` — small
+enough that every chunk is comfortable to edit by hand).
 
 ## Shareable URLs
 

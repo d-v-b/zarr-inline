@@ -29,13 +29,13 @@ assert(validate(doc).length === 0, "demo document validates");
 
 // Hierarchy model
 const { root, byPath } = buildHierarchy(doc);
-assert(root.children.map((c) => c.name).join(",") === "labels,tables,volume", "root children");
-const volume = byPath.get("volume");
-assert(volume.kind === "array", "volume is an array");
-assert(arrayShape(volume).join(",") === "4,2,40,48", "volume shape");
-assert(arrayDtype(volume) === "float32", "volume dtype");
-assert(dimensionNames(volume).join(",") === "t,c,y,x", "volume dim names");
-assert(volume.dataKeys.length === 8, "volume owns 8 chunk keys");
+assert(root.children.map((c) => c.name).join(",") === "image,tables", "root children");
+const image = byPath.get("image");
+assert(image.kind === "array", "image is an array");
+assert(arrayShape(image).join(",") === "20,20,20", "image shape");
+assert(arrayDtype(image) === "uint8", "image dtype");
+assert(dimensionNames(image).join(",") === "z,y,x", "image dim names");
+assert(image.dataKeys.length === 64, "image owns 64 chunk keys");
 assert(byPath.get("tables").kind === "group", "tables is a group");
 assert(byPath.get("tables/counters").kind === "array", "nested array found");
 
@@ -56,13 +56,18 @@ for (const key of Object.keys(doc)) {
 // Full read path through zarrita
 registerJsonCodec();
 const store = new ZarrInlineStore(new MemoryBacking(doc), { onIssue: () => {} });
-const arr = await zarr.open(zarr.root(store).resolve("/volume"), { kind: "array" });
+const arr = await zarr.open(zarr.root(store).resolve("/image"), { kind: "array" });
 const chunk = await zarr.get(arr);
-assert(chunk.shape.join(",") === "4,2,40,48", "read shape");
-assert(Number.isNaN(chunk.data[0]), "NaN corner survives");
-// spot value: volume[1,1,5,7] via stride
-const off = 1 * chunk.stride[0] + 1 * chunk.stride[1] + 5 * chunk.stride[2] + 7 * chunk.stride[3];
-assert(Math.abs(chunk.data[off] - (Math.round((Math.sin(7 / 6 + 0.9) * Math.cos(5 / 5 + 1.7) + 0.2) * 1000) / 1000)) < 1e-6, "spot value matches");
+assert(chunk.shape.join(",") === "20,20,20", "read shape");
+// Integer-exact sphere glow: v = max(0, 255 - d2*255//1083)
+const expected = (z, y, x) => {
+  const d2 = (2 * z - 19) ** 2 + (2 * y - 19) ** 2 + (2 * x - 19) ** 2;
+  return Math.max(0, 255 - Math.floor((d2 * 255) / 1083));
+};
+for (const [z, y, x] of [[0, 0, 0], [10, 10, 10], [19, 3, 12], [5, 15, 9]]) {
+  const off = z * chunk.stride[0] + y * chunk.stride[1] + x * chunk.stride[2];
+  assert(chunk.data[off] === expected(z, y, x), "spot value at " + z + "," + y + "," + x);
+}
 
 const big = await zarr.open(zarr.root(store).resolve("/tables/counters"), { kind: "array" });
 const bigChunk = await zarr.get(big);
