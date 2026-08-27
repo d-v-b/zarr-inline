@@ -466,8 +466,9 @@ zarr-inline documents, built on the TypeScript implementation and
 <a href="https://zarrita.dev">zarrita</a>:</p>
 <ul>
 <li><strong><a href="../viewer/#url=demo-document.json">Open the demo</a></strong> — the
-  viewer loaded with a small demo hierarchy (a 4-D float32 volume with
-  NaNs, a uint8 label image, and float64/int64 tables).</li>
+  viewer loaded with a small demo hierarchy: a 20×20×20 uint8 volume in
+  (5,5,5) chunks plus an int64 table, small enough that every chunk is
+  comfortable to edit by hand.</li>
 <li><strong><a href="../viewer/">Open a bare viewer</a></strong> — starts with an empty
   document; paste a document, open a local <code>.json</code> file, or fetch one
   from a URL.</li>
@@ -479,8 +480,10 @@ by the selected node — its <code>zarr.json</code> and its chunks — as one fl
 prefix-searchable collection (type <code>c/</code> to see only chunks), each key
 tagged with its encoding (<strong>JSON Object</strong>, <strong>JSON Array</strong>, or <strong>base64</strong>)
 and expandable into a syntax-highlighted JSON editor; edits are
-canonicalized through the format's decode/encode pair and re-validated
-live. The right panel displays the
+canonicalized through the format's decode/encode pair, re-validated
+live, and the viewer updates on every Apply. Keys can be added and
+deleted, so the document's data is fully live: edit <code>image/zarr.json</code>
+from 3-D to 2-D, add a <code>c/0/0</code> chunk, and watch the pixels appear. The right panel displays the
 node: groups as attribute + children cards, arrays in a multi-dimensional
 slice viewer with X/Y dimension assignment, sliders for the remaining
 dimensions, lookup tables (including a <code>text</code> mode that prints each
