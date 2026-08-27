@@ -16,7 +16,7 @@ import { validate, type ValidationIssue } from "../../../src/validator.js";
 import { fragmentForDocument, decompressFromParam, parseFragment } from "./url-state.js";
 
 import demoText from "./demo-document.json.txt";
-import { jsonBlock } from "./jsonhl.js";
+import { createJsonEditor, jsonBlock } from "./jsonhl.js";
 import { renderFlatList } from "./list.js";
 import { prettyJson, renderJsonPanel } from "./jsonpanel.js";
 import {
@@ -51,6 +51,10 @@ const el = {
 	download: document.getElementById("download") as HTMLButtonElement,
 	copy: document.getElementById("copy") as HTMLButtonElement,
 	copyLink: document.getElementById("copy-link") as HTMLButtonElement,
+	main: document.querySelector("main")!,
+	documentPanel: document.getElementById("document-panel")!,
+	viewBrowser: document.getElementById("view-browser") as HTMLButtonElement,
+	viewJson: document.getElementById("view-json") as HTMLButtonElement,
 };
 
 let doc: Document | null = null;
@@ -155,7 +159,72 @@ function refresh(renderJson = true): void {
 	if (!hierarchy.byPath.has(selectedPath)) selectedPath = "";
 	updateStatus();
 	renderSelection(renderJson);
+	if (viewMode === "json") renderDocumentView();
 }
+
+// --- whole-document JSON view -------------------------------------------
+
+type ViewMode = "browser" | "json";
+let viewMode: ViewMode = "browser";
+let docViewStatus: { text: string; ok: boolean } | null = null;
+
+function setViewMode(mode: ViewMode): void {
+	viewMode = mode;
+	el.main.dataset.view = mode;
+	el.viewBrowser.classList.toggle("active", mode === "browser");
+	el.viewJson.classList.toggle("active", mode === "json");
+	if (mode === "json") renderDocumentView();
+}
+
+/** The whole document as one editable, syntax-highlighted JSON text. */
+function renderDocumentView(): void {
+	el.documentPanel.replaceChildren();
+	if (doc === null) return;
+	const editor = createJsonEditor(prettyJson(doc));
+	const status = document.createElement("div");
+	status.className = "editor-status";
+	if (docViewStatus !== null) {
+		status.className = `editor-status ${docViewStatus.ok ? "ok" : "error"}`;
+		status.textContent = docViewStatus.text;
+		docViewStatus = null;
+	}
+	const apply = document.createElement("button");
+	apply.textContent = "Apply";
+	apply.addEventListener("click", () => {
+		try {
+			const parsed = parseJsonText(editor.getValue());
+			if (parsed.value === null || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+				throw new Error("document must be a JSON object");
+			}
+			doc = toNullPrototype(parsed.value as Document);
+			docViewStatus = {
+				ok: true,
+				text: parsed.lossy
+					? "applied (this browser lacks JSON.parse source access; huge integers may have lost precision)"
+					: "applied",
+			};
+			refresh(); // re-renders this view with the canonicalized text
+			scheduleUrlSync();
+		} catch (error) {
+			status.className = "editor-status error";
+			status.textContent = String(error instanceof Error ? error.message : error);
+		}
+	});
+	const revert = document.createElement("button");
+	revert.textContent = "Revert";
+	revert.addEventListener("click", () => {
+		editor.setValue(prettyJson(doc));
+		status.textContent = "";
+		status.className = "editor-status";
+	});
+	const buttons = document.createElement("div");
+	buttons.className = "editor-buttons";
+	buttons.append(apply, revert, status);
+	el.documentPanel.append(buttons, editor.root);
+}
+
+el.viewBrowser.addEventListener("click", () => setViewMode("browser"));
+el.viewJson.addEventListener("click", () => setViewMode("json"));
 
 function renderSelection(renderJson = true): void {
 	if (doc === null || hierarchy === null) return;

@@ -200,6 +200,27 @@ await page.locator("#json-panel button", { hasText: "Delete key" }).first().clic
 await page.waitForTimeout(500);
 const statusAfterDelete = await page.locator("#status").textContent();
 
+// Whole-document JSON view: edit the raw document text and Apply.
+await page.locator("#view-json").click();
+await page.waitForTimeout(400);
+const docViewHasText = await page.evaluate(() =>
+	document.querySelector("#document-panel textarea").value.includes('"zarr.json"'),
+);
+await page.locator("#document-panel textarea").evaluate((ta) => {
+	ta.value = ta.value.replace("browser demo (edited)", "browser demo (doc view)");
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.locator("#document-panel button", { hasText: "Apply" }).click();
+await page.waitForTimeout(500);
+const docViewStatus = await page.locator("#document-panel .editor-status").textContent();
+await page.screenshot({ path: join(shotDir, "10-json-view.png") });
+await page.locator("#view-browser").click();
+await clickNode("");
+await page.waitForTimeout(400);
+const docViewEditVisible = await page.evaluate(() =>
+	document.querySelector("#display-panel pre.attrs")?.textContent?.includes("(doc view)"),
+);
+
 // URL state: an edited document's link restores the same document.
 const shareUrl = await page.evaluate(() => location.href);
 await page.goto("about:blank");
@@ -250,6 +271,9 @@ console.log(
 			demoHash,
 			restoredStatus,
 			urlLoadStatus,
+			docViewHasText,
+			docViewStatus,
+			docViewEditVisible,
 			twoDStats,
 			liveChunkChanged: beforeChunkAdd !== afterChunkAdd,
 			statusAfterAdd,

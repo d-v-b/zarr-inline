@@ -2,6 +2,9 @@
 
 A single-file web app for exploring and editing zarr-inline documents,
 built on the TypeScript implementation and [zarrita](https://zarrita.dev).
+A header toggle switches between the three-pane **Browser** view and a
+**JSON** view holding the whole document as one editable,
+syntax-highlighted text.
 
 - **Hierarchy pane** (left): the current group's members as a flat list
   in a bounded container — each row tagged **Group** or **Array** — with

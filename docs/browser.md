@@ -27,7 +27,10 @@ node: groups as attribute + children cards, arrays in a multi-dimensional
 slice viewer with X/Y dimension assignment, sliders for the remaining
 dimensions, lookup tables (including a `text` mode that prints each
 element's exact value), an optional chunk-boundary overlay, always-on axis
-coordinate labels, zoom/pan, and a hover readout.
+coordinate labels, zoom/pan, and a hover readout. A header toggle
+switches between this three-pane browser and a **JSON view** — the whole
+document as one editable, syntax-highlighted text; Apply canonicalizes
+it and both views stay in sync.
 
 ## Shareable URLs
 

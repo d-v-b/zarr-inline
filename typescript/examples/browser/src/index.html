@@ -49,6 +49,9 @@
   }
   button:hover, select:hover { border-color: var(--accent); }
   #status { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .segmented button { border: none; border-radius: 0; }
+  .segmented button.active { background: var(--accent); color: #0d1117; }
   #status .ok { color: var(--ok); }
   #status .bad { color: var(--error); cursor: help; }
   main {
@@ -58,6 +61,13 @@
     min-height: 0;
   }
   main > * { min-width: 0; min-height: 0; overflow: auto; }
+  #document-panel { padding: 10px 14px; display: none; }
+  main[data-view="json"] { grid-template-columns: 1fr; }
+  main[data-view="json"] > #tree-panel,
+  main[data-view="json"] > #json-panel,
+  main[data-view="json"] > #display-panel { display: none; }
+  main[data-view="json"] > #document-panel { display: block; }
+  #document-panel .json-editor textarea { height: calc(100vh - 140px); max-height: none; }
   #json-panel { border-right: 1px solid var(--border); padding: 10px 12px; }
   #display-panel { padding: 10px 12px; display: flex; flex-direction: column; }
 
@@ -299,6 +309,10 @@
 <body>
 <header>
   <h1><code>zarr-inline</code> browser</h1>
+  <span class="segmented">
+    <button id="view-browser" class="active">Browser</button>
+    <button id="view-json">JSON</button>
+  </span>
   <button id="open">Open…</button>
   <input id="file" type="file" accept=".json,application/json" hidden />
   <button id="paste">Paste…</button>
@@ -309,10 +323,11 @@
   <button id="copy-link">Copy link</button>
   <span id="status">no document</span>
 </header>
-<main>
+<main data-view="browser">
   <aside id="tree-panel"><p class="hint">Open a document to begin.</p></aside>
   <section id="json-panel"><p class="hint">Open a document to begin.</p></section>
   <section id="display-panel"><p class="hint">The selected node is displayed here.</p></section>
+  <section id="document-panel"></section>
 </main>
 <script>
 /*__APP__*/
