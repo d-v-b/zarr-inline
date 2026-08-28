@@ -531,9 +531,18 @@ export function renderArrayViewer(
 			ctx.setLineDash([]);
 		}
 
-		// Axes: always-on x/y coordinate labels along the top and left edges.
-		const axisH = 16;
-		const axisW = 10 + 7 * String(Math.max(height - 1, 0)).length;
+		// Axes: always-on x/y coordinate labels along the top and left
+		// edges, plus a chunk-index band (in the chunk-grid color) between
+		// them and the image when the chunk grid is shown.
+		const chunkAxisW = state.showChunks && chunkShape !== null ? chunkShape[state.xDim] : 0;
+		const chunkAxisH =
+			state.showChunks && chunkShape !== null && state.yDim >= 0
+				? chunkShape[state.yDim]
+				: 0;
+		const chunkBandH = chunkAxisW > 0 ? 14 : 0;
+		const chunkBandW = chunkAxisH > 0 ? 16 : 0;
+		const axisH = 16 + chunkBandH;
+		const axisW = 10 + 7 * String(Math.max(height - 1, 0)).length + chunkBandW;
 		ctx.fillStyle = "rgba(16, 19, 24, 0.86)";
 		ctx.fillRect(0, 0, viewWidth, axisH);
 		ctx.fillRect(0, 0, axisW, viewHeight);
@@ -554,14 +563,35 @@ export function renderArrayViewer(
 			const sx = toScreenX(ax) + (zoom >= 14 ? zoom / 2 : 0);
 			if (sx < axisW + 8 || sx > viewWidth - 4) continue;
 			ctx.fillText(String(ax), sx, 11);
-			ctx.fillRect(sx - 0.5, axisH - 3, 1, 3);
+			ctx.fillRect(sx - 0.5, 13, 1, 3);
 		}
 		ctx.textAlign = "right";
 		for (let ay = Math.ceil(y0 / step) * step; ay <= y1 + 1; ay += step) {
 			const sy = toScreenY(ay) + (zoom >= 14 ? zoom / 2 : 0);
 			if (sy < axisH + 10 || sy > viewHeight - 4) continue;
-			ctx.fillText(String(ay), axisW - 4, sy + 3);
-			ctx.fillRect(axisW - 3, sy - 0.5, 3, 1);
+			ctx.fillText(String(ay), axisW - chunkBandW - 4, sy + 3);
+			ctx.fillRect(axisW - chunkBandW - 3, sy - 0.5, 3, 1);
+		}
+		// Chunk indices, centered over each chunk's visible span.
+		if (chunkBandH > 0) {
+			ctx.fillStyle = "rgba(226, 163, 78, 0.95)";
+			ctx.textAlign = "center";
+			for (let k = Math.floor(x0 / chunkAxisW); k * chunkAxisW <= x1; k++) {
+				const spanStart = Math.max(toScreenX(k * chunkAxisW), axisW);
+				const spanEnd = Math.min(toScreenX(Math.min((k + 1) * chunkAxisW, width)), viewWidth);
+				if (spanEnd - spanStart < 14) continue;
+				ctx.fillText(String(k), (spanStart + spanEnd) / 2, 16 + 10);
+			}
+		}
+		if (chunkBandW > 0) {
+			ctx.fillStyle = "rgba(226, 163, 78, 0.95)";
+			ctx.textAlign = "center";
+			for (let k = Math.floor(y0 / chunkAxisH); k * chunkAxisH <= y1; k++) {
+				const spanStart = Math.max(toScreenY(k * chunkAxisH), axisH);
+				const spanEnd = Math.min(toScreenY(Math.min((k + 1) * chunkAxisH, height)), viewHeight);
+				if (spanEnd - spanStart < 12) continue;
+				ctx.fillText(String(k), axisW - chunkBandW / 2, (spanStart + spanEnd) / 2 + 3);
+			}
 		}
 		// Dimension names in the corner.
 		ctx.fillStyle = "#4da3ff";
@@ -618,11 +648,17 @@ export function renderArrayViewer(
 				? String(Number(value.toPrecision(7)))
 				: String(value);
 		const parts: string[] = [];
+		const chunkParts: string[] = [];
 		for (let d = 0; d < rank; d++) {
 			const idx = d === state.xDim ? px : d === state.yDim ? py : state.index[d];
 			parts.push(`${dimNames[d] ?? `d${d}`}=${idx}`);
+			if (chunkShape !== null && chunkShape[d] > 0) {
+				chunkParts.push(String(Math.floor(idx / chunkShape[d])));
+			}
 		}
-		readout.textContent = `${parts.join("  ")}  →  ${shown}`;
+		const chunkKey =
+			chunkParts.length === rank ? `  ·  chunk c/${chunkParts.join("/")}` : "";
+		readout.textContent = `${parts.join("  ")}  →  ${shown}${chunkKey}`;
 	});
 
 	drawImage();

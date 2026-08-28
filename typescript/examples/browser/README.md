@@ -24,8 +24,9 @@ syntax-highlighted text.
   dimensions to X/Y, scrub the rest with sliders, pick a lookup table
   (gray/viridis/magma/coolwarm, or **text**, which renders every element
   as its numeric value), zoom and pan (wheel/drag), and hover for exact
-  values. X/Y axis coordinate labels are always shown, chunk boundaries
-  can be overlaid as dashed lines, and NaN renders as transparent
+  values. X/Y axis coordinate labels are always shown; with the chunk
+  grid on, a second axis band labels each chunk's index and the hover
+  readout names the exact chunk key (c/…). NaN renders as transparent
   checkerboard. Big int64 values stay exact end to end (strict parsing
   preserves them as BigInt).
 
