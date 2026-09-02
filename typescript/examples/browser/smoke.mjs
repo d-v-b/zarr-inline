@@ -103,6 +103,14 @@ const missing = JSON.parse(JSON.stringify(doc["image/zarr.json"]));
 delete missing.data_type;
 assert(metadataIssues(missing).some((i) => i.kind === "missing_key"), "missing data_type flagged structurally");
 
+// Viewer-support lint: grids zarrita cannot read are flagged before it crashes
+const recti = JSON.parse(JSON.stringify(doc["image/zarr.json"]));
+recti.chunk_grid = { name: "rectilinear", configuration: { chunk_shapes: [[5,5,5,5],[5,5,5,5],[5,5,5,5]] } };
+assert(metadataIssues(recti).some((i) => i.message.includes("cannot be displayed")), "rectilinear flagged as unsupported");
+const shapes = JSON.parse(JSON.stringify(doc["image/zarr.json"]));
+shapes.chunk_grid = { name: "regular", configuration: { chunk_shapes: [5, 5, 5] } };
+assert(metadataIssues(shapes).some((i) => i.path.join(".") === "chunk_grid.configuration.chunk_shape"), "regular grid without chunk_shape flagged");
+
 // URL state: compress/decompress round trip and fragment parsing
 const param = await compressToParam(text);
 assert(await decompressFromParam(param) === text, "doc param round-trips");

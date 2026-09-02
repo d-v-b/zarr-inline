@@ -20,9 +20,12 @@ syntax-highlighted text.
   edits are linted live with [zarr-metadata](https://www.npmjs.com/package/zarr-metadata)
   — structure plus the spec's cross-field rules (chunk-grid arity,
   transpose permutations, sharding divisibility, `fill_value` vs data
-  type) — shown as flags under the editor, in the key's tag, and as a
-  document-wide count in the status bar; they never block an edit, since
-  zarr-inline itself does not validate hierarchy coherence.
+  type) plus this viewer's own support rules (zarrita reads only the
+  `regular` chunk grid, which needs a `chunk_shape`) — shown as flags
+  under the editor, in the key's tag, and as a document-wide count in the
+  status bar; they never block an edit, since zarr-inline itself does not
+  validate hierarchy coherence. An array the viewer cannot read shows the
+  reason instead of a crash.
 - **Display panel** (right): groups show their attributes and children;
   arrays open in a multi-dimensional slice viewer — assign any two
   dimensions to X/Y, scrub the rest with sliders, pick a lookup table

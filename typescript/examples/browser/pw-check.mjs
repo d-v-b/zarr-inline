@@ -193,6 +193,30 @@ await page.locator("#browser-panel button", { hasText: "Revert" }).first().click
 await page.waitForTimeout(300);
 const lintCleared = (await page.locator("#browser-panel .editor-lint li").count()) === 0;
 
+// Reported breakage: chunk_grid configuration "chunk_shapes" used to
+// crash zarrita ("can't access property 0"). Now: a clear message, a lint
+// flag, and a clean recovery once the metadata is fixed.
+await clickNode("image");
+await page.waitForTimeout(600);
+const originalMeta = await page.locator("#browser-panel .json-editor textarea").first().inputValue();
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta) => {
+	const meta = JSON.parse(ta.value);
+	meta.chunk_grid = { name: "regular", configuration: { chunk_shapes: [5, 5, 5] } };
+	ta.value = JSON.stringify(meta, null, 2);
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.locator("#browser-panel button", { hasText: "Apply" }).first().click();
+await page.waitForTimeout(900);
+const brokenDisplay = await page.locator("#display-panel").textContent();
+const brokenLint = await page.locator("#browser-panel .editor-lint").first().textContent();
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta, text) => {
+	ta.value = text;
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+}, originalMeta);
+await page.locator("#browser-panel button", { hasText: "Apply" }).first().click();
+await page.waitForTimeout(900);
+const recoveredStats = await canvasStats();
+
 // Live edits: turn the 3-D image into a 2-D image; the viewer follows
 // every Apply. Then add a fresh 2-D chunk key and delete it again.
 await clickNode("image");
@@ -314,6 +338,9 @@ console.log(
 			docViewHasText,
 			docViewStatus,
 			docViewEditVisible,
+			brokenDisplayClear: /cannot be displayed|needs "chunk_shape"/.test(brokenDisplay),
+			brokenLintFlag: /chunk_shape/.test(brokenLint),
+			recoveredStats,
 			lintText,
 			lintCleared,
 			twoDStats,

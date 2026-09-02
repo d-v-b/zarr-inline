@@ -17,7 +17,7 @@ import { fragmentForDocument, decompressFromParam, parseFragment } from "./url-s
 
 import demoText from "./demo-document.json.txt";
 import { createJsonEditor, jsonBlock } from "./jsonhl.js";
-import { formatIssue, issueSummary, metadataIssues } from "./metadata.js";
+import { formatIssue, metadataIssues, viewerIssues } from "./metadata.js";
 import { prettyJson, renderJsonPanel } from "./jsonpanel.js";
 import {
 	arrayShape,
@@ -317,6 +317,13 @@ function renderDisplay(node: NodeInfo | null): void {
 	const shape = arrayShape(node);
 	if (shape === null) {
 		el.display.append(hintP("Array metadata has no usable shape."));
+		return;
+	}
+	const unsupported = viewerIssues(node.meta);
+	if (unsupported.length > 0) {
+		const p = hintP(`Cannot display this array: ${unsupported.map(formatIssue).join("; ")}. Fix the metadata to continue.`);
+		p.style.color = "var(--error)";
+		el.display.append(p);
 		return;
 	}
 	const loading = hintP("Loading array…");
