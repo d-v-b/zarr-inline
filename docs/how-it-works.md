@@ -11,7 +11,9 @@ explanatory.
 Zarr stores a hierarchy as a tree of directories and files, which is
 awkward to share: many files, not one artifact. zarr-inline represents the
 same hierarchy as a single JSON object — a small hierarchy becomes one
-portable, human-inspectable, hand-editable document.
+portable, human-inspectable, hand-editable document. Put differently, it
+makes a Zarr hierarchy a JSON *value*: embeddable in other JSON,
+pasteable, diffable, hashable (see [use cases](use-cases.md)).
 
 The premise is *small* hierarchies. Consequently:
 
@@ -83,6 +85,33 @@ The remaining gap — a top-level JSON string or number cannot be a JSON
   and for the nested-array value representation; TensorStore puts
   JSON-valued data behind a `json` *dtype* rather than a codec, and its
   zarr drivers deliberately do not store it.
+
+### 2.3 Extension space, and what the typing spent
+
+Structural discrimination consumed both self-describing JSON types at
+byte keys: arrays and objects are inline payloads. Inline *objects*
+almost never occur in real Zarr stores (a chunk that is a canonical JSON
+object), yet spending the type forecloses the cheapest kerchunk-style
+extension — an external reference such as `{"url": …, "offset": …}` at a
+byte key. That is a deliberate trade: a total, guess-free container over
+byte stores was worth more than a value kind the format has no present
+need for.
+
+What remains reserved (R2) is the scalar space — number, boolean, `null`
+— and two of those have natural future meanings: `null` as a
+**tombstone**, which would make a document usable as a sparse *overlay*
+applied on top of another store (keys to replace, keys to delete); and a
+number or string form for **references**, should out-of-line data ever be
+wanted. Neither is specified. Separately, the top-level `__` namespace,
+which Zarr itself reserves for node names, is set aside for
+document-level metadata (SPEC §3.4) — the `__zarr_inline__` member is the
+version and provenance slot the format otherwise lacks.
+
+One consequence of the typing to keep in mind: inlining says nothing
+about *meaning*. A chunk written by any codec inlines if its bytes are
+canonical JSON, so an inline array is only "array elements" when the
+owning array's codec is `json` (SPEC §4.2); the document browser tags
+inline chunks by codec for this reason.
 
 ## 3. Legible data: the `json` codec
 

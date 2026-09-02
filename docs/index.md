@@ -12,6 +12,9 @@ human-inspectable, and hand-editable interchange.
 The [specification](specification.md) defines the interoperable document and
 codec behavior. [How it works](how-it-works.md) explains the design rationale,
 reference implementations, conformance harnesses, and known limitations.
+[Use cases](use-cases.md) shows what treating a hierarchy as a JSON *value*
+buys — embedding, reproducers, fixtures, version control, skeletons — and
+the [document browser](browser.md) lets you explore and edit one live.
 
 ## Reference implementations
 

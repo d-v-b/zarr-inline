@@ -25,6 +25,7 @@ markdown_extensions:
 
 nav:
   - Overview: index.md
+  - Use cases: use-cases.md
   - Specification: specification.md
   - How it works: how-it-works.md
   - Document browser: browser.md

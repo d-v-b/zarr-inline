@@ -12,6 +12,8 @@ export interface ListRow {
 	tag: string;
 	/** CSS modifier for the tag chip (e.g. "tag-group"). */
 	tagClass: string;
+	/** Optional tooltip on the tag chip. */
+	tagTitle?: string;
 	/** Optional trailing detail (subtitle, byte size). */
 	detail?: string;
 	/** Value for data-path, so rows are addressable in tests. */
@@ -66,6 +68,7 @@ export function renderFlatList(container: HTMLElement, options: FlatListOptions)
 			const tag = document.createElement("span");
 			tag.className = `chip ${row.tagClass}`;
 			tag.textContent = row.tag;
+			if (row.tagTitle !== undefined) tag.title = row.tagTitle;
 			head.append(name, tag);
 			if (row.detail !== undefined) {
 				const detail = document.createElement("span");

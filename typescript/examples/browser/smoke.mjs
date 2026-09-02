@@ -16,7 +16,7 @@ import { registerJsonCodec } from "../../src/serializer.js";
 import { strictParse } from "../../src/document.js";
 import { validate } from "../../src/validator.js";
 import { buildHierarchy, arrayShape, arrayDtype, dimensionNames } from "./src/model.js";
-import { prettyJson } from "./src/jsonpanel.js";
+import { prettyJson, keyTag } from "./src/jsonpanel.js";
 import { decodeValue, encodeValue } from "../../src/document.js";
 import { readFileSync } from "node:fs";
 import { compressToParam, decompressFromParam, parseFragment } from "./src/url-state.js";
@@ -72,6 +72,20 @@ for (const [z, y, x] of [[0, 0, 0], [10, 10, 10], [19, 3, 12], [5, 15, 9]]) {
 const big = await zarr.open(zarr.root(store).resolve("/tables/counters"), { kind: "array" });
 const bigChunk = await zarr.get(big);
 assert(bigChunk.data[1] === 9007199254740993n, "int64 exact through zarrita: " + bigChunk.data[1]);
+
+// Codec-aware tags: an inline chunk is only "data" under the json codec
+const imageChunkTag = keyTag(image, "image/c/0/0/0", doc["image/c/0/0/0"]);
+assert(imageChunkTag.tag === "JSON Array", "json-codec chunk tagged as data: " + imageChunkTag.tag);
+const rawDoc = toNullPrototype(strictParse(JSON.stringify({
+  "zarr.json": { zarr_format: 3, node_type: "group" },
+  "raw/zarr.json": { zarr_format: 3, node_type: "array", shape: [7], data_type: "uint8",
+    chunk_grid: { name: "regular", configuration: { chunk_shape: [7] } },
+    chunk_key_encoding: { name: "default" }, fill_value: 0, codecs: [{ name: "bytes" }] },
+  "raw/c/0": [1, 2, 3],
+})));
+const raw = buildHierarchy(rawDoc).byPath.get("raw");
+const rawTag = keyTag(raw, "raw/c/0", rawDoc["raw/c/0"]);
+assert(rawTag.tagClass === "tag-warn" && rawTag.tag.includes("bytes"), "bytes-codec inline chunk warns: " + rawTag.tag);
 
 // URL state: compress/decompress round trip and fragment parsing
 const param = await compressToParam(text);

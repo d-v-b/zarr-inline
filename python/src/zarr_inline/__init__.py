@@ -9,6 +9,7 @@ from zarr_inline.convert import (
     verify_document,
     write_document,
 )
+from zarr_inline.kerchunk import to_kerchunk
 from zarr_inline.serializer import JsonSerializer
 from zarr_inline.store import ZarrInlineStore
 from zarr_inline.validator import (
@@ -27,6 +28,7 @@ __all__ = [
     "MemoryBacking",
     "open_document",
     "StringBacking",
+    "to_kerchunk",
     "to_zarr",
     "Strictness",
     "ValidationError",

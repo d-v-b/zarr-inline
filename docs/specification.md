@@ -1,7 +1,7 @@
 # zarr-inline Specification
 
 **Version:** 0.2.0-draft
-**Date:** 2026-08-23
+**Date:** 2026-09-02
 **Status:** Draft (revised after adversarial spec review)
 
 zarr-inline is a convention for storing a Zarr v3 hierarchy as a single JSON
@@ -76,6 +76,26 @@ all hierarchy coherence (§8), that is deferred to the Zarr layer. Valid
 zarr-inline documents therefore exist whose keys no conforming Zarr v3
 hierarchy would produce.
 
+### 3.4 Reserved document members
+
+Zarr v3 reserves node names beginning with `__`, so no store key of a
+conforming hierarchy has a top-level segment beginning with `__`. This
+specification reserves that namespace at the document's top level for
+**document-level metadata**: a member whose name begins with `__` is not a
+store key. The member `__zarr_inline__` is defined as an object that MAY
+carry `"version"` (the specification version the document targets, e.g.
+`"0.2.0"`) and MAY carry other descriptive members (generator,
+provenance); readers MUST ignore members of `__zarr_inline__` they do not
+understand and MUST NOT reject a document over one.
+
+Such members satisfy R1 and, as objects, R2 — a document with them is
+valid under this revision, and lenient readers of earlier drafts treat
+them as ordinary inline values. Store implementations SHOULD exclude
+reserved members from key listings and lookups; the reference
+implementations currently expose them as byte keys, which the Zarr layer
+ignores (they name no node). Reserved members other than `__zarr_inline__`
+are undefined and SHOULD NOT be written.
+
 ## 4. Values (rule R2)
 
 By key class:
@@ -121,6 +141,18 @@ canonical serialization fails (e.g. it contains a lone surrogate) is a
 A top-level JSON **string** can never be an inline value: the string type
 is the base64 channel (§4.1), and that reservation is what keeps every
 value decodable.
+
+An inline value carries **no meaning of its own**. It denotes bytes (§7.1),
+and what those bytes mean is decided entirely by the Zarr layer — for a
+chunk key, by the owning array's codec chain. In particular, an inline
+array at a chunk key is *not* evidence that the array uses the `json`
+codec: any codec's output that happens to be byte-stable canonical JSON
+inlines by §7.2 (a `bytes`-codec `uint8` chunk holding the text `[1,2,3]`
+appears in the document as `[1, 2, 3]`, while its element values are the
+seven bytes of that text). Consumers that present or edit inline chunk
+values as *array elements* MUST first establish from the array's
+metadata that its array→bytes codec is `json`; tools SHOULD signal the
+distinction to users.
 
 ## 5. Canonical JSON serialization
 
@@ -304,6 +336,18 @@ key decodes in both, and the decoded bytes agree per key. Equivalence,
 not textual equality, is the round-trip guarantee. Documents with an
 undecodable key have no equivalents.
 
+### 7.4 Canonical document
+
+The *canonical document* of a document is the canonical serialization
+(§5) of the document object with its **top-level members sorted by key**
+(code-point order; §5.2's insertion-order rule applies to nested objects
+only). It is deterministic: two documents have the same canonical
+document if and only if they have the same keys with, member for member,
+the same data-model values. Canonical documents are the intended input to
+content hashes, deduplication, and reproducibility checks. A canonical
+document is itself a valid document, and readers treat it like any other;
+writers are not required to emit it.
+
 ## 8. Validity and errors
 
 A document is **valid** when every key satisfies R1 (§3.1) and every
@@ -486,6 +530,9 @@ full float64 range round-trip exactly.
 
 Interchange notes: the RECOMMENDED file extension is `.zarr-inline.json`; where
 a media type is needed, `application/zarr-inline+json` is suggested. A
+[JSON Schema](zarr-inline.schema.json) for rules R1 and R2 is published
+with this specification (the reference validators remain normative; the
+schema lets editors and generic tooling check documents). A
 document does not self-identify — there is no version or magic member;
 whether JSON text is a zarr-inline document is established by context.
 Filesystems that normalize Unicode filenames (e.g. APFS) can collide

@@ -55,6 +55,8 @@ document = from_zarr("data.zarr", inline_data=False)    # byte-faithful: origina
                                                         # codecs kept, chunks base64
 document = from_zarr("data.zarr", inline_data="auto")   # inline what the codec
                                                         # supports, base64 the rest
+skeleton = from_zarr("data.zarr", data=False)           # metadata only: the
+                                                        # hierarchy's structure
 document = write_document("data.zarr", "data.json")  # straight to a pretty
                                                      # file; returns the document
 root = open_document("data.json")                    # the document as a zarr Group
@@ -76,6 +78,11 @@ hierarchies.
 rest byte-for-byte, so one stubborn dtype does not cost the whole document
 its legibility. `inline_data=False` copies every store key byte-for-byte
 instead.
+`data=False` copies only the `zarr.json` keys — a consolidated-metadata
+snapshot of any size of dataset, for discovery and validation without the
+data. `to_kerchunk(document)` returns a kerchunk reference set
+(`{"version": 1, "refs": {...}}`) so fsspec's `ReferenceFileSystem` can
+open a document without this package.
 `verify_document` compares decoded *values* (attributes, dtypes, shapes,
 NaN-aware data), not bytes — the right notion for the legible form, whose
 encoding is deliberately different from the source's. On mismatch it

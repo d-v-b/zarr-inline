@@ -11,7 +11,7 @@ import type { Document } from "../../../src/backing.js";
 import { canonicalStringify, decodeValue, encodeValue } from "../../../src/document.js";
 import { createJsonEditor } from "./jsonhl.js";
 import { renderFlatList, type ListRow } from "./list.js";
-import type { NodeInfo } from "./model.js";
+import { codecNames, type NodeInfo } from "./model.js";
 import { parseJsonText } from "./strict.js";
 
 export interface JsonPanelCallbacks {
@@ -50,13 +50,45 @@ export function prettyJson(value: unknown, indent = 0): string {
 	return canonicalStringify(value);
 }
 
-export function valueTag(value: unknown): { tag: string; tagClass: string } {
+export interface KeyTag {
+	tag: string;
+	tagClass: string;
+	/** Tooltip; set when the tag needs explaining. */
+	title?: string;
+}
+
+export function valueTag(value: unknown): KeyTag {
 	if (typeof value === "string") return { tag: "base64", tagClass: "tag-b64" };
 	if (Array.isArray(value)) return { tag: "JSON Array", tagClass: "tag-array" };
 	if (value !== null && typeof value === "object") {
 		return { tag: "JSON Object", tagClass: "tag-object" };
 	}
 	return { tag: "JSON value", tagClass: "tag-other" };
+}
+
+/**
+ * The tag for a key owned by a node. Inlining says nothing about meaning
+ * (SPEC §4.2): an inline chunk of an array whose codec is not `json` is
+ * bytes that merely happen to be canonical JSON — not element values —
+ * and is tagged as such so nobody edits it as data.
+ */
+export function keyTag(node: NodeInfo, key: string, value: unknown): KeyTag {
+	const base = valueTag(value);
+	if (node.kind !== "array" || key === node.metaKey || typeof value === "string") {
+		return base;
+	}
+	if (value === null || typeof value !== "object") return base;
+	const codecs = codecNames(node);
+	if (codecs.includes("json")) return base;
+	const chain = codecs.length > 0 ? codecs.join(" → ") : "unknown codec";
+	return {
+		tag: `inline JSON · bytes of ${chain}`,
+		tagClass: "tag-warn",
+		title:
+			"This chunk's bytes happen to be canonical JSON, so the document " +
+			"inlines them — but the array's codec is not `json`, so these are " +
+			"not the array's element values. Edit as bytes, not as data.",
+	};
 }
 
 // Panel UI state, reset when the selected node changes.
@@ -111,11 +143,12 @@ export function renderJsonPanel(
 	container.append(listHost);
 	const rows: ListRow[] = keys.map(({ name, key }) => {
 		const value = doc[key];
-		const { tag, tagClass } = valueTag(value);
+		const { tag, tagClass, title } = keyTag(node, key, value);
 		const row: ListRow = {
 			name,
 			tag,
 			tagClass,
+			tagTitle: title,
 			detail: byteSize(key, value),
 			path: key,
 			selected: expandedKey === key,

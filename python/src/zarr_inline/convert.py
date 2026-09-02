@@ -35,7 +35,7 @@ from zarr.core.buffer import default_buffer_prototype
 from zarr.core.sync import sync
 
 from zarr_inline.backing import Document
-from zarr_inline.document import decode_value, encode_value
+from zarr_inline.document import decode_value, encode_value, is_metadata_key
 from zarr_inline.serializer import JsonSerializer
 from zarr_inline.store import ZarrInlineStore
 
@@ -112,7 +112,13 @@ def _copy_inline(
                 _copy_bytes(src_root, document, subpath=path)
 
 
-def _copy_bytes(src_root: zarr.Group, document: Document, subpath: str = "") -> None:
+def _copy_bytes(
+    src_root: zarr.Group,
+    document: Document,
+    subpath: str = "",
+    *,
+    metadata_only: bool = False,
+) -> None:
     store = src_root.store_path.store
     prefix = src_root.store_path.path
     if prefix:
@@ -121,6 +127,8 @@ def _copy_bytes(src_root: zarr.Group, document: Document, subpath: str = "") -> 
     prototype = default_buffer_prototype()
     keys = sorted(sync(_collect(store.list_prefix(scope))))
     for key in keys:
+        if metadata_only and not is_metadata_key(key[len(prefix) :]):
+            continue
         buffer = sync(store.get(key, prototype))
         if buffer is None:  # pragma: no cover - listed keys should exist
             continue
@@ -132,10 +140,16 @@ async def _collect(iterator: Any) -> list[str]:
     return [key async for key in iterator]
 
 
-def from_zarr(source: Any, *, inline_data: "bool | str" = True) -> Document:
+def from_zarr(
+    source: Any, *, inline_data: "bool | str" = True, data: bool = True
+) -> Document:
     """Convert an existing Zarr v3 hierarchy into a zarr-inline document.
 
     ``source`` is a filesystem path, a zarr ``Store``, or an open ``Group``.
+    ``data=False`` copies only the metadata keys (every ``zarr.json``): the
+    hierarchy's *skeleton* — a consolidated-metadata snapshot of arbitrarily
+    large datasets, for discovery and validation without the data (arrays
+    read back as their fill value). ``inline_data`` is then irrelevant.
     With ``inline_data=True`` every array is re-encoded with the ``json``
     codec (chunks become human-readable JSON arrays; the original codec
     chain is replaced). An array whose dtype the codec cannot represent
@@ -155,6 +169,9 @@ def from_zarr(source: Any, *, inline_data: "bool | str" = True) -> Document:
         )
     src_root = _open_group(source)
     document: Document = {}
+    if not data:
+        _copy_bytes(src_root, document, metadata_only=True)
+        return document
     if inline_data:
         from zarr_inline.backing import MemoryBacking
 
@@ -167,10 +184,14 @@ def from_zarr(source: Any, *, inline_data: "bool | str" = True) -> Document:
 
 
 def write_document(
-    source: Any, path: "str | Path", *, inline_data: "bool | str" = True
+    source: Any,
+    path: "str | Path",
+    *,
+    inline_data: "bool | str" = True,
+    data: bool = True,
 ) -> Document:
     """:func:`from_zarr`, saved to ``path`` as pretty-printed JSON."""
-    document = from_zarr(source, inline_data=inline_data)
+    document = from_zarr(source, inline_data=inline_data, data=data)
     Path(path).write_text(
         json.dumps(document, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
     )

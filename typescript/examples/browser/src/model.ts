@@ -102,6 +102,17 @@ export function arrayDtype(node: NodeInfo): string | null {
 	return null;
 }
 
+/** Names of the array's codec chain, in order (empty when unknown). */
+export function codecNames(node: NodeInfo): string[] {
+	const codecs = node.meta?.["codecs"];
+	if (!Array.isArray(codecs)) return [];
+	return codecs.map((c) => {
+		if (typeof c === "string") return c;
+		const name = (c as Record<string, unknown> | null)?.["name"];
+		return typeof name === "string" ? name : "?";
+	});
+}
+
 export function chunkShape(node: NodeInfo): number[] | null {
 	const grid = node.meta?.["chunk_grid"];
 	if (grid === null || typeof grid !== "object") return null;
