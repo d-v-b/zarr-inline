@@ -510,7 +510,12 @@ JSON editor, and edits are
 canonicalized through the format's decode/encode pair, re-validated
 live, and the viewer updates on every Apply. Keys can be added and
 deleted, so the document's data is fully live: edit <code>image/zarr.json</code>
-from 3-D to 2-D, add a <code>c/0/0</code> chunk, and watch the pixels appear. The right panel displays the
+from 3-D to 2-D, add a <code>c/0/0</code> chunk, and watch the pixels appear.
+<code>zarr.json</code> edits are linted live against the Zarr v3 metadata rules
+(structure plus cross-field semantics such as chunk-grid arity and
+<code>fill_value</code> vs data type, via the <code>zarr-metadata</code> package); violations
+are flagged, not blocked, because a document with an incoherent
+hierarchy is still a valid zarr-inline document. The right panel displays the
 node: groups as attribute + children cards, arrays in a multi-dimensional
 slice viewer with X/Y dimension assignment, sliders for the remaining
 dimensions, lookup tables (including a <code>text</code> mode that prints each
