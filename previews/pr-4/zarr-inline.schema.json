@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://d-v-b.github.io/zarr-inline/zarr-inline.schema.json",
+  "title": "zarr-inline document",
+  "description": "A Zarr v3 store as one JSON object: member names are store keys (rule R1); metadata keys hold JSON objects and byte keys hold base64 strings or inline JSON arrays/objects (rule R2). Specification 0.2.0-draft, sections 3-4. Hierarchy coherence is deliberately not checked.",
+  "type": "object",
+  "propertyNames": {
+    "description": "R1: the empty key, or '/'-separated segments none of which is empty, '.', or '..'; no leading or trailing '/'.",
+    "pattern": "^(?:|(?:(?!\\.{1,2}(?:/|$))[^/]+)(?:/(?:(?!\\.{1,2}(?:/|$))[^/]+))*)$"
+  },
+  "patternProperties": {
+    "(?:^|/)zarr\\.json$": {
+      "description": "R2 at a metadata key: a Zarr v3 metadata document.",
+      "type": "object"
+    }
+  },
+  "additionalProperties": {
+    "description": "R2 at a byte key: base64 bytes (RFC 4648 section 4 grammar) or an inline JSON array/object whose canonical serialization is the bytes.",
+    "anyOf": [
+      {
+        "type": "string",
+        "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+      },
+      { "type": "array" },
+      { "type": "object" }
+    ]
+  }
+}

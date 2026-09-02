@@ -251,6 +251,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../specification/" class="md-nav__link">
         
   
@@ -376,6 +403,17 @@
     <span class="md-ellipsis">
       
         2.2 Prior art
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-extension-space-and-what-the-typing-spent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 Extension space, and what the typing spent
       
     </span>
   </a>
@@ -637,6 +675,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#23-extension-space-and-what-the-typing-spent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 Extension space, and what the typing spent
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -816,7 +865,9 @@ explanatory.</p>
 <p>Zarr stores a hierarchy as a tree of directories and files, which is
 awkward to share: many files, not one artifact. zarr-inline represents the
 same hierarchy as a single JSON object — a small hierarchy becomes one
-portable, human-inspectable, hand-editable document.</p>
+portable, human-inspectable, hand-editable document. Put differently, it
+makes a Zarr hierarchy a JSON <em>value</em>: embeddable in other JSON,
+pasteable, diffable, hashable (see <a href="../use-cases/">use cases</a>).</p>
 <p>The premise is <em>small</em> hierarchies. Consequently:</p>
 <ul>
 <li><strong>Performance is an explicit non-goal.</strong> Every design choice below
@@ -913,6 +964,29 @@ The remaining gap — a top-level JSON string or number cannot be a JSON
   JSON-valued data behind a <code>json</code> <em>dtype</em> rather than a codec, and its
   zarr drivers deliberately do not store it.</li>
 </ul>
+<h3 id="23-extension-space-and-what-the-typing-spent">2.3 Extension space, and what the typing spent<a class="headerlink" href="#23-extension-space-and-what-the-typing-spent" title="Permanent link">&para;</a></h3>
+<p>Structural discrimination consumed both self-describing JSON types at
+byte keys: arrays and objects are inline payloads. Inline <em>objects</em>
+almost never occur in real Zarr stores (a chunk that is a canonical JSON
+object), yet spending the type forecloses the cheapest kerchunk-style
+extension — an external reference such as <code>{"url": …, "offset": …}</code> at a
+byte key. That is a deliberate trade: a total, guess-free container over
+byte stores was worth more than a value kind the format has no present
+need for.</p>
+<p>What remains reserved (R2) is the scalar space — number, boolean, <code>null</code>
+— and two of those have natural future meanings: <code>null</code> as a
+<strong>tombstone</strong>, which would make a document usable as a sparse <em>overlay</em>
+applied on top of another store (keys to replace, keys to delete); and a
+number or string form for <strong>references</strong>, should out-of-line data ever be
+wanted. Neither is specified. Separately, the top-level <code>__</code> namespace,
+which Zarr itself reserves for node names, is set aside for
+document-level metadata (SPEC §3.4) — the <code>__zarr_inline__</code> member is the
+version and provenance slot the format otherwise lacks.</p>
+<p>One consequence of the typing to keep in mind: inlining says nothing
+about <em>meaning</em>. A chunk written by any codec inlines if its bytes are
+canonical JSON, so an inline array is only "array elements" when the
+owning array's codec is <code>json</code> (SPEC §4.2); the document browser tags
+inline chunks by codec for this reason.</p>
 <h2 id="3-legible-data-the-json-codec">3. Legible data: the <code>json</code> codec<a class="headerlink" href="#3-legible-data-the-json-codec" title="Permanent link">&para;</a></h2>
 <p>Under the Zarr model, whatever sits at a chunk key is the <em>output of the
 codec pipeline</em>, so "chunks as JSON arrays" requires the pipeline's output

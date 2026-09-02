@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://d-v-b.github.io/zarr-inline/specification/">
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../use-cases/">
       
       
         <link rel="next" href="../how-it-works/">
@@ -248,6 +248,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../use-cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -371,6 +398,17 @@
     <span class="md-ellipsis">
       
         3.3 Relation to Zarr v3 (non-normative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-reserved-document-members" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Reserved document members
       
     </span>
   </a>
@@ -543,6 +581,17 @@
     <span class="md-ellipsis">
       
         7.3 Normal form and equivalence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-canonical-document" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 Canonical document
       
     </span>
   </a>
@@ -864,6 +913,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#34-reserved-document-members" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Reserved document members
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1030,6 +1090,17 @@
     <span class="md-ellipsis">
       
         7.3 Normal form and equivalence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-canonical-document" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 Canonical document
       
     </span>
   </a>
@@ -1218,7 +1289,7 @@
 
 <h1 id="zarr-inline-specification">zarr-inline Specification<a class="headerlink" href="#zarr-inline-specification" title="Permanent link">&para;</a></h1>
 <p><strong>Version:</strong> 0.2.0-draft
-<strong>Date:</strong> 2026-08-23
+<strong>Date:</strong> 2026-09-02
 <strong>Status:</strong> Draft (revised after adversarial spec review)</p>
 <p>zarr-inline is a convention for storing a Zarr v3 hierarchy as a single JSON
 document, for simple interchange of small hierarchies: one portable,
@@ -1278,6 +1349,23 @@ with <code>__</code>. zarr-inline does not re-validate hierarchy-level naming �
 all hierarchy coherence (§8), that is deferred to the Zarr layer. Valid
 zarr-inline documents therefore exist whose keys no conforming Zarr v3
 hierarchy would produce.</p>
+<h3 id="34-reserved-document-members">3.4 Reserved document members<a class="headerlink" href="#34-reserved-document-members" title="Permanent link">&para;</a></h3>
+<p>Zarr v3 reserves node names beginning with <code>__</code>, so no store key of a
+conforming hierarchy has a top-level segment beginning with <code>__</code>. This
+specification reserves that namespace at the document's top level for
+<strong>document-level metadata</strong>: a member whose name begins with <code>__</code> is not a
+store key. The member <code>__zarr_inline__</code> is defined as an object that MAY
+carry <code>"version"</code> (the specification version the document targets, e.g.
+<code>"0.2.0"</code>) and MAY carry other descriptive members (generator,
+provenance); readers MUST ignore members of <code>__zarr_inline__</code> they do not
+understand and MUST NOT reject a document over one.</p>
+<p>Such members satisfy R1 and, as objects, R2 — a document with them is
+valid under this revision, and lenient readers of earlier drafts treat
+them as ordinary inline values. Store implementations SHOULD exclude
+reserved members from key listings and lookups; the reference
+implementations currently expose them as byte keys, which the Zarr layer
+ignores (they name no node). Reserved members other than <code>__zarr_inline__</code>
+are undefined and SHOULD NOT be written.</p>
 <h2 id="4-values-rule-r2">4. Values (rule R2)<a class="headerlink" href="#4-values-rule-r2" title="Permanent link">&para;</a></h2>
 <p>By key class:</p>
 <ul>
@@ -1315,6 +1403,17 @@ canonical serialization fails (e.g. it contains a lone surrogate) is a
 <p>A top-level JSON <strong>string</strong> can never be an inline value: the string type
 is the base64 channel (§4.1), and that reservation is what keeps every
 value decodable.</p>
+<p>An inline value carries <strong>no meaning of its own</strong>. It denotes bytes (§7.1),
+and what those bytes mean is decided entirely by the Zarr layer — for a
+chunk key, by the owning array's codec chain. In particular, an inline
+array at a chunk key is <em>not</em> evidence that the array uses the <code>json</code>
+codec: any codec's output that happens to be byte-stable canonical JSON
+inlines by §7.2 (a <code>bytes</code>-codec <code>uint8</code> chunk holding the text <code>[1,2,3]</code>
+appears in the document as <code>[1, 2, 3]</code>, while its element values are the
+seven bytes of that text). Consumers that present or edit inline chunk
+values as <em>array elements</em> MUST first establish from the array's
+metadata that its array→bytes codec is <code>json</code>; tools SHOULD signal the
+distinction to users.</p>
 <h2 id="5-canonical-json-serialization">5. Canonical JSON serialization<a class="headerlink" href="#5-canonical-json-serialization" title="Permanent link">&para;</a></h2>
 <p>Canonical serialization maps a JSON value (in the data model of §5.1) to
 UTF-8 text. It is deterministic: for any given value it yields exactly one
@@ -1502,6 +1601,16 @@ Writers produce normal-form values (a consequence of §7.2); a write cycle
 key decodes in both, and the decoded bytes agree per key. Equivalence,
 not textual equality, is the round-trip guarantee. Documents with an
 undecodable key have no equivalents.</p>
+<h3 id="74-canonical-document">7.4 Canonical document<a class="headerlink" href="#74-canonical-document" title="Permanent link">&para;</a></h3>
+<p>The <em>canonical document</em> of a document is the canonical serialization
+(§5) of the document object with its <strong>top-level members sorted by key</strong>
+(code-point order; §5.2's insertion-order rule applies to nested objects
+only). It is deterministic: two documents have the same canonical
+document if and only if they have the same keys with, member for member,
+the same data-model values. Canonical documents are the intended input to
+content hashes, deduplication, and reproducibility checks. A canonical
+document is itself a valid document, and readers treat it like any other;
+writers are not required to emit it.</p>
 <h2 id="8-validity-and-errors">8. Validity and errors<a class="headerlink" href="#8-validity-and-errors" title="Permanent link">&para;</a></h2>
 <p>A document is <strong>valid</strong> when every key satisfies R1 (§3.1) and every
 value satisfies R2 (§4). That is all: validity does not require a root
@@ -1765,6 +1874,9 @@ implementation-defined, not invalid):</p>
 full float64 range round-trip exactly.</p>
 <p>Interchange notes: the RECOMMENDED file extension is <code>.zarr-inline.json</code>; where
 a media type is needed, <code>application/zarr-inline+json</code> is suggested. A
+<a href="../zarr-inline.schema.json">JSON Schema</a> for rules R1 and R2 is published
+with this specification (the reference validators remain normative; the
+schema lets editors and generic tooling check documents). A
 document does not self-identify — there is no version or magic member;
 whether JSON text is a zarr-inline document is established by context.
 Filesystems that normalize Unicode filenames (e.g. APFS) can collide

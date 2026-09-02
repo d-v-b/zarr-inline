@@ -10,26 +10,28 @@
       
       
       
-        <link rel="canonical" href="https://d-v-b.github.io/zarr-inline/">
+        <link rel="canonical" href="https://d-v-b.github.io/zarr-inline/use-cases/">
       
       
+        <link rel="prev" href="..">
       
-        <link rel="next" href="use-cases/">
+      
+        <link rel="next" href="../specification/">
       
       
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
-        <title>zarr-inline</title>
+        <title>Use cases - zarr-inline</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
       
 
@@ -48,7 +50,7 @@
       
     
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -66,7 +68,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#zarr-inline" class="md-skip">
+        <a href="#use-cases" class="md-skip">
           Skip to content
         </a>
       
@@ -82,7 +84,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="zarr-inline" class="md-header__button md-logo" aria-label="zarr-inline" data-md-component="logo">
+    <a href=".." title="zarr-inline" class="md-header__button md-logo" aria-label="zarr-inline" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -102,7 +104,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Overview
+              Use cases
             
           </span>
         </div>
@@ -192,7 +194,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="zarr-inline" class="md-nav__button md-logo" aria-label="zarr-inline" data-md-component="logo">
+    <a href=".." title="zarr-inline" class="md-nav__button md-logo" aria-label="zarr-inline" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -219,6 +221,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -238,7 +267,7 @@
   <span class="md-ellipsis">
     
   
-    Overview
+    Use cases
   
 
     
@@ -249,14 +278,14 @@
           <span class="md-nav__icon md-icon"></span>
         </label>
       
-      <a href="." class="md-nav__link md-nav__link--active">
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
   <span class="md-ellipsis">
     
   
-    Overview
+    Use cases
   
 
     
@@ -282,10 +311,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#reference-implementations" class="md-nav__link">
+  <a href="#zarr-as-a-value" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Reference implementations
+        Zarr as a value
       
     </span>
   </a>
@@ -293,10 +322,87 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#development" class="md-nav__link">
+  <a href="#reproducers-and-bug-reports" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Development
+        Reproducers and bug reports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-fixtures-for-zarr-software" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test fixtures for Zarr software
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-controlled-small-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version-controlled small datasets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tutorials-documentation-and-papers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tutorials, documentation, and papers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interchange-with-language-models-and-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interchange with language models and agents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hierarchy-skeletons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hierarchy skeletons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interoperability-with-kerchunk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interoperability with kerchunk
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-is-not-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it is not for
       
     </span>
   </a>
@@ -318,34 +424,7 @@
   
   
     <li class="md-nav__item">
-      <a href="use-cases/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Use cases
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="specification/" class="md-nav__link">
+      <a href="../specification/" class="md-nav__link">
         
   
   
@@ -372,7 +451,7 @@
   
   
     <li class="md-nav__item">
-      <a href="how-it-works/" class="md-nav__link">
+      <a href="../how-it-works/" class="md-nav__link">
         
   
   
@@ -399,7 +478,7 @@
   
   
     <li class="md-nav__item">
-      <a href="browser/" class="md-nav__link">
+      <a href="../browser/" class="md-nav__link">
         
   
   
@@ -446,10 +525,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#reference-implementations" class="md-nav__link">
+  <a href="#zarr-as-a-value" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Reference implementations
+        Zarr as a value
       
     </span>
   </a>
@@ -457,10 +536,87 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#development" class="md-nav__link">
+  <a href="#reproducers-and-bug-reports" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Development
+        Reproducers and bug reports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-fixtures-for-zarr-software" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test fixtures for Zarr software
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-controlled-small-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version-controlled small datasets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tutorials-documentation-and-papers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tutorials, documentation, and papers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interchange-with-language-models-and-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interchange with language models and agents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hierarchy-skeletons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hierarchy skeletons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interoperability-with-kerchunk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interoperability with kerchunk
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-is-not-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it is not for
       
     </span>
   </a>
@@ -487,43 +643,78 @@
   
 
 
-<h1 id="zarr-inline">zarr-inline<a class="headerlink" href="#zarr-inline" title="Permanent link">&para;</a></h1>
-<blockquote>
-<p>[!WARNING]
-<strong>zarr-inline is unstable.</strong> The format (specification 0.2.0-draft) and
-the APIs of all three implementations may change incompatibly without
-notice. Do not use it as the only copy of data you care about.</p>
-</blockquote>
-<p>zarr-inline is a convention for storing an entire Zarr v3 hierarchy in one
-JSON object. It is intended for small datasets that benefit from portable,
-human-inspectable, and hand-editable interchange.</p>
-<p>The <a href="specification/">specification</a> defines the interoperable document and
-codec behavior. <a href="how-it-works/">How it works</a> explains the design rationale,
-reference implementations, conformance harnesses, and known limitations.
-<a href="use-cases/">Use cases</a> shows what treating a hierarchy as a JSON <em>value</em>
-buys — embedding, reproducers, fixtures, version control, skeletons — and
-the <a href="browser/">document browser</a> lets you explore and edit one live.</p>
-<h2 id="reference-implementations">Reference implementations<a class="headerlink" href="#reference-implementations" title="Permanent link">&para;</a></h2>
-<p>The repository contains implementations for three Zarr libraries:</p>
+<h1 id="use-cases">Use cases<a class="headerlink" href="#use-cases" title="Permanent link">&para;</a></h1>
+<p>The one-line version of zarr-inline is "a Zarr hierarchy in one file". The
+more useful version is that it turns a Zarr hierarchy into a <strong>JSON
+value</strong> — something you can embed, paste, diff, hash, and compute over,
+not merely store. Every use case below follows from that.</p>
+<h2 id="zarr-as-a-value">Zarr as a value<a class="headerlink" href="#zarr-as-a-value" title="Permanent link">&para;</a></h2>
+<p>A document is a plain JSON object with no magic member, so it can appear
+<em>inside</em> any JSON-bearing context: another Zarr node's <code>attributes</code>, a
+configuration file, a notebook cell, an HTTP response body, a JSON
+database column, a chat message, a GitHub issue. Two consequences worth
+naming:</p>
 <ul>
-<li><a href="https://github.com/d-v-b/zarr-inline/tree/main/python">Python with zarr-python</a></li>
-<li><a href="https://github.com/d-v-b/zarr-inline/tree/main/typescript">TypeScript with zarrita</a></li>
-<li><a href="https://github.com/d-v-b/zarr-inline/tree/main/rust">Rust with zarrs</a></li>
+<li><strong>Zarr inside Zarr.</strong> A large hierarchy can carry small auxiliary arrays
+  in its attributes as complete zarr-inline stores — coordinate axes,
+  lookup tables and colormaps, calibration curves, a thumbnail pyramid,
+  an ROI mask — with real dtypes, shapes, and chunk grids. This is the
+  principled form of the common anti-pattern of stuffing arrays into
+  <code>attributes</code> as bare JSON lists.</li>
+<li><strong>Zarr in APIs and pages.</strong> A web service can return a small array as
+  JSON that a client opens directly with zarrita; a static HTML page can
+  embed its data in a <code>&lt;script&gt;</code> block and read it with no fetch and no
+  CORS — the <a href="../browser/">document browser</a> on this site works that way.</li>
 </ul>
-<p>All three consume the same examples and serialized conformance protocols. The
-cross-implementation suite compares document behavior, whole-array reads and
-writes, and operation traces, including one-level and nested sharding.</p>
-<h2 id="development">Development<a class="headerlink" href="#development" title="Permanent link">&para;</a></h2>
-<p>The repository <a href="https://github.com/d-v-b/zarr-inline/blob/main/justfile"><code>justfile</code></a>
-is the command interface used locally and in CI:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">just test-python</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="go">just test-typescript</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="go">just test-rust</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="go">just cross</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="go">just docs-check</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="go">just check</span>
-</code></pre></div>
-<p>Run <code>just docs-serve</code> to preview this site locally.</p>
+<h2 id="reproducers-and-bug-reports">Reproducers and bug reports<a class="headerlink" href="#reproducers-and-bug-reports" title="Permanent link">&para;</a></h2>
+<p>One JSON blob pasted into an issue is a complete, runnable Zarr store.
+Because base64 values carry <em>any</em> bytes, this works for every codec —
+compressed chunks, sharded arrays, custom filters — not only the legible
+<code>json</code>-codec form. The Python package's <code>from_zarr(path)</code> produces the
+blob; <code>open_document(blob)</code> reproduces the store on the other end.</p>
+<h2 id="test-fixtures-for-zarr-software">Test fixtures for Zarr software<a class="headerlink" href="#test-fixtures-for-zarr-software" title="Permanent link">&para;</a></h2>
+<p>Store-level test cases as text: line-diffable, reviewable in pull
+requests, readable without tooling. This repository already uses the
+format this way — its conformance and crosscheck suites exchange
+documents between three implementations — and the same idea applies to
+any Zarr library or downstream tool: ship store fixtures, including
+sharding and custom codecs, as one JSON file each.</p>
+<h2 id="version-controlled-small-datasets">Version-controlled small datasets<a class="headerlink" href="#version-controlled-small-datasets" title="Permanent link">&para;</a></h2>
+<p>Calibration tables, reference results, tutorial data, golden outputs:
+committed as pretty-printed JSON with one chunk per line, so <code>git diff</code>
+shows exactly which values changed. The canonical value form makes two
+equivalent documents compare equal after a write cycle, and the canonical
+<em>document</em> form (specification §7.4) gives a stable content hash for
+deduplication and reproducibility checks.</p>
+<h2 id="tutorials-documentation-and-papers">Tutorials, documentation, and papers<a class="headerlink" href="#tutorials-documentation-and-papers" title="Permanent link">&para;</a></h2>
+<p>A tiny labeled dataset can be pasted directly into prose. With
+<code>dimension_names</code> set, xarray opens a document as a labeled dataset
+(<code>xr.open_zarr(ZarrInlineStore(...))</code>) — effectively NetCDF-in-JSON, but
+with exact dtypes, big integers, and non-finite floats, which text-based
+CF/JSON conventions do not preserve.</p>
+<h2 id="interchange-with-language-models-and-agents">Interchange with language models and agents<a class="headerlink" href="#interchange-with-language-models-and-agents" title="Permanent link">&para;</a></h2>
+<p>The format is text that a model can read, write, and edit correctly:
+metadata as JSON objects, chunks as JSON arrays of values, strict numbers.
+A model can construct a small dataset in a reply, patch a chunk in an
+existing one, or explain a hierarchy from its document alone.</p>
+<h2 id="hierarchy-skeletons">Hierarchy skeletons<a class="headerlink" href="#hierarchy-skeletons" title="Permanent link">&para;</a></h2>
+<p>A document holding only <code>zarr.json</code> keys — <code>from_zarr(path, data=False)</code>
+in Python — is a consolidated-metadata snapshot of an arbitrarily large
+dataset: its full structure, attributes, dtypes, shapes, and chunk grids
+in one file, for discovery, validation, and schema checks without moving
+any data. Arrays read back as their fill value.</p>
+<h2 id="interoperability-with-kerchunk">Interoperability with kerchunk<a class="headerlink" href="#interoperability-with-kerchunk" title="Permanent link">&para;</a></h2>
+<p>A zarr-inline document maps mechanically onto a kerchunk reference set:
+inline JSON becomes reference text, base64 values become
+<code>base64:</code>-prefixed strings. <code>to_kerchunk(document)</code> in Python performs the
+mapping, so any fsspec-based reader (<code>ReferenceFileSystem</code>) can open a
+document without the zarr-inline store.</p>
+<h2 id="what-it-is-not-for">What it is not for<a class="headerlink" href="#what-it-is-not-for" title="Permanent link">&para;</a></h2>
+<p>Large data. Every design choice trades performance for legibility and
+cross-language exactness; see <a href="../how-it-works/#1-purpose-and-scope">how it works</a>.
+Documents are read fully into memory, numbers are text, and the inlining
+check parses on every write. If a dataset does not comfortably fit in a
+text editor, a conventional Zarr store is the right tool.</p>
 
 
 
@@ -579,10 +770,10 @@ is the command interface used locally and in CI:</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["content.code.copy", "navigation.sections", "navigation.top"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.sections", "navigation.top"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
