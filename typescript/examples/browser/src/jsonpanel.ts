@@ -1,20 +1,23 @@
 /**
- * The JSON panel: every document key owned by the selected node — its
- * zarr.json and its chunk/data keys — as one flat, searchable, bounded
- * list. Each row is tagged with its encoding (JSON Object / JSON Array /
- * base64) and expands into a syntax-highlighted editor. Applying an edit
- * round-trips the value through the zarr-inline decode/encode pair, so
- * whatever is typed is stored in the document's canonical form.
+ * The browser panel: one flat, searchable, bounded list per node holding
+ * both its *members* (child groups and arrays, tagged Group / Array —
+ * clicking one navigates) and its *keys* (zarr.json and chunk/data keys,
+ * tagged JSON Object / JSON Array / base64 — clicking one expands a
+ * syntax-highlighted editor), under a breadcrumb for moving up. Applying
+ * an edit round-trips the value through the zarr-inline decode/encode
+ * pair, so whatever is typed is stored in the document's canonical form.
  */
 
 import type { Document } from "../../../src/backing.js";
 import { canonicalStringify, decodeValue, encodeValue } from "../../../src/document.js";
 import { createJsonEditor } from "./jsonhl.js";
 import { renderFlatList, type ListRow } from "./list.js";
-import { codecNames, type NodeInfo } from "./model.js";
+import { codecNames, nodeSubtitle, type NodeInfo } from "./model.js";
 import { parseJsonText } from "./strict.js";
 
 export interface JsonPanelCallbacks {
+	/** Navigate to another node (a member row or a breadcrumb segment). */
+	onSelect: (path: string) => void;
 	/** Called after a successful edit was written into the document. */
 	onDocumentChanged: () => void;
 	/** Called when keys were added or removed: the hierarchy (and this
@@ -123,25 +126,46 @@ export function renderJsonPanel(
 	const prefixLength = node.path === "" ? 0 : node.path.length + 1;
 	for (const key of node.dataKeys) keys.push({ name: key.slice(prefixLength), key });
 
-	const header = document.createElement("div");
-	header.className = "section-header";
-	const title = document.createElement("strong");
-	title.textContent = node.path === "" ? "/" : node.path;
-	const count = document.createElement("code");
-	count.textContent = `${keys.length} key${keys.length === 1 ? "" : "s"}`;
-	header.append(title, count);
-	container.append(header);
-
-	if (keys.length === 0) {
-		container.append(
-			hint("This node has no document keys — it only exists as a path prefix of other keys."),
-		);
-		return;
+	// Breadcrumb: every ancestor is one click away.
+	const crumb = document.createElement("div");
+	crumb.className = "breadcrumb";
+	const addCrumb = (label: string, path: string) => {
+		const link = document.createElement("a");
+		link.textContent = label;
+		link.dataset.path = path;
+		if (path === node.path) link.className = "current";
+		link.addEventListener("click", () => callbacks.onSelect(path));
+		crumb.append(link);
+	};
+	addCrumb("/", "");
+	let accumulated = "";
+	for (const segment of node.path === "" ? [] : node.path.split("/")) {
+		accumulated = accumulated === "" ? segment : `${accumulated}/${segment}`;
+		const sep = document.createElement("span");
+		sep.textContent = "›";
+		crumb.append(sep);
+		addCrumb(segment, accumulated);
 	}
+	const count = document.createElement("code");
+	count.className = "crumb-count";
+	const members = node.children.length;
+	count.textContent = `${members} member${members === 1 ? "" : "s"} · ${keys.length} key${keys.length === 1 ? "" : "s"}`;
+	crumb.append(count);
+	container.append(crumb);
 
-	const listHost = document.createElement("div");
-	container.append(listHost);
-	const rows: ListRow[] = keys.map(({ name, key }) => {
+	// Members first (navigation), then the node's own keys (editing).
+	const rows: ListRow[] = node.children.map((child) => ({
+		name: child.name,
+		tag: child.kind === "array" ? "Array" : "Group",
+		tagClass: child.kind === "array" ? "tag-array-node" : "tag-group",
+		detail:
+			child.kind === "array"
+				? nodeSubtitle(child)
+				: `${child.children.length} member${child.children.length === 1 ? "" : "s"}`,
+		path: child.path,
+		onSelect: () => callbacks.onSelect(child.path),
+	}));
+	for (const { name, key } of keys) {
 		const value = doc[key];
 		const { tag, tagClass, title } = keyTag(node, key, value);
 		const row: ListRow = {
@@ -160,8 +184,10 @@ export function renderJsonPanel(
 		if (expandedKey === key) {
 			row.expanded = (slot) => slot.append(editor(doc, key, callbacks));
 		}
-		return row;
-	});
+		rows.push(row);
+	}
+	const listHost = document.createElement("div");
+	container.append(listHost);
 	renderFlatList(listHost, {
 		rows,
 		search,
@@ -169,7 +195,8 @@ export function renderJsonPanel(
 			search = value;
 		},
 		capacity: 100,
-		placeholder: "filter keys by prefix (e.g. c/) …",
+		placeholder: "filter members and keys by prefix (e.g. c/) …",
+		emptyText: node.kind === "implicit" ? "no members, no keys" : "empty",
 	});
 
 	container.append(addKeyRow(doc, node, callbacks));

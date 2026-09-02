@@ -2,23 +2,21 @@
 
 A single-file web app for exploring and editing zarr-inline documents,
 built on the TypeScript implementation and [zarrita](https://zarrita.dev).
-A header toggle switches between the three-pane **Browser** view and a
+A header toggle switches between the two-pane **Browser** view and a
 **JSON** view holding the whole document as one editable,
 syntax-highlighted text.
 
-- **Hierarchy pane** (left): the current group's members as a flat list
-  in a bounded container — each row tagged **Group** or **Array** — with
-  prefix search and a breadcrumb for moving up.
-- **JSON panel** (middle): every document key owned by the selected node
-  (`zarr.json` plus chunk/data keys) as one flat, prefix-searchable list
-  (`c/` filters to chunks), each key tagged with its encoding — **JSON
-  Object**, **JSON Array**, or **base64** — and expandable into a
-  syntax-highlighted editor. Applying an edit round-trips the value
-  through the zarr-inline decode/encode pair, so whatever you type is
-  stored canonically, and the whole document is re-validated live. Keys
-  can be added and deleted too, and the viewer updates on every change —
-  edit `zarr.json` to turn a 3-D image into a 2-D one, then add fresh
-  chunk keys (`c/0/0`) and watch the pixels appear.
+- **Browser pane** (left): the selected node's *members* (child groups
+  and arrays, tagged **Group** / **Array** — click to navigate) and its
+  *keys* (`zarr.json` plus chunk/data keys, tagged **JSON Object**,
+  **JSON Array**, or **base64** — click to expand a syntax-highlighted
+  editor) as one flat, prefix-searchable list (`c/` filters to chunks)
+  under a breadcrumb for moving up. Applying an edit round-trips the
+  value through the zarr-inline decode/encode pair, so whatever you type
+  is stored canonically, and the whole document is re-validated live.
+  Keys can be added and deleted too, and the viewer updates on every
+  change — edit `zarr.json` to turn a 3-D image into a 2-D one, then add
+  fresh chunk keys (`c/0/0`) and watch the pixels appear.
 - **Display panel** (right): groups show their attributes and children;
   arrays open in a multi-dimensional slice viewer — assign any two
   dimensions to X/Y, scrub the rest with sliders, pick a lookup table

@@ -12,13 +12,13 @@ zarr-inline documents, built on the TypeScript implementation and
   document; paste a document, open a local `.json` file, or fetch one
   from a URL.
 
-The left panel browses the hierarchy as a flat, searchable list of the
-current group's members, each tagged **Group** or **Array**, with a
-breadcrumb for moving up. The middle panel lists every document key owned
-by the selected node — its `zarr.json` and its chunks — as one flat,
-prefix-searchable collection (type `c/` to see only chunks), each key
-tagged with its encoding (**JSON Object**, **JSON Array**, or **base64**)
-and expandable into a syntax-highlighted JSON editor; edits are
+The browser pane lists, for the selected node, its members (child groups
+and arrays, tagged **Group** or **Array** — click to navigate) together
+with every document key it owns — its `zarr.json` and its chunks, tagged
+with their encoding (**JSON Object**, **JSON Array**, or **base64**) — as
+one flat, prefix-searchable collection (type `c/` to see only chunks)
+under a breadcrumb for moving up; keys expand into a syntax-highlighted
+JSON editor, and edits are
 canonicalized through the format's decode/encode pair, re-validated
 live, and the viewer updates on every Apply. Keys can be added and
 deleted, so the document's data is fully live: edit `image/zarr.json`
@@ -28,7 +28,7 @@ slice viewer with X/Y dimension assignment, sliders for the remaining
 dimensions, lookup tables (including a `text` mode that prints each
 element's exact value), an optional chunk-boundary overlay, always-on axis
 coordinate labels, zoom/pan, and a hover readout. A header toggle
-switches between this three-pane browser and a **JSON view** — the whole
+switches between this two-pane browser and a **JSON view** — the whole
 document as one editable, syntax-highlighted text; Apply canonicalizes
 it and both views stay in sync.
 

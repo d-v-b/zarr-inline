@@ -57,22 +57,20 @@
   main {
     flex: 1;
     display: grid;
-    grid-template-columns: 300px minmax(340px, 460px) 1fr;
+    grid-template-columns: minmax(380px, 34%) 1fr;
     min-height: 0;
   }
   main > * { min-width: 0; min-height: 0; overflow: auto; }
   #document-panel { padding: 10px 14px; display: none; }
   main[data-view="json"] { grid-template-columns: 1fr; }
-  main[data-view="json"] > #tree-panel,
-  main[data-view="json"] > #json-panel,
+  main[data-view="json"] > #browser-panel,
   main[data-view="json"] > #display-panel { display: none; }
   main[data-view="json"] > #document-panel { display: block; }
 
-  #json-panel { border-right: 1px solid var(--border); padding: 10px 12px; }
+  #browser-panel { border-right: 1px solid var(--border); background: var(--panel); padding: 10px 12px; }
   #display-panel { padding: 10px 12px; display: flex; flex-direction: column; }
 
-  /* left pane: breadcrumb + member list */
-  #tree-panel { border-right: 1px solid var(--border); background: var(--panel); padding: 10px 12px; }
+  /* browser pane: breadcrumb + fused member/key list */
   .breadcrumb {
     display: flex;
     flex-wrap: wrap;
@@ -86,6 +84,7 @@
   .breadcrumb a:hover { background: var(--panel-2); }
   .breadcrumb a.current { color: var(--text); }
   .breadcrumb span { color: var(--muted); }
+  .breadcrumb .crumb-count { margin-left: auto; color: var(--muted); font-size: 11px; }
 
   /* the flat list idiom (left pane members, JSON panel keys) */
   .list-search {
@@ -325,8 +324,7 @@
   <span id="status">no document</span>
 </header>
 <main data-view="browser">
-  <aside id="tree-panel"><p class="hint">Open a document to begin.</p></aside>
-  <section id="json-panel"><p class="hint">Open a document to begin.</p></section>
+  <section id="browser-panel"><p class="hint">Open a document to begin.</p></section>
   <section id="display-panel"><p class="hint">The selected node is displayed here.</p></section>
   <section id="document-panel"></section>
 </main>

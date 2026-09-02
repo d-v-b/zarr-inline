@@ -1,8 +1,8 @@
 /**
- * zarr-inline document browser: hierarchy DAG (left), the selected node's
- * metadata and chunks as editable JSON (middle), and a rendered display of
- * the node (right) — children for groups, a multi-dimensional slice viewer
- * for arrays. The whole app operates on one JSON document via the
+ * zarr-inline document browser: a browser pane (left) with the selected
+ * node's members and keys as one flat searchable list (keys expand into
+ * editors), and a rendered display of the node (right) — children for
+ * groups, a multi-dimensional slice viewer for arrays. The whole app operates on one JSON document via the
  * zarr-inline store and zarrita.
  */
 
@@ -17,7 +17,6 @@ import { fragmentForDocument, decompressFromParam, parseFragment } from "./url-s
 
 import demoText from "./demo-document.json.txt";
 import { createJsonEditor, jsonBlock } from "./jsonhl.js";
-import { renderFlatList } from "./list.js";
 import { prettyJson, renderJsonPanel } from "./jsonpanel.js";
 import {
 	arrayShape,
@@ -39,8 +38,7 @@ import {
 registerJsonCodec();
 
 const el = {
-	tree: document.getElementById("tree-panel")!,
-	json: document.getElementById("json-panel")!,
+	json: document.getElementById("browser-panel")!,
 	display: document.getElementById("display-panel")!,
 	status: document.getElementById("status")!,
 	open: document.getElementById("open") as HTMLButtonElement,
@@ -228,10 +226,13 @@ el.viewJson.addEventListener("click", () => setViewMode("json"));
 
 function renderSelection(renderJson = true): void {
 	if (doc === null || hierarchy === null) return;
-	renderTreePanel();
 	const node = hierarchy.byPath.get(selectedPath) ?? null;
 	if (renderJson) {
 		renderJsonPanel(el.json, doc, node, {
+			onSelect: (path) => {
+				selectedPath = path;
+				renderSelection();
+			},
 			// Keep the editor DOM (and its "applied" feedback) in place;
 			// the editor already shows the canonicalized value itself.
 			onDocumentChanged: () => {
@@ -273,83 +274,6 @@ function badSpan(text: string): HTMLElement {
 	span.className = "bad";
 	span.textContent = text;
 	return span;
-}
-
-// --- left pane: the current group's members as a flat list --------------
-
-let treeSearch = "";
-let lastListPath: string | null = null;
-
-/** The group whose members the left pane lists: the selected node when it
- * is a group, otherwise the selected array's parent. */
-function listPathFor(selected: string): string {
-	const node = hierarchy?.byPath.get(selected);
-	if (node === undefined) return "";
-	if (node.kind !== "array") return node.path;
-	const slash = node.path.lastIndexOf("/");
-	return slash === -1 ? "" : node.path.slice(0, slash);
-}
-
-function renderTreePanel(): void {
-	if (hierarchy === null) return;
-	const listPath = listPathFor(selectedPath);
-	if (listPath !== lastListPath) {
-		lastListPath = listPath;
-		treeSearch = "";
-	}
-	el.tree.replaceChildren();
-
-	const crumb = document.createElement("div");
-	crumb.className = "breadcrumb";
-	const addCrumb = (label: string, path: string) => {
-		const link = document.createElement("a");
-		link.textContent = label;
-		link.dataset.path = path;
-		if (path === listPath) link.className = "current";
-		link.addEventListener("click", () => {
-			selectedPath = path;
-			renderSelection();
-		});
-		crumb.append(link);
-	};
-	addCrumb("/", "");
-	let accumulated = "";
-	for (const segment of listPath === "" ? [] : listPath.split("/")) {
-		accumulated = accumulated === "" ? segment : `${accumulated}/${segment}`;
-		const sep = document.createElement("span");
-		sep.textContent = "›";
-		crumb.append(sep);
-		addCrumb(segment, accumulated);
-	}
-	el.tree.append(crumb);
-
-	const parent = hierarchy.byPath.get(listPath)!;
-	const host = document.createElement("div");
-	el.tree.append(host);
-	renderFlatList(host, {
-		rows: parent.children.map((child) => ({
-			name: child.name,
-			tag: child.kind === "array" ? "Array" : "Group",
-			tagClass: child.kind === "array" ? "tag-array-node" : "tag-group",
-			detail:
-				child.kind === "array"
-					? nodeSubtitle(child)
-					: `${child.children.length} member${child.children.length === 1 ? "" : "s"}`,
-			path: child.path,
-			selected: child.path === selectedPath,
-			onSelect: () => {
-				selectedPath = child.path;
-				renderSelection();
-			},
-		})),
-		search: treeSearch,
-		onSearch: (value) => {
-			treeSearch = value;
-		},
-		capacity: 100,
-		placeholder: "filter members by prefix…",
-		emptyText: "empty group",
-	});
 }
 
 // --- display panel ------------------------------------------------------

@@ -40,19 +40,24 @@ const canvasStats = () =>
 
 // Navigate the left pane's flat member list to a node path.
 const clickNode = async (path) => {
-	await page.locator('#tree-panel .breadcrumb [data-path=""]').first().click();
+	await page.locator('#browser-panel .breadcrumb [data-path=""]').first().click();
 	await page.waitForTimeout(150);
 	if (path === "") return;
 	let acc = "";
 	for (const segment of path.split("/")) {
 		acc = acc === "" ? segment : `${acc}/${segment}`;
-		const row = page.locator(`#tree-panel .list-row[data-path="${acc}"] .list-row-head`);
+		const row = page.locator(`#browser-panel .list-row[data-path="${acc}"] .list-row-head`);
 		if ((await row.count()) > 0) await row.first().click();
 		await page.waitForTimeout(150);
 	}
 };
 
-// Select the image array in the left pane.
+// Member rows are tagged Group / Array (read at the root, where they show).
+const groupTag = await page
+	.locator('#browser-panel .list-row[data-path="tables"] .chip')
+	.textContent();
+
+// Select the image array in the browser pane.
 await clickNode("image");
 await page.waitForTimeout(900);
 const imageStats = await canvasStats();
@@ -60,39 +65,35 @@ await page.screenshot({ path: join(shotDir, "2-image.png") });
 
 // Flat key list: tags and prefix search (c/ filters to chunks).
 const metaTag = await page
-	.locator('#json-panel .list-row[data-path="image/zarr.json"] .chip')
+	.locator('#browser-panel .list-row[data-path="image/zarr.json"] .chip')
 	.textContent();
 const chunkTag = await page
-	.locator('#json-panel .list-row[data-path="image/c/0/0/0"] .chip')
+	.locator('#browser-panel .list-row[data-path="image/c/0/0/0"] .chip')
 	.textContent();
-await page.fill("#json-panel .list-search", "c/");
+await page.fill("#browser-panel .list-search", "c/");
 await page.waitForTimeout(200);
-const filteredRows = await page.locator("#json-panel .list-row").count();
-await page.fill("#json-panel .list-search", "");
+const filteredRows = await page.locator("#browser-panel .list-row").count();
+await page.fill("#browser-panel .list-search", "");
 await page.waitForTimeout(200);
 // Typing character-by-character must keep focus: the box filters in place.
-await page.click("#json-panel .list-search");
+await page.click("#browser-panel .list-search");
 await page.keyboard.type("c/0/");
 const searchFocusKept = await page.evaluate(() => {
 	const active = document.activeElement;
 	return active?.classList?.contains("list-search") ? active.value : null;
 });
-const typedRows = await page.locator("#json-panel .list-row").count();
-await page.fill("#json-panel .list-search", "");
+const typedRows = await page.locator("#browser-panel .list-row").count();
+await page.fill("#browser-panel .list-search", "");
 await page.waitForTimeout(200);
 // The expanded editor stretches to its content (no internal v-scroll).
 const editorAutosized = await page.evaluate(() => {
-	const ta = document.querySelector("#json-panel .json-editor textarea");
+	const ta = document.querySelector("#browser-panel .json-editor textarea");
 	return ta ? ta.scrollHeight - ta.clientHeight < 4 : null;
 });
 // Syntax highlighting in the expanded (zarr.json) editor.
 const highlightSpans = await page
-	.locator("#json-panel .json-editor-layer .j-key")
+	.locator("#browser-panel .json-editor-layer .j-key")
 	.count();
-// Left pane tags: members are Group / Array.
-const groupTag = await page
-	.locator('#tree-panel .list-row[data-path="tables"] .chip')
-	.textContent();
 
 // Move the t slider and confirm the image changes.
 const before = await page.evaluate(() =>
@@ -120,13 +121,13 @@ const readout = await page.locator(".viewer-readout").textContent();
 // Apply a metadata edit on the root group and confirm it lands.
 await clickNode("");
 await page.waitForTimeout(400);
-await page.locator("#json-panel textarea").first().evaluate((textarea) => {
+await page.locator("#browser-panel textarea").first().evaluate((textarea) => {
 	textarea.value = textarea.value.replace(
 		"browser demo",
 		"browser demo (edited)",
 	);
 });
-await page.locator("#json-panel button", { hasText: "Apply" }).first().click();
+await page.locator("#browser-panel button", { hasText: "Apply" }).first().click();
 await page.waitForTimeout(400);
 const editStatus = await page.locator(".editor-status").first().textContent();
 const editedAttrs = await page.evaluate(() =>
@@ -180,7 +181,7 @@ await page.screenshot({ path: join(shotDir, "7-text-mode.png") });
 // every Apply. Then add a fresh 2-D chunk key and delete it again.
 await clickNode("image");
 await page.waitForTimeout(600);
-await page.locator("#json-panel .json-editor textarea").first().evaluate((ta) => {
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta) => {
 	const meta = JSON.parse(ta.value);
 	meta.shape = [20, 20];
 	meta.chunk_grid.configuration.chunk_shape = [5, 5];
@@ -188,7 +189,7 @@ await page.locator("#json-panel .json-editor textarea").first().evaluate((ta) =>
 	ta.value = JSON.stringify(meta, null, 2);
 	ta.dispatchEvent(new Event("input", { bubbles: true }));
 });
-await page.locator("#json-panel button", { hasText: "Apply" }).first().click();
+await page.locator("#browser-panel button", { hasText: "Apply" }).first().click();
 await page.waitForTimeout(900);
 const twoDStats = await canvasStats();
 await page.screenshot({ path: join(shotDir, "8-live-2d.png") });
@@ -198,20 +199,20 @@ const beforeChunkAdd = await page.evaluate(() =>
 await page.fill(".add-key-row input", "c/0/0");
 await page.locator(".add-key-row button", { hasText: "Add key" }).click();
 await page.waitForTimeout(500);
-await page.locator("#json-panel .json-editor textarea").first().evaluate((ta) => {
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta) => {
 	const row = [0, 60, 120, 180, 240];
 	const grid = Array.from({ length: 5 }, (_, i) => row.map((v) => (v + i * 40) % 255));
 	ta.value = JSON.stringify(grid);
 	ta.dispatchEvent(new Event("input", { bubbles: true }));
 });
-await page.locator("#json-panel .list-row.selected button", { hasText: "Apply" }).click();
+await page.locator("#browser-panel .list-row.selected button", { hasText: "Apply" }).click();
 await page.waitForTimeout(900);
 const afterChunkAdd = await page.evaluate(() =>
 	document.querySelector(".viewer-viewport canvas").toDataURL(),
 );
 const statusAfterAdd = await page.locator("#status").textContent();
 await page.screenshot({ path: join(shotDir, "9-live-chunk.png") });
-await page.locator("#json-panel button", { hasText: "Delete key" }).first().click();
+await page.locator("#browser-panel button", { hasText: "Delete key" }).first().click();
 await page.waitForTimeout(500);
 const statusAfterDelete = await page.locator("#status").textContent();
 
