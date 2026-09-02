@@ -10,6 +10,7 @@ from zarr_inline import (
     MemoryBacking,
     ZarrInlineStore,
     from_zarr,
+    open_document,
     to_zarr,
     validate,
     verify_document,
@@ -194,3 +195,42 @@ def test_from_zarr_rejects_unknown_inline_data_value(tmp_path):
     _zarr.open_group(str(path), mode="w")
     with pytest.raises(ValueError, match="inline_data must be"):
         from_zarr(path, inline_data="always")
+
+
+def test_from_zarr_metadata_only_is_the_hierarchy_skeleton(hierarchy):
+    document = from_zarr(hierarchy, data=False)
+    assert validate(document) == []
+    assert all(key.endswith("zarr.json") for key in document)
+    assert {"zarr.json", "temp/zarr.json", "qc/zarr.json", "qc/flags/zarr.json"} <= set(document)
+    # Structure is intact; data reads back as fill values.
+    root = open_document(document)
+    assert root["temp"].shape == (4, 4)
+    assert np.all(root["temp"][:] == -1.0)
+
+
+def test_to_kerchunk_maps_every_key_to_kerchunk_value_encoding(hierarchy):
+    from zarr_inline import to_kerchunk
+    from zarr_inline.document import decode_value
+
+    document = from_zarr(hierarchy, inline_data="auto")
+    refs = to_kerchunk(document)
+    assert refs["version"] == 1 and set(refs["refs"]) == set(document)
+    for key, value in document.items():
+        ref = refs["refs"][key]
+        if isinstance(value, str):
+            assert ref == f"base64:{value}"
+        else:
+            assert ref.encode("utf-8") == decode_value(key, value)
+
+
+def test_kerchunk_refs_open_with_fsspec_and_zarr(hierarchy):
+    fsspec = pytest.importorskip("fsspec")
+    from zarr.storage import FsspecStore
+
+    from zarr_inline import to_kerchunk
+
+    document = from_zarr(hierarchy)
+    fs = fsspec.filesystem("reference", fo=to_kerchunk(document))
+    root = zarr.open_group(store=FsspecStore(fs, read_only=True), mode="r")
+    assert dict(root.attrs) == {"title": "survey"}
+    np.testing.assert_array_equal(root["qc/flags"][:], np.array([0, 1, 0, 2, 0, 1], dtype="uint8"))

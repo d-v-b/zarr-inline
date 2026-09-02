@@ -38,24 +38,62 @@ const canvasStats = () =>
 		return { w: canvas.width, h: canvas.height, opaque, total: data.length / 4 };
 	});
 
-// Click DAG nodes by their exact path (the <title> element).
-const clickNode = (path) =>
-	page.evaluate((p) => {
-		for (const node of document.querySelectorAll("#dag g.node")) {
-			const title = node.querySelector("title")?.textContent;
-			if (title === p || (p === "" && title === "/ (root)")) {
-				node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-				return true;
-			}
-		}
-		return false;
-	}, path);
+// Navigate the left pane's flat member list to a node path.
+const clickNode = async (path) => {
+	await page.locator('#browser-panel .breadcrumb [data-path=""]').first().click();
+	await page.waitForTimeout(150);
+	if (path === "") return;
+	let acc = "";
+	for (const segment of path.split("/")) {
+		acc = acc === "" ? segment : `${acc}/${segment}`;
+		const row = page.locator(`#browser-panel .list-row[data-path="${acc}"] .list-row-head`);
+		if ((await row.count()) > 0) await row.first().click();
+		await page.waitForTimeout(150);
+	}
+};
 
-// Select the volume array in the DAG.
-await clickNode("volume");
+// Member rows are tagged Group / Array (read at the root, where they show).
+const groupTag = await page
+	.locator('#browser-panel .list-row[data-path="tables"] .chip')
+	.textContent();
+
+// Select the image array in the browser pane.
+await clickNode("image");
 await page.waitForTimeout(900);
-const volumeStats = await canvasStats();
-await page.screenshot({ path: join(shotDir, "2-volume.png") });
+const imageStats = await canvasStats();
+await page.screenshot({ path: join(shotDir, "2-image.png") });
+
+// Flat key list: tags and prefix search (c/ filters to chunks).
+const metaTag = await page
+	.locator('#browser-panel .list-row[data-path="image/zarr.json"] .chip')
+	.textContent();
+const chunkTag = await page
+	.locator('#browser-panel .list-row[data-path="image/c/0/0/0"] .chip')
+	.textContent();
+await page.fill("#browser-panel .list-search", "c/");
+await page.waitForTimeout(200);
+const filteredRows = await page.locator("#browser-panel .list-row").count();
+await page.fill("#browser-panel .list-search", "");
+await page.waitForTimeout(200);
+// Typing character-by-character must keep focus: the box filters in place.
+await page.click("#browser-panel .list-search");
+await page.keyboard.type("c/0/");
+const searchFocusKept = await page.evaluate(() => {
+	const active = document.activeElement;
+	return active?.classList?.contains("list-search") ? active.value : null;
+});
+const typedRows = await page.locator("#browser-panel .list-row").count();
+await page.fill("#browser-panel .list-search", "");
+await page.waitForTimeout(200);
+// The expanded editor stretches to its content (no internal v-scroll).
+const editorAutosized = await page.evaluate(() => {
+	const ta = document.querySelector("#browser-panel .json-editor textarea");
+	return ta ? ta.scrollHeight - ta.clientHeight < 4 : null;
+});
+// Syntax highlighting in the expanded (zarr.json) editor.
+const highlightSpans = await page
+	.locator("#browser-panel .json-editor-layer .j-key")
+	.count();
 
 // Move the t slider and confirm the image changes.
 const before = await page.evaluate(() =>
@@ -83,13 +121,13 @@ const readout = await page.locator(".viewer-readout").textContent();
 // Apply a metadata edit on the root group and confirm it lands.
 await clickNode("");
 await page.waitForTimeout(400);
-await page.locator("#json-panel textarea").first().evaluate((textarea) => {
+await page.locator("#browser-panel textarea").first().evaluate((textarea) => {
 	textarea.value = textarea.value.replace(
 		"browser demo",
 		"browser demo (edited)",
 	);
 });
-await page.locator("#json-panel button", { hasText: "Apply" }).first().click();
+await page.locator("#browser-panel button", { hasText: "Apply" }).first().click();
 await page.waitForTimeout(400);
 const editStatus = await page.locator(".editor-status").first().textContent();
 const editedAttrs = await page.evaluate(() =>
@@ -112,11 +150,11 @@ const overlayStats = () =>
 		return opaque;
 	});
 
-// Chunk-grid overlay: labels has 2-D chunks (20, 24), so interior lines.
-await clickNode("labels");
+// Chunk-grid overlay: image chunks are (5,5,5), so in-plane lines every 5.
+await clickNode("image");
 await page.waitForTimeout(600);
 const chunkOverlayOn = await overlayStats();
-await page.screenshot({ path: join(shotDir, "6-labels-chunks.png") });
+await page.screenshot({ path: join(shotDir, "6-image-chunks.png") });
 await page.locator(".chunk-toggle").setChecked(false);
 await page.waitForTimeout(200);
 const chunkOverlayOff = await overlayStats();
@@ -138,6 +176,110 @@ const dataCanvasHidden = await page.evaluate(
 			.display === "none",
 );
 await page.screenshot({ path: join(shotDir, "7-text-mode.png") });
+
+// Semantic lint: an arity mismatch is flagged while typing, before Apply.
+await clickNode("image");
+await page.waitForTimeout(600);
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta) => {
+	const meta = JSON.parse(ta.value);
+	meta.shape = [20, 20]; // chunk_shape left 3-D on purpose
+	ta.value = JSON.stringify(meta, null, 2);
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.waitForTimeout(500);
+const lintText = await page.locator("#browser-panel .editor-lint").first().textContent();
+await page.screenshot({ path: join(shotDir, "11-lint.png") });
+await page.locator("#browser-panel button", { hasText: "Revert" }).first().click();
+await page.waitForTimeout(300);
+const lintCleared = (await page.locator("#browser-panel .editor-lint li").count()) === 0;
+
+// Reported breakage: chunk_grid configuration "chunk_shapes" used to
+// crash zarrita ("can't access property 0"). Now: a clear message, a lint
+// flag, and a clean recovery once the metadata is fixed.
+await clickNode("image");
+await page.waitForTimeout(600);
+const originalMeta = await page.locator("#browser-panel .json-editor textarea").first().inputValue();
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta) => {
+	const meta = JSON.parse(ta.value);
+	meta.chunk_grid = { name: "regular", configuration: { chunk_shapes: [5, 5, 5] } };
+	ta.value = JSON.stringify(meta, null, 2);
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.locator("#browser-panel button", { hasText: "Apply" }).first().click();
+await page.waitForTimeout(900);
+const brokenDisplay = await page.locator("#display-panel").textContent();
+const brokenLint = await page.locator("#browser-panel .editor-lint").first().textContent();
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta, text) => {
+	ta.value = text;
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+}, originalMeta);
+await page.locator("#browser-panel button", { hasText: "Apply" }).first().click();
+await page.waitForTimeout(900);
+const recoveredStats = await canvasStats();
+
+// Live edits: turn the 3-D image into a 2-D image; the viewer follows
+// every Apply. Then add a fresh 2-D chunk key and delete it again.
+await clickNode("image");
+await page.waitForTimeout(600);
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta) => {
+	const meta = JSON.parse(ta.value);
+	meta.shape = [20, 20];
+	meta.chunk_grid.configuration.chunk_shape = [5, 5];
+	meta.dimension_names = ["y", "x"];
+	ta.value = JSON.stringify(meta, null, 2);
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.locator("#browser-panel button", { hasText: "Apply" }).first().click();
+await page.waitForTimeout(900);
+const twoDStats = await canvasStats();
+await page.screenshot({ path: join(shotDir, "8-live-2d.png") });
+const beforeChunkAdd = await page.evaluate(() =>
+	document.querySelector(".viewer-viewport canvas").toDataURL(),
+);
+await page.fill(".add-key-row input", "c/0/0");
+await page.locator(".add-key-row button", { hasText: "Add key" }).click();
+await page.waitForTimeout(500);
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta) => {
+	const row = [0, 60, 120, 180, 240];
+	const grid = Array.from({ length: 5 }, (_, i) => row.map((v) => (v + i * 40) % 255));
+	ta.value = JSON.stringify(grid);
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.locator("#browser-panel .list-row.selected button", { hasText: "Apply" }).click();
+await page.waitForTimeout(900);
+const afterChunkAdd = await page.evaluate(() =>
+	document.querySelector(".viewer-viewport canvas").toDataURL(),
+);
+const statusAfterAdd = await page.locator("#status").textContent();
+await page.screenshot({ path: join(shotDir, "9-live-chunk.png") });
+await page.locator("#browser-panel button", { hasText: "Delete key" }).first().click();
+await page.waitForTimeout(500);
+const statusAfterDelete = await page.locator("#status").textContent();
+
+// Whole-document JSON view: edit the raw document text and Apply.
+await page.locator("#view-json").click();
+await page.waitForTimeout(400);
+const docViewHasText = await page.evaluate(() =>
+	document.querySelector("#document-panel textarea").value.includes('"zarr.json"'),
+);
+await page.locator("#document-panel textarea").evaluate((ta) => {
+	ta.value = ta.value.replace("browser demo (edited)", "browser demo (doc view)");
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.locator("#document-panel button", { hasText: "Apply" }).click();
+await page.waitForTimeout(500);
+const docViewStatus = await page.locator("#document-panel .editor-status").textContent();
+const docViewStretched = await page.evaluate(() => {
+	const ta = document.querySelector("#document-panel textarea");
+	return ta !== null && ta.clientHeight > window.innerHeight;
+});
+await page.screenshot({ path: join(shotDir, "10-json-view.png") });
+await page.locator("#view-browser").click();
+await clickNode("");
+await page.waitForTimeout(400);
+const docViewEditVisible = await page.evaluate(() =>
+	document.querySelector("#display-panel pre.attrs")?.textContent?.includes("(doc view)"),
+);
 
 // URL state: an edited document's link restores the same document.
 const shareUrl = await page.evaluate(() => location.href);
@@ -173,17 +315,38 @@ console.log(
 		{
 			errors,
 			status,
-			volumeStats,
+			imageStats,
 			sliderChangedImage: before !== after,
 			readout,
 			editStatus,
 			editedAttrs,
 			tablesCards: cards,
+			metaTag,
+			chunkTag,
+			filteredRows,
+			highlightSpans,
+			groupTag,
 			countersStats,
 			bareStatus,
 			demoHash,
 			restoredStatus,
 			urlLoadStatus,
+			searchFocusKept,
+			typedRows,
+			editorAutosized,
+			docViewStretched,
+			docViewHasText,
+			docViewStatus,
+			docViewEditVisible,
+			brokenDisplayClear: /cannot be displayed|needs "chunk_shape"/.test(brokenDisplay),
+			brokenLintFlag: /chunk_shape/.test(brokenLint),
+			recoveredStats,
+			lintText,
+			lintCleared,
+			twoDStats,
+			liveChunkChanged: beforeChunkAdd !== afterChunkAdd,
+			statusAfterAdd,
+			statusAfterDelete,
 			axesDrawn: axesOnly > 0,
 			chunkOverlay: { on: chunkOverlayOn, off: chunkOverlayOff },
 			textOverlayGrew: textOverlay > axesOnly,

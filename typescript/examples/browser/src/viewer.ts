@@ -252,7 +252,7 @@ export function renderArrayViewer(
 		chunkBox.className = "chunk-toggle";
 		chunkBox.addEventListener("change", () => {
 			state.showChunks = chunkBox.checked;
-			drawOverlay();
+			requestOverlay();
 		});
 		chunkLabel.append(chunkBox, document.createTextNode(" chunk grid"));
 		optionsRow.append(chunkLabel);
@@ -316,7 +316,19 @@ export function renderArrayViewer(
 			state.panY = (availH - height * state.zoom) / 2;
 		}
 		canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
-		drawOverlay();
+		requestOverlay();
+	}
+
+	// Overlay redraws are coalesced to one per animation frame: wheel and
+	// drag events arrive far faster than frames, and a text-mode redraw is
+	// the expensive part.
+	let overlayFrame = 0;
+	function requestOverlay(): void {
+		if (overlayFrame !== 0) return;
+		overlayFrame = requestAnimationFrame(() => {
+			overlayFrame = 0;
+			drawOverlay();
+		});
 	}
 
 	function drawImage(): void {
@@ -368,15 +380,23 @@ export function renderArrayViewer(
 		return step;
 	}
 
-	function formatCell(value: unknown, zoom: number): string {
+	function formatCell(value: unknown, digits: number): string {
 		if (typeof value === "number") {
 			if (!Number.isFinite(value)) return String(value);
 			if (Number.isInteger(value)) return String(value);
-			const digits = zoom >= 64 ? 5 : zoom >= 40 ? 4 : 3;
 			return String(Number(value.toPrecision(digits)));
 		}
 		return String(value);
 	}
+
+	// Text-mode caches: cell strings are keyed by absolute data offset, so
+	// they survive pan, zoom, and slider moves (offsets are unique per
+	// element) and only reset when the digit budget changes; measured text
+	// widths decide when fillText needs a squeezing maxWidth at all, since
+	// passing maxWidth unconditionally forces per-call scaling work.
+	const cellTextCache = new Map<number, string>();
+	let cellTextDigits = -1;
+	const textWidthCache = new Map<string, number>();
 
 	function drawOverlay(): void {
 		const zoom = state.zoom ?? 1;
@@ -403,38 +423,73 @@ export function renderArrayViewer(
 		// Cell values (the "text" lookup table).
 		if (state.cmap === "text") {
 			if (zoom >= 14 && (x1 - x0 + 1) * (y1 - y0 + 1) <= 5000) {
+				// Cell grid, batched into one path.
 				ctx.strokeStyle = "rgba(215, 221, 229, 0.12)";
 				ctx.lineWidth = 1;
+				ctx.beginPath();
 				for (let px = x0; px <= x1 + 1; px++) {
-					ctx.beginPath();
 					ctx.moveTo(toScreenX(px), toScreenY(y0));
 					ctx.lineTo(toScreenX(px), toScreenY(y1 + 1));
-					ctx.stroke();
 				}
 				for (let py = y0; py <= y1 + 1; py++) {
-					ctx.beginPath();
 					ctx.moveTo(toScreenX(x0), toScreenY(py));
 					ctx.lineTo(toScreenX(x1 + 1), toScreenY(py));
-					ctx.stroke();
 				}
-				const fontSize = Math.min(13, Math.max(8, zoom * 0.3));
-				ctx.font = `${fontSize}px ui-monospace, Menlo, Consolas, monospace`;
+				ctx.stroke();
+
+				const digits = zoom >= 64 ? 5 : zoom >= 40 ? 4 : 3;
+				if (digits !== cellTextDigits) {
+					cellTextDigits = digits;
+					cellTextCache.clear();
+				}
+				const fontPx = Math.round(Math.min(13, Math.max(8, zoom * 0.3)));
+				ctx.font = `${fontPx}px ui-monospace, Menlo, Consolas, monospace`;
 				ctx.textAlign = "center";
 				ctx.textBaseline = "middle";
-				for (let py = y0; py <= y1; py++) {
-					for (let px = x0; px <= x1; px++) {
-						const value = accessor(offsetFor(px, py));
-						const numeric = toNumber(value);
-						ctx.fillStyle = Number.isFinite(numeric)
-							? "#d7dde5"
-							: "rgba(255, 107, 107, 0.85)";
-						ctx.fillText(
-							formatCell(value, zoom),
-							toScreenX(px) + zoom / 2,
-							toScreenY(py) + zoom / 2,
-							zoom - 3, // squeeze rather than overflow the cell
-						);
+				const strideX = stride[state.xDim];
+				const strideY = state.yDim >= 0 ? stride[state.yDim] : 0;
+				let fixedOffset = 0;
+				for (let d = 0; d < rank; d++) {
+					if (d !== state.xDim && d !== state.yDim) {
+						fixedOffset += state.index[d] * stride[d];
 					}
+				}
+				const maxTextWidth = zoom - 3;
+				const drawCell = (text: string, sx: number, sy: number): void => {
+					const widthKey = `${fontPx}:${text}`;
+					let textWidth = textWidthCache.get(widthKey);
+					if (textWidth === undefined) {
+						textWidth = ctx.measureText(text).width;
+						textWidthCache.set(widthKey, textWidth);
+					}
+					// Squeeze only genuinely overflowing text; an
+					// unconditional maxWidth makes every call pay for it.
+					if (textWidth > maxTextWidth) ctx.fillText(text, sx, sy, maxTextWidth);
+					else ctx.fillText(text, sx, sy);
+				};
+				const nonFinite: [string, number, number][] = [];
+				ctx.fillStyle = "#d7dde5";
+				for (let py = y0; py <= y1; py++) {
+					const rowOffset = fixedOffset + py * strideY;
+					const sy = toScreenY(py) + zoom / 2;
+					for (let px = x0; px <= x1; px++) {
+						const offset = rowOffset + px * strideX;
+						let text = cellTextCache.get(offset);
+						if (text === undefined) {
+							text = formatCell(accessor(offset), digits);
+							cellTextCache.set(offset, text);
+						}
+						const sx = toScreenX(px) + zoom / 2;
+						if (text === "NaN" || text === "Infinity" || text === "-Infinity") {
+							nonFinite.push([text, sx, sy]);
+						} else {
+							drawCell(text, sx, sy);
+						}
+					}
+				}
+				if (nonFinite.length > 0) {
+					ctx.fillStyle = "rgba(255, 107, 107, 0.85)";
+					for (const [text, sx, sy] of nonFinite) drawCell(text, sx, sy);
 				}
 			} else {
 				ctx.font = "12px system-ui, sans-serif";
@@ -455,32 +510,39 @@ export function renderArrayViewer(
 			const clipBottom = Math.min(toScreenY(height), viewHeight);
 			const clipLeft = Math.max(toScreenX(0), 0);
 			const clipRight = Math.min(toScreenX(width), viewWidth);
+			ctx.beginPath();
 			if (Number.isFinite(chunkW) && chunkW > 0) {
 				for (let cx = 0; cx <= width; cx += chunkW) {
 					const sx = toScreenX(cx);
 					if (sx < 0 || sx > viewWidth) continue;
-					ctx.beginPath();
 					ctx.moveTo(sx, clipTop);
 					ctx.lineTo(sx, clipBottom);
-					ctx.stroke();
 				}
 			}
 			if (Number.isFinite(chunkH) && chunkH > 0) {
 				for (let cy = 0; cy <= height; cy += chunkH) {
 					const sy = toScreenY(cy);
 					if (sy < 0 || sy > viewHeight) continue;
-					ctx.beginPath();
 					ctx.moveTo(clipLeft, sy);
 					ctx.lineTo(clipRight, sy);
-					ctx.stroke();
 				}
 			}
+			ctx.stroke();
 			ctx.setLineDash([]);
 		}
 
-		// Axes: always-on x/y coordinate labels along the top and left edges.
-		const axisH = 16;
-		const axisW = 10 + 7 * String(Math.max(height - 1, 0)).length;
+		// Axes: always-on x/y coordinate labels along the top and left
+		// edges, plus a chunk-index band (in the chunk-grid color) between
+		// them and the image when the chunk grid is shown.
+		const chunkAxisW = state.showChunks && chunkShape !== null ? chunkShape[state.xDim] : 0;
+		const chunkAxisH =
+			state.showChunks && chunkShape !== null && state.yDim >= 0
+				? chunkShape[state.yDim]
+				: 0;
+		const chunkBandH = chunkAxisW > 0 ? 14 : 0;
+		const chunkBandW = chunkAxisH > 0 ? 16 : 0;
+		const axisH = 16 + chunkBandH;
+		const axisW = 10 + 7 * String(Math.max(height - 1, 0)).length + chunkBandW;
 		ctx.fillStyle = "rgba(16, 19, 24, 0.86)";
 		ctx.fillRect(0, 0, viewWidth, axisH);
 		ctx.fillRect(0, 0, axisW, viewHeight);
@@ -501,14 +563,35 @@ export function renderArrayViewer(
 			const sx = toScreenX(ax) + (zoom >= 14 ? zoom / 2 : 0);
 			if (sx < axisW + 8 || sx > viewWidth - 4) continue;
 			ctx.fillText(String(ax), sx, 11);
-			ctx.fillRect(sx - 0.5, axisH - 3, 1, 3);
+			ctx.fillRect(sx - 0.5, 13, 1, 3);
 		}
 		ctx.textAlign = "right";
 		for (let ay = Math.ceil(y0 / step) * step; ay <= y1 + 1; ay += step) {
 			const sy = toScreenY(ay) + (zoom >= 14 ? zoom / 2 : 0);
 			if (sy < axisH + 10 || sy > viewHeight - 4) continue;
-			ctx.fillText(String(ay), axisW - 4, sy + 3);
-			ctx.fillRect(axisW - 3, sy - 0.5, 3, 1);
+			ctx.fillText(String(ay), axisW - chunkBandW - 4, sy + 3);
+			ctx.fillRect(axisW - chunkBandW - 3, sy - 0.5, 3, 1);
+		}
+		// Chunk indices, centered over each chunk's visible span.
+		if (chunkBandH > 0) {
+			ctx.fillStyle = "rgba(226, 163, 78, 0.95)";
+			ctx.textAlign = "center";
+			for (let k = Math.floor(x0 / chunkAxisW); k * chunkAxisW <= x1; k++) {
+				const spanStart = Math.max(toScreenX(k * chunkAxisW), axisW);
+				const spanEnd = Math.min(toScreenX(Math.min((k + 1) * chunkAxisW, width)), viewWidth);
+				if (spanEnd - spanStart < 14) continue;
+				ctx.fillText(String(k), (spanStart + spanEnd) / 2, 16 + 10);
+			}
+		}
+		if (chunkBandW > 0) {
+			ctx.fillStyle = "rgba(226, 163, 78, 0.95)";
+			ctx.textAlign = "center";
+			for (let k = Math.floor(y0 / chunkAxisH); k * chunkAxisH <= y1; k++) {
+				const spanStart = Math.max(toScreenY(k * chunkAxisH), axisH);
+				const spanEnd = Math.min(toScreenY(Math.min((k + 1) * chunkAxisH, height)), viewHeight);
+				if (spanEnd - spanStart < 12) continue;
+				ctx.fillText(String(k), axisW - chunkBandW / 2, (spanStart + spanEnd) / 2 + 3);
+			}
 		}
 		// Dimension names in the corner.
 		ctx.fillStyle = "#4da3ff";
@@ -519,7 +602,7 @@ export function renderArrayViewer(
 		if (yName !== "") ctx.fillText(`${yName} ↓`, 3, axisH + 12);
 	}
 
-	const resizeObserver = new ResizeObserver(() => drawOverlay());
+	const resizeObserver = new ResizeObserver(() => requestOverlay());
 	resizeObserver.observe(viewport);
 
 	// --- zoom / pan / hover --------------------------------------------
@@ -565,11 +648,17 @@ export function renderArrayViewer(
 				? String(Number(value.toPrecision(7)))
 				: String(value);
 		const parts: string[] = [];
+		const chunkParts: string[] = [];
 		for (let d = 0; d < rank; d++) {
 			const idx = d === state.xDim ? px : d === state.yDim ? py : state.index[d];
 			parts.push(`${dimNames[d] ?? `d${d}`}=${idx}`);
+			if (chunkShape !== null && chunkShape[d] > 0) {
+				chunkParts.push(String(Math.floor(idx / chunkShape[d])));
+			}
 		}
-		readout.textContent = `${parts.join("  ")}  →  ${shown}`;
+		const chunkKey =
+			chunkParts.length === rank ? `  ·  chunk c/${chunkParts.join("/")}` : "";
+		readout.textContent = `${parts.join("  ")}  →  ${shown}${chunkKey}`;
 	});
 
 	drawImage();

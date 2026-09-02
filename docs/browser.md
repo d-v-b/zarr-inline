@@ -5,21 +5,37 @@ zarr-inline documents, built on the TypeScript implementation and
 [zarrita](https://zarrita.dev):
 
 - **[Open the demo](viewer/index.html#url=demo-document.json)** — the
-  viewer loaded with a small demo hierarchy (a 4-D float32 volume with
-  NaNs, a uint8 label image, and float64/int64 tables).
+  viewer loaded with a small demo hierarchy: a 20×20×20 uint8 volume in
+  (5,5,5) chunks plus an int64 table, small enough that every chunk is
+  comfortable to edit by hand.
 - **[Open a bare viewer](viewer/index.html)** — starts with an empty
   document; paste a document, open a local `.json` file, or fetch one
   from a URL.
 
-The left panel shows the hierarchy as a selectable DAG of groups and
-arrays. The middle panel exposes the selected node's `zarr.json` and chunk
-keys as editable JSON — edits are canonicalized through the format's
-decode/encode pair and re-validated live. The right panel displays the
+The browser pane lists, for the selected node, its members (child groups
+and arrays, tagged **Group** or **Array** — click to navigate) together
+with every document key it owns — its `zarr.json` and its chunks, tagged
+with their encoding (**JSON Object**, **JSON Array**, or **base64**) — as
+one flat, prefix-searchable collection (type `c/` to see only chunks)
+under a breadcrumb for moving up; keys expand into a syntax-highlighted
+JSON editor, and edits are
+canonicalized through the format's decode/encode pair, re-validated
+live, and the viewer updates on every Apply. Keys can be added and
+deleted, so the document's data is fully live: edit `image/zarr.json`
+from 3-D to 2-D, add a `c/0/0` chunk, and watch the pixels appear.
+`zarr.json` edits are linted live against the Zarr v3 metadata rules
+(structure plus cross-field semantics such as chunk-grid arity and
+`fill_value` vs data type, via the `zarr-metadata` package); violations
+are flagged, not blocked, because a document with an incoherent
+hierarchy is still a valid zarr-inline document. The right panel displays the
 node: groups as attribute + children cards, arrays in a multi-dimensional
 slice viewer with X/Y dimension assignment, sliders for the remaining
 dimensions, lookup tables (including a `text` mode that prints each
 element's exact value), an optional chunk-boundary overlay, always-on axis
-coordinate labels, zoom/pan, and a hover readout.
+coordinate labels, zoom/pan, and a hover readout. A header toggle
+switches between this two-pane browser and a **JSON view** — the whole
+document as one editable, syntax-highlighted text; Apply canonicalizes
+it and both views stay in sync.
 
 ## Shareable URLs
 

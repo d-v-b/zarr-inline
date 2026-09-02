@@ -117,12 +117,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -138,8 +133,55 @@ jobs:
         with:
           just-version: "1.55.1"
       - run: just docs-check
-      - uses: actions/upload-pages-artifact@v3
+      # Publish the site root on the gh-pages branch; previews/ survives.
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >
+          bash .github/scripts/deploy-gh-pages.sh "$GITHUB_WORKSPACE/site" ""
+          "docs deploy ${GITHUB_SHA}"
+
+  docs-preview:
+    name: Docs preview (PR)
+    # Same-repo PRs only: fork PRs get a read-only token anyway.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
-          path: site
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: typescript/examples/browser/package-lock.json
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      - run: just docs-check
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >
+          bash .github/scripts/deploy-gh-pages.sh "$GITHUB_WORKSPACE/site"
+          "previews/pr-${{ github.event.number }}"
+          "docs preview PR ${{ github.event.number }} @ ${GITHUB_SHA}"
+      - name: Sticky preview comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+        run: |
+          BASE="https://d-v-b.github.io/zarr-inline/previews/pr-${PR}"
+          # The marker must sit on its own line followed by a blank one:
+          # CommonMark treats the whole line holding an HTML comment as
+          # raw HTML, so markdown on that line would not render.
+          BODY="$(printf '<!-- docs-preview -->\n\n📖 **Docs preview**: %s/ · **[viewer](%s/viewer/)** · [demo](%s/viewer/#url=demo-document.json) — rebuilt on every push to this PR. _(automated comment)_' "$BASE" "$BASE" "$BASE")"
+          EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --jq '.[] | select(.body | startswith("<!-- docs-preview -->")) | .id' | head -1)
+          if [ -n "$EXISTING" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${EXISTING}" -f body="$BODY" > /dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$BODY" > /dev/null
+          fi

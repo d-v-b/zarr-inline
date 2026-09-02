@@ -1,18 +1,29 @@
 /**
- * The JSON panel: the selected node's metadata and chunk keys as editable
- * JSON. Applying an edit round-trips the value through the zarr-inline
- * decode/encode pair, so whatever is typed is stored in the document's
- * canonical form (inline JSON when byte-stable, base64 otherwise).
+ * The browser panel: one flat, searchable, bounded list per node holding
+ * both its *members* (child groups and arrays, tagged Group / Array —
+ * clicking one navigates) and its *keys* (zarr.json and chunk/data keys,
+ * tagged JSON Object / JSON Array / base64 — clicking one expands a
+ * syntax-highlighted editor), under a breadcrumb for moving up. Applying
+ * an edit round-trips the value through the zarr-inline decode/encode
+ * pair, so whatever is typed is stored in the document's canonical form.
  */
 
 import type { Document } from "../../../src/backing.js";
 import { canonicalStringify, decodeValue, encodeValue } from "../../../src/document.js";
-import type { NodeInfo } from "./model.js";
+import { createJsonEditor } from "./jsonhl.js";
+import { renderFlatList, type ListRow } from "./list.js";
+import { formatIssue, issueSummary, metadataIssues } from "./metadata.js";
+import { codecNames, nodeSubtitle, type NodeInfo } from "./model.js";
 import { parseJsonText } from "./strict.js";
 
 export interface JsonPanelCallbacks {
+	/** Navigate to another node (a member row or a breadcrumb segment). */
+	onSelect: (path: string) => void;
 	/** Called after a successful edit was written into the document. */
 	onDocumentChanged: () => void;
+	/** Called when keys were added or removed: the hierarchy (and this
+	 * panel) must re-render from a rebuilt model. */
+	onKeysChanged: () => void;
 }
 
 /**
@@ -43,121 +54,293 @@ export function prettyJson(value: unknown, indent = 0): string {
 	return canonicalStringify(value);
 }
 
+export interface KeyTag {
+	tag: string;
+	tagClass: string;
+	/** Tooltip; set when the tag needs explaining. */
+	title?: string;
+}
+
+export function valueTag(value: unknown): KeyTag {
+	if (typeof value === "string") return { tag: "base64", tagClass: "tag-b64" };
+	if (Array.isArray(value)) return { tag: "JSON Array", tagClass: "tag-array" };
+	if (value !== null && typeof value === "object") {
+		return { tag: "JSON Object", tagClass: "tag-object" };
+	}
+	return { tag: "JSON value", tagClass: "tag-other" };
+}
+
+/**
+ * The tag for a key owned by a node. Inlining says nothing about meaning
+ * (SPEC §4.2): an inline chunk of an array whose codec is not `json` is
+ * bytes that merely happen to be canonical JSON — not element values —
+ * and is tagged as such so nobody edits it as data.
+ */
+export function keyTag(node: NodeInfo, key: string, value: unknown): KeyTag {
+	const base = valueTag(value);
+	if (key === node.metaKey && value !== null && typeof value === "object") {
+		const issues = metadataIssues(value);
+		if (issues.length > 0) {
+			return {
+				tag: `JSON Object · ${issueSummary(issues)}`,
+				tagClass: "tag-warn",
+				title: issues.map(formatIssue).join("\n"),
+			};
+		}
+		return base;
+	}
+	if (node.kind !== "array" || key === node.metaKey || typeof value === "string") {
+		return base;
+	}
+	if (value === null || typeof value !== "object") return base;
+	const codecs = codecNames(node);
+	if (codecs.includes("json")) return base;
+	const chain = codecs.length > 0 ? codecs.join(" → ") : "unknown codec";
+	return {
+		tag: `inline JSON · bytes of ${chain}`,
+		tagClass: "tag-warn",
+		title:
+			"This chunk's bytes happen to be canonical JSON, so the document " +
+			"inlines them — but the array's codec is not `json`, so these are " +
+			"not the array's element values. Edit as bytes, not as data.",
+	};
+}
+
+// Panel UI state, reset when the selected node changes.
+let search = "";
+let expandedKey: string | null = null;
+let lastNodePath: string | null = null;
+let rerender: () => void = () => {};
+// Editor feedback that survives the post-apply re-render (which refreshes
+// the row's encoding tag and byte size).
+let pendingStatus: { key: string; text: string; ok: boolean } | null = null;
+
 export function renderJsonPanel(
 	container: HTMLElement,
 	doc: Document,
 	node: NodeInfo | null,
 	callbacks: JsonPanelCallbacks,
 ): void {
+	rerender = () => renderJsonPanel(container, doc, node, callbacks);
 	container.replaceChildren();
 	if (node === null) {
 		container.append(hint("Select a node in the hierarchy."));
 		return;
 	}
-
-	if (node.metaKey !== null) {
-		container.append(
-			sectionHeader("metadata", node.metaKey),
-			editor(doc, node.metaKey, callbacks),
-		);
-	} else {
-		container.append(
-			sectionHeader("metadata", "(none)"),
-			hint("This node has no zarr.json key — it only exists as a path prefix of other keys."),
-		);
+	if (node.path !== lastNodePath) {
+		lastNodePath = node.path;
+		search = "";
+		expandedKey = node.metaKey; // metadata starts expanded
 	}
 
-	const label = node.kind === "array" ? "chunks" : "other keys";
-	const header = sectionHeader(label, `${node.dataKeys.length} key${node.dataKeys.length === 1 ? "" : "s"}`);
-	container.append(header);
-	if (node.dataKeys.length === 0) {
-		container.append(hint(node.kind === "array" ? "No chunks written yet." : "No non-metadata keys."));
-		return;
+	const keys: { name: string; key: string }[] = [];
+	if (node.metaKey !== null) keys.push({ name: "zarr.json", key: node.metaKey });
+	const prefixLength = node.path === "" ? 0 : node.path.length + 1;
+	for (const key of node.dataKeys) keys.push({ name: key.slice(prefixLength), key });
+
+	// Breadcrumb: every ancestor is one click away.
+	const crumb = document.createElement("div");
+	crumb.className = "breadcrumb";
+	const addCrumb = (label: string, path: string) => {
+		const link = document.createElement("a");
+		link.textContent = label;
+		link.dataset.path = path;
+		if (path === node.path) link.className = "current";
+		link.addEventListener("click", () => callbacks.onSelect(path));
+		crumb.append(link);
+	};
+	addCrumb("/", "");
+	let accumulated = "";
+	for (const segment of node.path === "" ? [] : node.path.split("/")) {
+		accumulated = accumulated === "" ? segment : `${accumulated}/${segment}`;
+		const sep = document.createElement("span");
+		sep.textContent = "›";
+		crumb.append(sep);
+		addCrumb(segment, accumulated);
 	}
-	for (const key of node.dataKeys) {
+	const count = document.createElement("code");
+	count.className = "crumb-count";
+	const members = node.children.length;
+	count.textContent = `${members} member${members === 1 ? "" : "s"} · ${keys.length} key${keys.length === 1 ? "" : "s"}`;
+	crumb.append(count);
+	container.append(crumb);
+
+	// Members first (navigation), then the node's own keys (editing).
+	const rows: ListRow[] = node.children.map((child) => ({
+		name: child.name,
+		tag: child.kind === "array" ? "Array" : "Group",
+		tagClass: child.kind === "array" ? "tag-array-node" : "tag-group",
+		detail:
+			child.kind === "array"
+				? nodeSubtitle(child)
+				: `${child.children.length} member${child.children.length === 1 ? "" : "s"}`,
+		path: child.path,
+		onSelect: () => callbacks.onSelect(child.path),
+	}));
+	for (const { name, key } of keys) {
 		const value = doc[key];
-		const details = document.createElement("details");
-		const summary = document.createElement("summary");
-		const kindBadge = document.createElement("span");
-		const isInline = typeof value !== "string";
-		kindBadge.className = `chip ${isInline ? "chip-inline" : "chip-b64"}`;
-		kindBadge.textContent = isInline ? "inline JSON" : "base64";
-		const name = document.createElement("code");
-		name.textContent = key;
-		summary.append(name, kindBadge, sizeBadge(key, value));
-		details.append(summary);
-		let filled = false;
-		details.addEventListener("toggle", () => {
-			if (details.open && !filled) {
-				filled = true;
-				details.append(editor(doc, key, callbacks));
-			}
-		});
-		container.append(details);
+		const { tag, tagClass, title } = keyTag(node, key, value);
+		const row: ListRow = {
+			name,
+			tag,
+			tagClass,
+			tagTitle: title,
+			detail: byteSize(key, value),
+			path: key,
+			selected: expandedKey === key,
+			onSelect: () => {
+				expandedKey = expandedKey === key ? null : key;
+				rerender();
+			},
+		};
+		if (expandedKey === key) {
+			row.expanded = (slot) => slot.append(editor(doc, key, callbacks));
+		}
+		rows.push(row);
 	}
+	const listHost = document.createElement("div");
+	container.append(listHost);
+	renderFlatList(listHost, {
+		rows,
+		search,
+		onSearch: (value) => {
+			search = value;
+		},
+		capacity: 100,
+		placeholder: "filter members and keys by prefix (e.g. c/) …",
+		emptyText: node.kind === "implicit" ? "no members, no keys" : "empty",
+	});
+
+	container.append(addKeyRow(doc, node, callbacks));
 }
 
-function sizeBadge(key: string, value: unknown): HTMLElement {
-	const span = document.createElement("span");
-	span.className = "chip";
+/** Create a new key under the node (e.g. a 2-D chunk after a 3-D → 2-D
+ * metadata edit) and open it in the editor immediately. */
+function addKeyRow(
+	doc: Document,
+	node: NodeInfo,
+	callbacks: JsonPanelCallbacks,
+): HTMLElement {
+	const row = document.createElement("div");
+	row.className = "add-key-row";
+	const input = document.createElement("input");
+	input.type = "text";
+	input.className = "list-search";
+	input.placeholder = "new key (e.g. c/0/0) …";
+	const button = document.createElement("button");
+	button.textContent = "Add key";
+	const submit = () => {
+		const name = input.value.trim().replace(/^\/+|\/+$/g, "");
+		if (name === "") return;
+		const key = node.path === "" ? name : `${node.path}/${name}`;
+		if (key in doc) {
+			input.setCustomValidity("key already exists");
+			input.reportValidity();
+			return;
+		}
+		// An empty base64 payload is a valid starting value for any key
+		// class except metadata, which starts as an empty object.
+		doc[key] = key.endsWith("zarr.json") ? {} : "";
+		expandedKey = key;
+		search = "";
+		callbacks.onKeysChanged();
+	};
+	button.addEventListener("click", submit);
+	input.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") submit();
+		input.setCustomValidity("");
+	});
+	row.append(input, button);
+	return row;
+}
+
+function byteSize(key: string, value: unknown): string {
 	try {
-		span.textContent = `${decodeValue(key, value).length} B`;
+		return `${decodeValue(key, value).length} B`;
 	} catch {
-		span.textContent = "unreadable";
+		return "unreadable";
 	}
-	return span;
 }
 
 function editor(doc: Document, key: string, callbacks: JsonPanelCallbacks): HTMLElement {
 	const wrap = document.createElement("div");
 	wrap.className = "editor";
-	const textarea = document.createElement("textarea");
-	textarea.spellcheck = false;
-	textarea.value = prettyJson(doc[key]);
+	const jsonEditor = createJsonEditor(prettyJson(doc[key]));
 	const status = document.createElement("div");
 	status.className = "editor-status";
+	// Metadata keys get a live semantic lint: flags, never a veto.
+	const lint = document.createElement("ul");
+	lint.className = "editor-lint";
+	const isMetadata = key.endsWith("zarr.json");
+	const runLint = () => {
+		if (!isMetadata) return;
+		lint.replaceChildren();
+		let value: unknown;
+		try {
+			value = parseJsonText(jsonEditor.getValue()).value;
+		} catch {
+			return; // syntax errors surface on Apply
+		}
+		for (const issue of metadataIssues(value)) {
+			const item = document.createElement("li");
+			item.textContent = formatIssue(issue);
+			lint.append(item);
+		}
+	};
+	let lintTimer: ReturnType<typeof setTimeout> | null = null;
+	jsonEditor.textarea.addEventListener("input", () => {
+		if (lintTimer !== null) clearTimeout(lintTimer);
+		lintTimer = setTimeout(runLint, 200);
+	});
+	runLint();
+	if (pendingStatus !== null && pendingStatus.key === key) {
+		status.className = `editor-status ${pendingStatus.ok ? "ok" : "error"}`;
+		status.textContent = pendingStatus.text;
+		pendingStatus = null;
+	}
 	const apply = document.createElement("button");
 	apply.textContent = "Apply";
 	const revert = document.createElement("button");
 	revert.textContent = "Revert";
 	revert.addEventListener("click", () => {
-		textarea.value = prettyJson(doc[key]);
+		jsonEditor.setValue(prettyJson(doc[key]));
 		status.textContent = "";
 		status.className = "editor-status";
+		runLint(); // setValue fires no input event
 	});
 	apply.addEventListener("click", () => {
 		try {
-			const parsed = parseJsonText(textarea.value);
+			const parsed = parseJsonText(jsonEditor.getValue());
 			// Round-trip through bytes: the document stores the canonical form.
 			const bytes = decodeValue(key, parsed.value);
 			doc[key] = encodeValue(key, bytes);
-			textarea.value = prettyJson(doc[key]);
-			status.className = "editor-status ok";
-			status.textContent = parsed.lossy
-				? "applied (this browser lacks JSON.parse source access; huge integers may have lost precision)"
-				: "applied";
+			pendingStatus = {
+				key,
+				ok: true,
+				text: parsed.lossy
+					? "applied (this browser lacks JSON.parse source access; huge integers may have lost precision)"
+					: "applied",
+			};
 			callbacks.onDocumentChanged();
+			rerender(); // refresh this row's encoding tag and byte size
 		} catch (error) {
 			status.className = "editor-status error";
 			status.textContent = String(error instanceof Error ? error.message : error);
 		}
 	});
+	const remove = document.createElement("button");
+	remove.textContent = "Delete key";
+	remove.className = "danger";
+	remove.addEventListener("click", () => {
+		delete doc[key];
+		if (expandedKey === key) expandedKey = null;
+		callbacks.onKeysChanged();
+	});
 	const row = document.createElement("div");
 	row.className = "editor-buttons";
-	row.append(apply, revert, status);
-	wrap.append(textarea, row);
+	row.append(apply, revert, remove, status);
+	wrap.append(jsonEditor.root, lint, row);
 	return wrap;
-}
-
-function sectionHeader(title: string, detail: string): HTMLElement {
-	const h = document.createElement("div");
-	h.className = "section-header";
-	const strong = document.createElement("strong");
-	strong.textContent = title;
-	const code = document.createElement("code");
-	code.textContent = detail;
-	h.append(strong, code);
-	return h;
 }
 
 function hint(text: string): HTMLElement {

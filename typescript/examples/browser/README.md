@@ -2,22 +2,38 @@
 
 A single-file web app for exploring and editing zarr-inline documents,
 built on the TypeScript implementation and [zarrita](https://zarrita.dev).
+A header toggle switches between the two-pane **Browser** view and a
+**JSON** view holding the whole document as one editable,
+syntax-highlighted text.
 
-- **Hierarchy DAG** (left): every group and array in the document as a
-  selectable node graph. Dashed outlines mark paths that exist only as
-  prefixes of other keys.
-- **JSON panel** (middle): the selected node's `zarr.json` metadata and its
-  chunk keys, each editable as JSON. Applying an edit round-trips the value
-  through the zarr-inline decode/encode pair, so whatever you type is
-  stored canonically — inline JSON when it is byte-stable, base64
-  otherwise — and the whole document is re-validated live.
+- **Browser pane** (left): the selected node's *members* (child groups
+  and arrays, tagged **Group** / **Array** — click to navigate) and its
+  *keys* (`zarr.json` plus chunk/data keys, tagged **JSON Object**,
+  **JSON Array**, or **base64** — click to expand a syntax-highlighted
+  editor) as one flat, prefix-searchable list (`c/` filters to chunks)
+  under a breadcrumb for moving up. Applying an edit round-trips the
+  value through the zarr-inline decode/encode pair, so whatever you type
+  is stored canonically, and the whole document is re-validated live.
+  Keys can be added and deleted too, and the viewer updates on every
+  change — edit `zarr.json` to turn a 3-D image into a 2-D one, then add
+  fresh chunk keys (`c/0/0`) and watch the pixels appear. `zarr.json`
+  edits are linted live with [zarr-metadata](https://www.npmjs.com/package/zarr-metadata)
+  — structure plus the spec's cross-field rules (chunk-grid arity,
+  transpose permutations, sharding divisibility, `fill_value` vs data
+  type) plus this viewer's own support rules (zarrita reads only the
+  `regular` chunk grid, which needs a `chunk_shape`) — shown as flags
+  under the editor, in the key's tag, and as a document-wide count in the
+  status bar; they never block an edit, since zarr-inline itself does not
+  validate hierarchy coherence. An array the viewer cannot read shows the
+  reason instead of a crash.
 - **Display panel** (right): groups show their attributes and children;
   arrays open in a multi-dimensional slice viewer — assign any two
   dimensions to X/Y, scrub the rest with sliders, pick a lookup table
   (gray/viridis/magma/coolwarm, or **text**, which renders every element
   as its numeric value), zoom and pan (wheel/drag), and hover for exact
-  values. X/Y axis coordinate labels are always shown, chunk boundaries
-  can be overlaid as dashed lines, and NaN renders as transparent
+  values. X/Y axis coordinate labels are always shown; with the chunk
+  grid on, a second axis band labels each chunk's index and the hover
+  readout names the exact chunk key (c/…). NaN renders as transparent
   checkerboard. Big int64 values stay exact end to end (strict parsing
   preserves them as BigInt).
 
@@ -32,8 +48,9 @@ Open `dist/index.html` directly in a browser (no server needed), or run
 `npm run serve` for a rebuild-on-change dev server. A bare viewer holds
 the empty document `{}`; load a document with Open/Paste/URL, drop a
 `.json` file anywhere on the page, or press Demo for the embedded demo
-hierarchy (a 4-D float32 volume, a uint8 label image, and a small table
-group, generated with the Python implementation's `from_zarr`).
+hierarchy (a 20×20×20 uint8 volume in (5,5,5) chunks plus an int64
+table, generated with the Python implementation's `from_zarr` — small
+enough that every chunk is comfortable to edit by hand).
 
 ## Shareable URLs
 

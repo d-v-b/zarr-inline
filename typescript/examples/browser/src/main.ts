@@ -1,8 +1,8 @@
 /**
- * zarr-inline document browser: hierarchy DAG (left), the selected node's
- * metadata and chunks as editable JSON (middle), and a rendered display of
- * the node (right) — children for groups, a multi-dimensional slice viewer
- * for arrays. The whole app operates on one JSON document via the
+ * zarr-inline document browser: a browser pane (left) with the selected
+ * node's members and keys as one flat searchable list (keys expand into
+ * editors), and a rendered display of the node (right) — children for
+ * groups, a multi-dimensional slice viewer for arrays. The whole app operates on one JSON document via the
  * zarr-inline store and zarrita.
  */
 
@@ -15,8 +15,9 @@ import { ZarrInlineStore } from "../../../src/store.js";
 import { validate, type ValidationIssue } from "../../../src/validator.js";
 import { fragmentForDocument, decompressFromParam, parseFragment } from "./url-state.js";
 
-import { renderDag } from "./dag.js";
 import demoText from "./demo-document.json.txt";
+import { createJsonEditor, jsonBlock } from "./jsonhl.js";
+import { formatIssue, metadataIssues, viewerIssues } from "./metadata.js";
 import { prettyJson, renderJsonPanel } from "./jsonpanel.js";
 import {
 	arrayShape,
@@ -38,8 +39,7 @@ import {
 registerJsonCodec();
 
 const el = {
-	dag: document.getElementById("dag") as unknown as SVGSVGElement,
-	json: document.getElementById("json-panel")!,
+	json: document.getElementById("browser-panel")!,
 	display: document.getElementById("display-panel")!,
 	status: document.getElementById("status")!,
 	open: document.getElementById("open") as HTMLButtonElement,
@@ -50,6 +50,10 @@ const el = {
 	download: document.getElementById("download") as HTMLButtonElement,
 	copy: document.getElementById("copy") as HTMLButtonElement,
 	copyLink: document.getElementById("copy-link") as HTMLButtonElement,
+	main: document.querySelector("main")!,
+	documentPanel: document.getElementById("document-panel")!,
+	viewBrowser: document.getElementById("view-browser") as HTMLButtonElement,
+	viewJson: document.getElementById("view-json") as HTMLButtonElement,
 };
 
 let doc: Document | null = null;
@@ -154,21 +158,92 @@ function refresh(renderJson = true): void {
 	if (!hierarchy.byPath.has(selectedPath)) selectedPath = "";
 	updateStatus();
 	renderSelection(renderJson);
+	if (viewMode === "json") renderDocumentView();
 }
+
+// --- whole-document JSON view -------------------------------------------
+
+type ViewMode = "browser" | "json";
+let viewMode: ViewMode = "browser";
+let docViewStatus: { text: string; ok: boolean } | null = null;
+
+function setViewMode(mode: ViewMode): void {
+	viewMode = mode;
+	el.main.dataset.view = mode;
+	el.viewBrowser.classList.toggle("active", mode === "browser");
+	el.viewJson.classList.toggle("active", mode === "json");
+	if (mode === "json") renderDocumentView();
+}
+
+/** The whole document as one editable, syntax-highlighted JSON text. */
+function renderDocumentView(): void {
+	el.documentPanel.replaceChildren();
+	if (doc === null) return;
+	const editor = createJsonEditor(prettyJson(doc));
+	const status = document.createElement("div");
+	status.className = "editor-status";
+	if (docViewStatus !== null) {
+		status.className = `editor-status ${docViewStatus.ok ? "ok" : "error"}`;
+		status.textContent = docViewStatus.text;
+		docViewStatus = null;
+	}
+	const apply = document.createElement("button");
+	apply.textContent = "Apply";
+	apply.addEventListener("click", () => {
+		try {
+			const parsed = parseJsonText(editor.getValue());
+			if (parsed.value === null || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+				throw new Error("document must be a JSON object");
+			}
+			doc = toNullPrototype(parsed.value as Document);
+			docViewStatus = {
+				ok: true,
+				text: parsed.lossy
+					? "applied (this browser lacks JSON.parse source access; huge integers may have lost precision)"
+					: "applied",
+			};
+			refresh(); // re-renders this view with the canonicalized text
+			scheduleUrlSync();
+		} catch (error) {
+			status.className = "editor-status error";
+			status.textContent = String(error instanceof Error ? error.message : error);
+		}
+	});
+	const revert = document.createElement("button");
+	revert.textContent = "Revert";
+	revert.addEventListener("click", () => {
+		editor.setValue(prettyJson(doc));
+		status.textContent = "";
+		status.className = "editor-status";
+	});
+	const buttons = document.createElement("div");
+	buttons.className = "editor-buttons";
+	buttons.append(apply, revert, status);
+	el.documentPanel.append(buttons, editor.root);
+}
+
+el.viewBrowser.addEventListener("click", () => setViewMode("browser"));
+el.viewJson.addEventListener("click", () => setViewMode("json"));
 
 function renderSelection(renderJson = true): void {
 	if (doc === null || hierarchy === null) return;
-	renderDag(el.dag, hierarchy.root, selectedPath, (path) => {
-		selectedPath = path;
-		renderSelection();
-	});
 	const node = hierarchy.byPath.get(selectedPath) ?? null;
 	if (renderJson) {
 		renderJsonPanel(el.json, doc, node, {
+			onSelect: (path) => {
+				selectedPath = path;
+				renderSelection();
+			},
 			// Keep the editor DOM (and its "applied" feedback) in place;
 			// the editor already shows the canonicalized value itself.
 			onDocumentChanged: () => {
 				refresh(false);
+				scheduleUrlSync();
+			},
+			// Key set changed: rebuild the hierarchy and re-render the
+			// panel too (its module state keeps the expansion and search).
+			onKeysChanged: () => {
+				refresh(true);
 				scheduleUrlSync();
 			},
 		});
@@ -193,6 +268,19 @@ function updateStatus(): void {
 		verdict.title = issues.map((i) => `[${i.rule}] ${i.key}: ${i.message}`).join("\n");
 	}
 	el.status.replaceChildren(stats, verdict);
+	// Semantic zarr.json problems are flags on top of document validity.
+	const lines: string[] = [];
+	for (const [key, value] of Object.entries(doc)) {
+		if (!key.endsWith("zarr.json") || value === null || typeof value !== "object") continue;
+		for (const issue of metadataIssues(value)) lines.push(`${key} → ${formatIssue(issue)}`);
+	}
+	if (lines.length > 0) {
+		const meta = document.createElement("span");
+		meta.className = "warn";
+		meta.textContent = ` · ${lines.length} metadata issue${lines.length === 1 ? "" : "s"}`;
+		meta.title = lines.join("\n");
+		el.status.append(meta);
+	}
 }
 
 function badSpan(text: string): HTMLElement {
@@ -231,6 +319,13 @@ function renderDisplay(node: NodeInfo | null): void {
 		el.display.append(hintP("Array metadata has no usable shape."));
 		return;
 	}
+	const unsupported = viewerIssues(node.meta);
+	if (unsupported.length > 0) {
+		const p = hintP(`Cannot display this array: ${unsupported.map(formatIssue).join("; ")}. Fix the metadata to continue.`);
+		p.style.color = "var(--error)";
+		el.display.append(p);
+		return;
+	}
 	const loading = hintP("Loading array…");
 	el.display.append(loading);
 	readArray(node.path).then(
@@ -267,10 +362,7 @@ function renderDisplay(node: NodeInfo | null): void {
 function renderGroupDisplay(node: NodeInfo): void {
 	const attrs = node.meta?.["attributes"];
 	if (attrs !== undefined && attrs !== null && Object.keys(attrs as object).length > 0) {
-		const pre = document.createElement("pre");
-		pre.className = "attrs";
-		pre.textContent = prettyJson(attrs);
-		el.display.append(pre);
+		el.display.append(jsonBlock(prettyJson(attrs)));
 	}
 	if (node.children.length === 0) {
 		el.display.append(hintP("Empty group."));

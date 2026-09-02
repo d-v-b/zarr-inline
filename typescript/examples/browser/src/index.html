@@ -49,32 +49,82 @@
   }
   button:hover, select:hover { border-color: var(--accent); }
   #status { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .segmented button { border: none; border-radius: 0; }
+  .segmented button.active { background: var(--accent); color: #0d1117; }
   #status .ok { color: var(--ok); }
   #status .bad { color: var(--error); cursor: help; }
+  #status .warn { color: #ffb86b; cursor: help; }
   main {
     flex: 1;
     display: grid;
-    grid-template-columns: 360px minmax(320px, 430px) 1fr;
+    grid-template-columns: minmax(380px, 34%) 1fr;
     min-height: 0;
   }
   main > * { min-width: 0; min-height: 0; overflow: auto; }
-  #dag-panel { border-right: 1px solid var(--border); background: var(--panel); }
-  #json-panel { border-right: 1px solid var(--border); padding: 10px 12px; }
+  #document-panel { padding: 10px 14px; display: none; }
+  main[data-view="json"] { grid-template-columns: 1fr; }
+  main[data-view="json"] > #browser-panel,
+  main[data-view="json"] > #display-panel { display: none; }
+  main[data-view="json"] > #document-panel { display: block; }
+
+  #browser-panel { border-right: 1px solid var(--border); background: var(--panel); padding: 10px 12px; }
   #display-panel { padding: 10px 12px; display: flex; flex-direction: column; }
 
-  /* DAG */
-  #dag { display: block; }
-  #dag .edge { fill: none; stroke: #3b4453; stroke-width: 1.4; }
-  #dag .node { cursor: pointer; }
-  #dag .node rect { fill: var(--panel-2); stroke: var(--border); stroke-width: 1.2; }
-  #dag .node.group rect { fill: #262e3a; stroke: #3b4a5f; }
-  #dag .node.array rect { fill: #1e3531; stroke: #2f5a4d; }
-  #dag .node.implicit rect { stroke-dasharray: 4 3; }
-  #dag .node.selected rect { stroke: var(--accent); stroke-width: 2; }
-  #dag .node text { fill: var(--text); font: 12px var(--mono); pointer-events: none; }
-  #dag .node .sub { fill: var(--muted); font-size: 10px; }
-  #dag .node .badge { fill: var(--accent); font-size: 13px; }
-  #dag .node:hover rect { stroke: var(--accent); }
+  /* browser pane: breadcrumb + fused member/key list */
+  .breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  .breadcrumb a { color: var(--accent); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+  .breadcrumb a:hover { background: var(--panel-2); }
+  .breadcrumb a.current { color: var(--text); }
+  .breadcrumb span { color: var(--muted); }
+  .breadcrumb .crumb-count { margin-left: auto; color: var(--muted); font-size: 11px; }
+
+  /* the flat list idiom (left pane members, JSON panel keys) */
+  .list-search {
+    width: 100%;
+    background: #12151a;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 9px;
+    font: 12px var(--mono);
+    margin-bottom: 6px;
+  }
+  .list-search:focus { outline: none; border-color: var(--accent); }
+  .flat-list { list-style: none; margin: 0; padding: 0; }
+  .list-row { border-radius: 6px; }
+  .list-row-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .list-row-head:hover { background: var(--panel-2); }
+  .list-row.selected > .list-row-head { background: var(--panel-2); outline: 1px solid var(--accent); }
+  .list-name { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+  .list-detail { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
+  .list-expansion { padding: 4px 2px 8px; }
+  .list-more { font-size: 12px; }
+  .add-key-row { display: flex; gap: 8px; margin-top: 10px; }
+  .add-key-row input { flex: 1; margin-bottom: 0; }
+  button.danger { color: var(--error); border-color: #5a2f2f; }
+  .tag-group { color: var(--accent); border-color: #2f4a6a; }
+  .tag-array-node { color: var(--ok); border-color: #2f5a4d; }
+  .tag-object { color: var(--accent); border-color: #2f4a6a; }
+  .tag-array { color: var(--ok); border-color: #2f5a4d; }
+  .tag-b64 { color: #d8a657; border-color: #5a4a2f; }
+  .tag-other { color: var(--error); border-color: #5a2f2f; }
+  .tag-warn { color: #ffb86b; border-color: #7a4f1f; background: rgba(226, 163, 78, 0.10); cursor: help; }
 
   /* JSON panel */
   .section-header {
@@ -88,17 +138,6 @@
   .section-header:first-child { margin-top: 0; }
   .section-header code { color: var(--muted); font-family: var(--mono); font-size: 12px; }
   .hint { color: var(--muted); }
-  details { margin: 4px 0; }
-  summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 2px;
-    border-radius: 5px;
-  }
-  summary:hover { background: var(--panel-2); }
-  summary code { font-family: var(--mono); font-size: 12px; }
   .chip {
     font: 10px var(--mono);
     color: var(--muted);
@@ -107,21 +146,50 @@
     padding: 1px 7px;
     white-space: nowrap;
   }
-  .chip-inline { color: var(--ok); border-color: #2f5a4d; }
-  .chip-b64 { color: #d8a657; border-color: #5a4a2f; }
-  .editor textarea {
+  .json-editor { position: relative; }
+  .json-editor-layer, .json-editor textarea {
+    box-sizing: border-box;
     width: 100%;
-    min-height: 130px;
-    max-height: 45vh;
-    resize: vertical;
+    margin: 0;
+    font: 12px/1.5 var(--mono);
+    padding: 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    white-space: pre;
+    tab-size: 2;
+  }
+  .json-editor-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
     background: #12151a;
     color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px;
-    font: 12px/1.5 var(--mono);
-    white-space: pre;
+    pointer-events: none;
   }
+  .json-editor-layer code { font: inherit; }
+  .json-editor textarea {
+    position: relative;
+    display: block;
+    min-height: 130px;
+    resize: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text);
+    border-color: var(--border);
+  }
+  .json-editor textarea:focus { outline: none; border-color: var(--accent); }
+  .json-editor textarea::selection { background: rgba(77, 163, 255, 0.30); }
+  .j-key { color: #7fb4ff; }
+  .j-str { color: #a9d98b; }
+  .j-num { color: #e8c07a; }
+  .j-lit { color: #c39ce8; }
+  .j-pun { color: #8b96a5; }
+  pre.attrs .j-key { color: #7fb4ff; }
+  .editor-lint { list-style: none; margin: 6px 0 0; padding: 0; font: 12px var(--mono); color: #ffb86b; }
+  .editor-lint:empty { display: none; }
+  .editor-lint li { padding: 2px 0 2px 10px; border-left: 2px solid #7a4f1f; margin: 2px 0; overflow-wrap: anywhere; }
   .editor-buttons { display: flex; gap: 8px; align-items: center; margin: 6px 0 10px; }
   .editor-status { font: 12px var(--mono); color: var(--muted); }
   .editor-status.ok { color: var(--ok); }
@@ -245,6 +313,10 @@
 <body>
 <header>
   <h1><code>zarr-inline</code> browser</h1>
+  <span class="segmented">
+    <button id="view-browser" class="active">Browser</button>
+    <button id="view-json">JSON</button>
+  </span>
   <button id="open">Open…</button>
   <input id="file" type="file" accept=".json,application/json" hidden />
   <button id="paste">Paste…</button>
@@ -255,10 +327,10 @@
   <button id="copy-link">Copy link</button>
   <span id="status">no document</span>
 </header>
-<main>
-  <aside id="dag-panel"><svg id="dag" xmlns="http://www.w3.org/2000/svg"></svg></aside>
-  <section id="json-panel"><p class="hint">Open a document to begin.</p></section>
+<main data-view="browser">
+  <section id="browser-panel"><p class="hint">Open a document to begin.</p></section>
   <section id="display-panel"><p class="hint">The selected node is displayed here.</p></section>
+  <section id="document-panel"></section>
 </main>
 <script>
 /*__APP__*/
