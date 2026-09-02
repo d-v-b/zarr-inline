@@ -109,7 +109,8 @@ recti.chunk_grid = { name: "rectilinear", configuration: { chunk_shapes: [[5,5,5
 assert(metadataIssues(recti).some((i) => i.message.includes("cannot be displayed")), "rectilinear flagged as unsupported");
 const shapes = JSON.parse(JSON.stringify(doc["image/zarr.json"]));
 shapes.chunk_grid = { name: "regular", configuration: { chunk_shapes: [5, 5, 5] } };
-assert(metadataIssues(shapes).some((i) => i.path.join(".") === "chunk_grid.configuration.chunk_shape"), "regular grid without chunk_shape flagged");
+const shapeIssues = metadataIssues(shapes).filter((i) => i.path.join(".") === "chunk_grid.configuration.chunk_shape");
+assert(shapeIssues.length === 1, "regular grid without chunk_shape flagged exactly once (upstream rule, viewer rule yields): " + JSON.stringify(shapeIssues));
 
 // URL state: compress/decompress round trip and fragment parsing
 const param = await compressToParam(text);

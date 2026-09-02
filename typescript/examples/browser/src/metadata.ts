@@ -47,7 +47,13 @@ export function metadataIssues(value: unknown): MetadataIssue[] {
 			});
 		}
 	}
-	for (const issue of viewerIssues(value)) add(issue);
+	// Viewer rules yield to the spec's: where zarr-metadata already reports
+	// a location (since 0.6 it requires the known grids' configuration
+	// keys), the viewer's phrasing of the same problem would only repeat it.
+	const reported = new Set(issues.map((issue) => issue.path.join(" ")));
+	for (const issue of viewerIssues(value)) {
+		if (!reported.has(issue.path.join(" "))) add(issue);
+	}
 	return issues;
 }
 
