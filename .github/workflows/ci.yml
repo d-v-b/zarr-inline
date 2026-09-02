@@ -175,7 +175,10 @@ jobs:
           PR: ${{ github.event.number }}
         run: |
           BASE="https://d-v-b.github.io/zarr-inline/previews/pr-${PR}"
-          BODY="<!-- docs-preview -->📖 **Docs preview**: ${BASE}/ · **[viewer](${BASE}/viewer/)** · [demo](${BASE}/viewer/#url=demo-document.json) — rebuilt on every push to this PR. _(automated comment)_"
+          # The marker must sit on its own line followed by a blank one:
+          # CommonMark treats the whole line holding an HTML comment as
+          # raw HTML, so markdown on that line would not render.
+          BODY="$(printf '<!-- docs-preview -->\n\n📖 **Docs preview**: %s/ · **[viewer](%s/viewer/)** · [demo](%s/viewer/#url=demo-document.json) — rebuilt on every push to this PR. _(automated comment)_' "$BASE" "$BASE" "$BASE")"
           EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --jq '.[] | select(.body | startswith("<!-- docs-preview -->")) | .id' | head -1)
           if [ -n "$EXISTING" ]; then
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${EXISTING}" -f body="$BODY" > /dev/null
