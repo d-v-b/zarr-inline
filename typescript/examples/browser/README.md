@@ -16,7 +16,13 @@ syntax-highlighted text.
   is stored canonically, and the whole document is re-validated live.
   Keys can be added and deleted too, and the viewer updates on every
   change — edit `zarr.json` to turn a 3-D image into a 2-D one, then add
-  fresh chunk keys (`c/0/0`) and watch the pixels appear.
+  fresh chunk keys (`c/0/0`) and watch the pixels appear. `zarr.json`
+  edits are linted live with [zarr-metadata](https://www.npmjs.com/package/zarr-metadata)
+  — structure plus the spec's cross-field rules (chunk-grid arity,
+  transpose permutations, sharding divisibility, `fill_value` vs data
+  type) — shown as flags under the editor, in the key's tag, and as a
+  document-wide count in the status bar; they never block an edit, since
+  zarr-inline itself does not validate hierarchy coherence.
 - **Display panel** (right): groups show their attributes and children;
   arrays open in a multi-dimensional slice viewer — assign any two
   dimensions to X/Y, scrub the rest with sliders, pick a lookup table

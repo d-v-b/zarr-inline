@@ -54,6 +54,7 @@
   .segmented button.active { background: var(--accent); color: #0d1117; }
   #status .ok { color: var(--ok); }
   #status .bad { color: var(--error); cursor: help; }
+  #status .warn { color: #ffb86b; cursor: help; }
   main {
     flex: 1;
     display: grid;
@@ -186,6 +187,9 @@
   .j-lit { color: #c39ce8; }
   .j-pun { color: #8b96a5; }
   pre.attrs .j-key { color: #7fb4ff; }
+  .editor-lint { list-style: none; margin: 6px 0 0; padding: 0; font: 12px var(--mono); color: #ffb86b; }
+  .editor-lint:empty { display: none; }
+  .editor-lint li { padding: 2px 0 2px 10px; border-left: 2px solid #7a4f1f; margin: 2px 0; overflow-wrap: anywhere; }
   .editor-buttons { display: flex; gap: 8px; align-items: center; margin: 6px 0 10px; }
   .editor-status { font: 12px var(--mono); color: var(--muted); }
   .editor-status.ok { color: var(--ok); }

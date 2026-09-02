@@ -177,6 +177,22 @@ const dataCanvasHidden = await page.evaluate(
 );
 await page.screenshot({ path: join(shotDir, "7-text-mode.png") });
 
+// Semantic lint: an arity mismatch is flagged while typing, before Apply.
+await clickNode("image");
+await page.waitForTimeout(600);
+await page.locator("#browser-panel .json-editor textarea").first().evaluate((ta) => {
+	const meta = JSON.parse(ta.value);
+	meta.shape = [20, 20]; // chunk_shape left 3-D on purpose
+	ta.value = JSON.stringify(meta, null, 2);
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.waitForTimeout(500);
+const lintText = await page.locator("#browser-panel .editor-lint").first().textContent();
+await page.screenshot({ path: join(shotDir, "11-lint.png") });
+await page.locator("#browser-panel button", { hasText: "Revert" }).first().click();
+await page.waitForTimeout(300);
+const lintCleared = (await page.locator("#browser-panel .editor-lint li").count()) === 0;
+
 // Live edits: turn the 3-D image into a 2-D image; the viewer follows
 // every Apply. Then add a fresh 2-D chunk key and delete it again.
 await clickNode("image");
@@ -298,6 +314,8 @@ console.log(
 			docViewHasText,
 			docViewStatus,
 			docViewEditVisible,
+			lintText,
+			lintCleared,
 			twoDStats,
 			liveChunkChanged: beforeChunkAdd !== afterChunkAdd,
 			statusAfterAdd,

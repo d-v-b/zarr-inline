@@ -20,6 +20,7 @@ import { prettyJson, keyTag } from "./src/jsonpanel.js";
 import { decodeValue, encodeValue } from "../../src/document.js";
 import { readFileSync } from "node:fs";
 import { compressToParam, decompressFromParam, parseFragment } from "./src/url-state.js";
+import { metadataIssues } from "./src/metadata.js";
 
 const assert = (cond, msg) => { if (!cond) throw new Error("FAIL: " + msg); };
 
@@ -86,6 +87,21 @@ const rawDoc = toNullPrototype(strictParse(JSON.stringify({
 const raw = buildHierarchy(rawDoc).byPath.get("raw");
 const rawTag = keyTag(raw, "raw/c/0", rawDoc["raw/c/0"]);
 assert(rawTag.tagClass === "tag-warn" && rawTag.tag.includes("bytes"), "bytes-codec inline chunk warns: " + rawTag.tag);
+
+// Semantic metadata lint (zarr-metadata): clean demo, flagged violations
+for (const key of Object.keys(doc).filter((k) => k.endsWith("zarr.json"))) {
+  assert(metadataIssues(doc[key]).length === 0, "demo metadata is clean: " + key);
+}
+const broken = JSON.parse(JSON.stringify(doc["image/zarr.json"]));
+broken.shape = [20, 20]; // chunk_shape stays 3-D: arity mismatch
+const arity = metadataIssues(broken);
+assert(arity.length > 0 && arity.some((i) => i.path.includes("chunk_shape")), "chunk-grid arity flagged: " + JSON.stringify(arity));
+const badFill = JSON.parse(JSON.stringify(doc["image/zarr.json"]));
+badFill.fill_value = "NaN"; // not a uint8 value
+assert(metadataIssues(badFill).some((i) => i.path.includes("fill_value")), "fill_value vs dtype flagged");
+const missing = JSON.parse(JSON.stringify(doc["image/zarr.json"]));
+delete missing.data_type;
+assert(metadataIssues(missing).some((i) => i.kind === "missing_key"), "missing data_type flagged structurally");
 
 // URL state: compress/decompress round trip and fragment parsing
 const param = await compressToParam(text);

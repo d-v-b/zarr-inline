@@ -12,6 +12,7 @@ import type { Document } from "../../../src/backing.js";
 import { canonicalStringify, decodeValue, encodeValue } from "../../../src/document.js";
 import { createJsonEditor } from "./jsonhl.js";
 import { renderFlatList, type ListRow } from "./list.js";
+import { formatIssue, issueSummary, metadataIssues } from "./metadata.js";
 import { codecNames, nodeSubtitle, type NodeInfo } from "./model.js";
 import { parseJsonText } from "./strict.js";
 
@@ -77,6 +78,17 @@ export function valueTag(value: unknown): KeyTag {
  */
 export function keyTag(node: NodeInfo, key: string, value: unknown): KeyTag {
 	const base = valueTag(value);
+	if (key === node.metaKey && value !== null && typeof value === "object") {
+		const issues = metadataIssues(value);
+		if (issues.length > 0) {
+			return {
+				tag: `JSON Object · ${issueSummary(issues)}`,
+				tagClass: "tag-warn",
+				title: issues.map(formatIssue).join("\n"),
+			};
+		}
+		return base;
+	}
 	if (node.kind !== "array" || key === node.metaKey || typeof value === "string") {
 		return base;
 	}
@@ -256,6 +268,31 @@ function editor(doc: Document, key: string, callbacks: JsonPanelCallbacks): HTML
 	const jsonEditor = createJsonEditor(prettyJson(doc[key]));
 	const status = document.createElement("div");
 	status.className = "editor-status";
+	// Metadata keys get a live semantic lint: flags, never a veto.
+	const lint = document.createElement("ul");
+	lint.className = "editor-lint";
+	const isMetadata = key.endsWith("zarr.json");
+	const runLint = () => {
+		if (!isMetadata) return;
+		lint.replaceChildren();
+		let value: unknown;
+		try {
+			value = parseJsonText(jsonEditor.getValue()).value;
+		} catch {
+			return; // syntax errors surface on Apply
+		}
+		for (const issue of metadataIssues(value)) {
+			const item = document.createElement("li");
+			item.textContent = formatIssue(issue);
+			lint.append(item);
+		}
+	};
+	let lintTimer: ReturnType<typeof setTimeout> | null = null;
+	jsonEditor.textarea.addEventListener("input", () => {
+		if (lintTimer !== null) clearTimeout(lintTimer);
+		lintTimer = setTimeout(runLint, 200);
+	});
+	runLint();
 	if (pendingStatus !== null && pendingStatus.key === key) {
 		status.className = `editor-status ${pendingStatus.ok ? "ok" : "error"}`;
 		status.textContent = pendingStatus.text;
@@ -269,6 +306,7 @@ function editor(doc: Document, key: string, callbacks: JsonPanelCallbacks): HTML
 		jsonEditor.setValue(prettyJson(doc[key]));
 		status.textContent = "";
 		status.className = "editor-status";
+		runLint(); // setValue fires no input event
 	});
 	apply.addEventListener("click", () => {
 		try {
@@ -301,7 +339,7 @@ function editor(doc: Document, key: string, callbacks: JsonPanelCallbacks): HTML
 	const row = document.createElement("div");
 	row.className = "editor-buttons";
 	row.append(apply, revert, remove, status);
-	wrap.append(jsonEditor.root, row);
+	wrap.append(jsonEditor.root, lint, row);
 	return wrap;
 }
 

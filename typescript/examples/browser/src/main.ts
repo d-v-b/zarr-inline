@@ -17,6 +17,7 @@ import { fragmentForDocument, decompressFromParam, parseFragment } from "./url-s
 
 import demoText from "./demo-document.json.txt";
 import { createJsonEditor, jsonBlock } from "./jsonhl.js";
+import { formatIssue, issueSummary, metadataIssues } from "./metadata.js";
 import { prettyJson, renderJsonPanel } from "./jsonpanel.js";
 import {
 	arrayShape,
@@ -267,6 +268,19 @@ function updateStatus(): void {
 		verdict.title = issues.map((i) => `[${i.rule}] ${i.key}: ${i.message}`).join("\n");
 	}
 	el.status.replaceChildren(stats, verdict);
+	// Semantic zarr.json problems are flags on top of document validity.
+	const lines: string[] = [];
+	for (const [key, value] of Object.entries(doc)) {
+		if (!key.endsWith("zarr.json") || value === null || typeof value !== "object") continue;
+		for (const issue of metadataIssues(value)) lines.push(`${key} → ${formatIssue(issue)}`);
+	}
+	if (lines.length > 0) {
+		const meta = document.createElement("span");
+		meta.className = "warn";
+		meta.textContent = ` · ${lines.length} metadata issue${lines.length === 1 ? "" : "s"}`;
+		meta.title = lines.join("\n");
+		el.status.append(meta);
+	}
 }
 
 function badSpan(text: string): HTMLElement {
